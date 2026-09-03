@@ -1,7 +1,10 @@
 <?php
 
 use App\Exceptions\AccountDisabledException;
+use App\Exceptions\CourseNotPublishedException;
+use App\Exceptions\DuplicateEnrollmentException;
 use App\Exceptions\InvalidCredentialsException;
+use App\Exceptions\LessonNotAccessibleException;
 use App\Http\Middleware\ForceJsonResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -79,6 +82,33 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (AccountDisabledException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 403);
+            }
+        });
+
+        $exceptions->render(function (DuplicateEnrollmentException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (CourseNotPublishedException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (LessonNotAccessibleException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,

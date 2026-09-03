@@ -17,6 +17,11 @@ class LessonPolicy
         return null;
     }
 
+    public function view(User $user, Lesson $lesson): bool
+    {
+        return $this->canManageCourse($user, $lesson->unit->course);
+    }
+
     public function create(User $user): bool
     {
         return $user->hasPermissionTo('lessons.create');

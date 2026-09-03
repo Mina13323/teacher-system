@@ -8,7 +8,7 @@ class CreateLessonRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('create', \App\Models\Lesson::class);
+        return $this->user()->can('update', $this->route('unit'));
     }
 
     /**
@@ -17,7 +17,6 @@ class CreateLessonRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'unit_id' => ['required', 'exists:units,id'],
             'title' => ['required', 'string', 'max:255'],
             'slug' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],

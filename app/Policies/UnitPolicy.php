@@ -17,6 +17,11 @@ class UnitPolicy
         return null;
     }
 
+    public function view(User $user, Unit $unit): bool
+    {
+        return $this->canManageCourse($user, $unit->course);
+    }
+
     public function create(User $user): bool
     {
         return $user->hasPermissionTo('courses.create');

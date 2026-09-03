@@ -18,4 +18,14 @@ enum CourseStatus: string
     {
         return self::Draft;
     }
+
+    public function isPublished(): bool
+    {
+        return $this === self::Published;
+    }
+
+    public function isDraft(): bool
+    {
+        return $this === self::Draft;
+    }
 }

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Course extends Model
 {
@@ -36,7 +37,14 @@ class Course extends Model
 
     public function units(): HasMany
     {
-        return $this->hasMany(Unit::class);
+        return $this->hasMany(Unit::class)
+            ->orderBy('units.position');
+    }
+
+    public function lessons(): HasManyThrough
+    {
+        return $this->hasManyThrough(Lesson::class, Unit::class)
+            ->orderBy('lessons.position');
     }
 
     public function enrollments(): HasMany
@@ -47,6 +55,18 @@ class Course extends Model
     public function isOwnedBy(User $user): bool
     {
         return $this->created_by === $user->getKey();
+    }
+
+    public function publish(): void
+    {
+        $this->status = CourseStatus::Published;
+        $this->save();
+    }
+
+    public function unpublish(): void
+    {
+        $this->status = CourseStatus::Draft;
+        $this->save();
     }
 
     /**

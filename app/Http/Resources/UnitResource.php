@@ -23,7 +23,6 @@ class UnitResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'position' => $this->position,
-            'lessons' => LessonResource::collection($this->whenLoaded('lessons')),
             'lessons_count' => $this->whenCounted('lessons'),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),

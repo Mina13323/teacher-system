@@ -3,13 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CourseStatus;
+use App\Http\Resources\CourseDetailResource;
 use App\Http\Resources\CourseResource;
 use App\Models\Course;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Public, unauthenticated course browsing. Only published courses are exposed.
+ * Public course browsing. Only published courses are exposed.
  */
 class CourseController extends Controller
 {
@@ -18,7 +19,7 @@ class CourseController extends Controller
         $courses = Course::query()
             ->published()
             ->with('creator')
-            ->withCount('units')
+            ->withCount(['units', 'lessons'])
             ->latest()
             ->paginate($request->integer('per_page', 15));
 
@@ -29,8 +30,13 @@ class CourseController extends Controller
     {
         abort_unless($course->status === CourseStatus::Published, 404, 'Course not found.');
 
-        $course->load(['creator', 'units.lessons.videos']);
+        $course->load([
+            'creator',
+            'units' => fn ($q) => $q->orderBy('position'),
+            'units.lessons' => fn ($q) => $q->where('is_published', true)->orderBy('position'),
+            'units.lessons.videos' => fn ($q) => $q->where('is_published', true)->orderBy('position'),
+        ])->loadCount(['units', 'lessons']);
 
-        return $this->success(new CourseResource($course), 'Course retrieved.');
+        return $this->success(new CourseDetailResource($course), 'Course retrieved.');
     }
 }

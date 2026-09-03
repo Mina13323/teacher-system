@@ -36,11 +36,17 @@ class Lesson extends Model
 
     public function videos(): HasMany
     {
-        return $this->hasMany(Video::class);
+        return $this->hasMany(Video::class)
+            ->orderBy('videos.position');
     }
 
     public function progressRecords(): HasMany
     {
         return $this->hasMany(LessonProgress::class, 'lesson_id');
+    }
+
+    public function isPublished(): bool
+    {
+        return (bool) $this->is_published;
     }
 }

@@ -17,6 +17,11 @@ class VideoPolicy
         return null;
     }
 
+    public function view(User $user, Video $video): bool
+    {
+        return $this->canManageCourse($user, $video->lesson->unit->course);
+    }
+
     public function create(User $user): bool
     {
         return $user->hasPermissionTo('lessons.create');

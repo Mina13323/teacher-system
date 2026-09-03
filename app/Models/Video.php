@@ -33,4 +33,9 @@ class Video extends Model
     {
         return $this->belongsTo(Lesson::class);
     }
+
+    public function isPublished(): bool
+    {
+        return (bool) $this->is_published;
+    }
 }

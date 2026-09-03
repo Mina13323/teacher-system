@@ -1,14 +1,16 @@
-# AI Marketing & Learning Platform — Phase 1 Foundation
+# AI Marketing & Learning Platform — Laravel LMS
 
-A Laravel 11 foundation for an AI Marketing & Learning Platform (LMS)
-implementing authentication, role/permission management, and the initial
-database + API scaffolding for courses, units, lessons, videos, enrollments
-and lesson progress.
+A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
 
-This is **Phase 1 only**. Exams, anti-cheat, competitions, leaderboards,
-subscriptions, analytics, AI features and video streaming are intentionally
-**not** implemented yet — the architecture is prepared so they can be added
-later without major restructuring.
+- **Phase 1 — Foundation:** authentication (Sanctum), roles/permissions
+  (Spatie), API versioning, and the base database/API scaffolding.
+- **Phase 2 — LMS Core:** full teacher content management (courses → units →
+  lessons → videos), student enrollment, lesson progress, course/unit progress,
+  interactive roadmap, and teacher/student dashboard foundations.
+
+Exams, anti-cheat, competitions, leaderboards, subscriptions, payments,
+advanced analytics, AI features and video streaming/transcoding are
+intentionally **not** implemented yet.
 
 ---
 
@@ -26,8 +28,7 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-Set `DB_CONNECTION` in `.env` (default is SQLite). For SQLite the database file is
-created automatically when you run the migrations.
+Set `DB_CONNECTION` in `.env` (default is SQLite).
 
 ## Run migrations & seeders
 
@@ -38,9 +39,9 @@ php artisan migrate:fresh --seed
 The seeders create the `admin`, `teacher`, `student` roles, the full permission
 catalogue, and three **development-only** accounts:
 
-| Role    | Email               | Password |
-|---------|---------------------|----------|
-| Admin   | `admin@example.com` | `password` |
+| Role    | Email                 | Password   |
+|---------|-----------------------|------------|
+| Admin   | `admin@example.com`   | `password` |
 | Teacher | `teacher@example.com` | `password` |
 | Student | `student@example.com` | `password` |
 
@@ -64,28 +65,28 @@ The API is mounted under `/api/v1`.
 
 ```
 app/
-├── Actions/          → business operations (auth, course CRUD)
+├── Actions/           business operations (auth, course/unit/lesson/video
+│                      CRUD, enrollment, progress, roadmap)
 ├── Console/
-├── Enums/            → UserRole, CourseStatus, EnrollmentStatus
+├── Enums/             UserRole, CourseStatus, EnrollmentStatus,
+│                      RoadmapStatus, RoadmapLessonStatus
 ├── Events/
-├── Exceptions/       → API-specific exceptions
+├── Exceptions/        API-specific exceptions
 ├── Http/
-│   ├── Controllers/
-│   │   ├── Auth/     → AuthController
-│   │   └── Teacher/  → CourseController
-│   ├── Middleware/   → ForceJsonResponse
-│   ├── Requests/     → Form Requests (validation)
-│   └── Resources/    → API Resources
-├── Models/           → Course, Unit, Lesson, Video, Enrollment, LessonProgress
-├── Policies/         → server-side authorization
+│   ├── Controllers/   Auth/, Teacher/, Student/, public CourseController
+│   ├── Middleware/    ForceJsonResponse
+│   ├── Requests/      Form Requests (validation)
+│   └── Resources/     API Resources
+├── Models/            Course, Unit, Lesson, Video, Enrollment, LessonProgress
+├── Policies/          server-side authorization
 ├── Providers/
 ├── Repositories/
 ├── Services/
 ├── Notifications/
-└── Support/          → ApiResponse trait
+└── Support/           ApiResponse trait
 ```
 
-Controllers stay thin; business logic lives in `Actions`, validation in Form
+Controllers are thin; business logic lives in `Actions`, validation in Form
 Requests, responses in Resources, and authorization in Policies.
 
 ## Authentication
@@ -97,5 +98,34 @@ and never returned in responses.
 
 Roles & permissions via **Spatie Laravel Permission** (`admin` / `teacher` /
 `student`). Admins are granted all abilities through a `Gate::before` hook.
-Policies enforce ownership on the server for courses/units/lessons/videos and
-self-access for enrollments/progress.
+Policies enforce ownership on the server:
+
+- A teacher manages only their own courses (and their units/lessons/videos).
+- A student cannot create, update or delete courses.
+- A student accesses only the courses they are enrolled in.
+- A student records progress only for their own active enrollments.
+
+## API Documentation
+
+See [`docs/API.md`](docs/API.md) for the complete Phase 2 endpoint reference
+(method, URL, authentication, role/permission, request body, validation,
+response and possible errors).
+
+## Phase 1 scope (summary)
+
+- `/api/v1` versioning, JSON response envelope, centralized exception handling.
+- Sanctum register/login/logout/me.
+- Roles & permissions, Policies, Form Requests, API Resources.
+- Base migrations for courses, units, lessons, videos, enrollments,
+  lesson_progress, roles/permissions, personal access tokens.
+
+## Phase 2 scope (summary)
+
+- Teacher course CRUD + publish/unpublish.
+- Teacher unit / lesson / video CRUD + reorder + publish/unpublish.
+- Public course discovery (published only).
+- Student enrollment (duplicate-safe) and enrolled-course access.
+- Lesson progress tracking with 0–100 rules and automatic completion.
+- Course & unit progress calculation (computed, not stored).
+- Interactive course roadmap (per-lesson states).
+- Teacher & student dashboard foundations.

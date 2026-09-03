@@ -38,4 +38,9 @@ class Enrollment extends Model
     {
         return $this->belongsTo(Course::class);
     }
+
+    public function isActive(): bool
+    {
+        return $this->status === EnrollmentStatus::Active;
+    }
 }

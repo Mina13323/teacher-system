@@ -26,7 +26,8 @@ class CourseResource extends JsonResource
             'status' => $this->status?->value,
             'creator' => $this->whenLoaded('creator', fn () => new UserResource($this->creator)),
             'units_count' => $this->whenCounted('units'),
-            'units' => UnitResource::collection($this->whenLoaded('units')),
+            'lessons_count' => $this->whenCounted('lessons'),
+            'enrollments_count' => $this->whenCounted('enrollments'),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
