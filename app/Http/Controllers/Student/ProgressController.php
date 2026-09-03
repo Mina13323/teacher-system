@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Student;
 
 use App\Actions\Progress\UpdateLessonProgressAction;
 use App\Enums\EnrollmentStatus;
+use App\Exceptions\LessonNotAccessibleException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateLessonProgressRequest;
 use App\Http\Resources\LessonProgressResource;
@@ -84,7 +85,9 @@ class ProgressController extends Controller
             ->where('status', EnrollmentStatus::Active->value)
             ->exists();
 
-        abort_unless($enrolled, 403, 'You do not have access to this lesson.');
+        if (! $enrolled) {
+            throw new LessonNotAccessibleException();
+        }
     }
 
     private function assertLessonPublished(Lesson $lesson): void
