@@ -55,7 +55,9 @@ class CalculateExamResultAction
             'total_points' => $totalPoints,
             'earned_points' => $earnedPoints,
             'percentage' => $percentage,
-            'passed' => $attempt->exam->pass_percentage <= $percentage,
+            // Use the pass threshold frozen at attempt start, never the current
+            // (potentially changed) exam value.
+            'passed' => $attempt->pass_percentage <= $percentage,
         ];
     }
 }

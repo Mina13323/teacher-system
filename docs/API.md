@@ -164,8 +164,20 @@ grading, score and pass/fail.
   `submitted` | `expired`. `expires_at = started_at + duration_minutes`
   (backend wins).
 - **Snapshot** (exam_attempt_questions / exam_attempt_options) freezes the
-  question/option structure and order at attempt start, so later teacher edits
-  do not alter an in-progress attempt. Randomization happens once, at start.
+  question/option structure, content, order, points and correctness at attempt
+  start, so later teacher edits do not alter an in-progress attempt.
+  Randomization happens once, at start.
+
+> **Phase 3.1 — Immutability.** Exam attempts are immutable historical
+> representations of the exam configuration/content at the time the attempt was
+> created. A teacher may edit, reorder, change the correct answer or points, or
+> **delete** a live question/option without affecting an existing attempt's
+> snapshot, answers, or grading. The attempt snapshot is fully self-contained
+> (it stores its own `question_text`/`points`/`option_text`/`is_correct`), and
+> `exam_attempts.pass_percentage` freezes the pass threshold at start so pass/fail
+> never changes retroactively. Student answering is validated against the attempt
+> snapshot, never the live questions/options tables, so a mid-attempt deletion
+> by a teacher does not block the student.
 
 ## Teacher — Exam management
 

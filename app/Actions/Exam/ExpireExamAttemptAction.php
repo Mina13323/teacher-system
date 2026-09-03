@@ -15,6 +15,7 @@ class ExpireExamAttemptAction
     {
         if ($attempt->status->isInProgress() && $attempt->isExpired()) {
             $attempt->status = ExamAttemptStatus::Expired->value;
+            $attempt->active_key = null;
             $attempt->save();
         }
 

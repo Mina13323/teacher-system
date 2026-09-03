@@ -29,6 +29,9 @@ class ExamAttemptFactory extends Factory
             'score' => null,
             'percentage' => null,
             'status' => ExamAttemptStatus::InProgress->value,
+            // The pass threshold is normally frozen from the exam at start; a
+            // sane default keeps direct-factory attempts usable in tests.
+            'pass_percentage' => 50,
         ];
     }
 
@@ -40,6 +43,7 @@ class ExamAttemptFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => ExamAttemptStatus::Submitted->value,
             'submitted_at' => now(),
+            'active_key' => null,
         ]);
     }
 }

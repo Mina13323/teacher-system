@@ -30,9 +30,12 @@ class ExamAttemptDetailResource extends JsonResource
             'status' => $this->status?->value,
             'score' => $this->score,
             'percentage' => $this->percentage,
+            'pass_percentage' => $this->pass_percentage,
+            // pass/fail uses the attempt's frozen pass threshold, never the
+            // current exam config.
             'passed' => $this->when(
-                $this->percentage !== null && $this->exam !== null,
-                fn () => $this->percentage >= $this->exam->pass_percentage
+                $this->percentage !== null && $this->pass_percentage !== null,
+                fn () => $this->percentage >= $this->pass_percentage
             ),
             'started_at' => $this->started_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),

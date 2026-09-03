@@ -7,8 +7,16 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
 - **Phase 2 — LMS Core:** full teacher content management (courses → units →
   lessons → videos), student enrollment, lesson progress, course/unit progress,
   interactive roadmap, and teacher/student dashboard foundations.
+- **Phase 3 — Examination System:** teacher exam/question/option management and
+  publish validation; student exam discovery, attempt start, answering,
+  server-side grading, and submission. Attempts use a **frozen snapshot** so they
+  are immutable historical representations of the exam as it was at start.
+- **Phase 3.1 — Examination Hardening:** snapshot deletion integrity (teacher
+  question/option edits/deletions never corrupt existing attempts), frozen
+  pass-percentage per attempt, single-active-attempt DB constraint, and
+  regression tests.
 
-Exams, anti-cheat, competitions, leaderboards, subscriptions, payments,
+Anti-cheat, competitions, leaderboards, subscriptions, payments,
 advanced analytics, AI features and video streaming/transcoding are
 intentionally **not** implemented yet.
 

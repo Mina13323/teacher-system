@@ -25,7 +25,6 @@ class GradeExamAttemptAction
         $attempt->load([
             'attemptQuestions.attemptOptions',
             'answers',
-            'exam',
         ]);
 
         $result = $this->calculateResult->execute($attempt);
@@ -57,6 +56,7 @@ class GradeExamAttemptAction
             $attempt->score = $result['earned_points'];
             $attempt->percentage = $result['percentage'];
             $attempt->status = ExamAttemptStatus::Submitted->value;
+            $attempt->active_key = null;
             $attempt->submitted_at = $now;
 
             $attempt->save();

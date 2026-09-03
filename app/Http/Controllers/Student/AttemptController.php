@@ -10,7 +10,6 @@ use App\Http\Requests\SubmitExamAnswerRequest;
 use App\Http\Resources\ExamAttemptResource;
 use App\Http\Resources\ExamResultResource;
 use App\Models\ExamAttempt;
-use App\Models\Question;
 use Illuminate\Http\JsonResponse;
 
 class AttemptController extends Controller
@@ -35,9 +34,13 @@ class AttemptController extends Controller
 
     public function answer(SubmitExamAnswerRequest $request, ExamAttempt $attempt): JsonResponse
     {
-        $question = Question::query()->findOrFail($request->integer('question_id'));
-
-        $attempt = $this->saveAnswer->execute($attempt, $question, $request->integer('option_id'));
+        // The action validates question_id/option_id against the attempt's
+        // frozen snapshot, never the live questions/options tables.
+        $attempt = $this->saveAnswer->execute(
+            $attempt,
+            $request->integer('question_id'),
+            $request->integer('option_id')
+        );
 
         $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions']);
 

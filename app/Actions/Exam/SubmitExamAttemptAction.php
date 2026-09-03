@@ -31,6 +31,7 @@ class SubmitExamAttemptAction
 
         if ($fresh->status->isExpired() || $fresh->isExpired()) {
             $fresh->status = ExamAttemptStatus::Expired->value;
+            $fresh->active_key = null;
             $fresh->save();
 
             throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');

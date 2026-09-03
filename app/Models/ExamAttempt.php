@@ -23,6 +23,12 @@ class ExamAttempt extends Model
         'score',
         'percentage',
         'status',
+        // The exam's pass threshold frozen at attempt start, so later edits to
+        // the live exam do not retroactively change this attempt's pass/fail.
+        'pass_percentage',
+        // Internal single-active-attempt guard: `{student_id}:{exam_id}` while
+        // in progress, null otherwise. Only set within actions, never from input.
+        'active_key',
     ];
 
     protected function casts(): array
@@ -34,6 +40,7 @@ class ExamAttempt extends Model
             'expires_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',
+            'pass_percentage' => 'integer',
         ];
     }
 
