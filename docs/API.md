@@ -139,6 +139,126 @@ at 100%; otherwise `completed` is false and `completed_at` null.
 
 ---
 
+---
+
+# Phase 3 — Examination System
+
+Exam creation and management is teacher-only; taking exams is student-only.
+Only **published** exams in courses the student is actively **enrolled** in are
+discoverable. The backend is the source of truth for correct answers, timing,
+grading, score and pass/fail.
+
+> **Security:** Student-facing responses (exam listing, attempt view, result)
+> **never** expose `is_correct`, `correct_option`, or an answer key. Correctness
+> and grading data appear only in teacher/management endpoints.
+
+## Concepts
+
+- **Exam** belongs to a course + a teacher creator. Lifecycle: `draft` →
+  `published` → `archived`. Settings: `duration_minutes`, `pass_percentage`,
+  `max_attempts`, `shuffle_questions`, `shuffle_options`,
+  `show_result_immediately`.
+- **Question** belongs to an exam. Initial type is `single_choice` only.
+- **Option** belongs to a question and carries `is_correct` (teacher only).
+- **Exam attempt** belongs to an exam + a student. Lifecycle: `in_progress` →
+  `submitted` | `expired`. `expires_at = started_at + duration_minutes`
+  (backend wins).
+- **Snapshot** (exam_attempt_questions / exam_attempt_options) freezes the
+  question/option structure and order at attempt start, so later teacher edits
+  do not alter an in-progress attempt. Randomization happens once, at start.
+
+## Teacher — Exam management
+
+| Method | URL                                    | Auth | Role/Permission | Request body | Response |
+|--------|----------------------------------------|------|-----------------|--------------|----------|
+| GET    | `/teacher/courses/{course}/exams`      | Bearer | owns course / admin | —          | `ExamResource[]` |
+| POST   | `/teacher/courses/{course}/exams`      | Bearer | owns course + `exams.create` | `title, description?, duration_minutes?, pass_percentage?, max_attempts?, shuffle_questions?, shuffle_options?, show_result_immediately?` | `ExamResource` |
+| GET    | `/teacher/exams/{exam}`                | Bearer | owns exam / admin | —          | `ExamDetailResource` (with questions+options) |
+| PUT    | `/teacher/exams/{exam}`                | Bearer | owns exam + `exams.update` | same fields as create, all optional | `ExamResource` |
+| POST   | `/teacher/exams/{exam}/publish`        | Bearer | owns exam + `exams.update` | —          | `ExamResource` |
+| POST   | `/teacher/exams/{exam}/archive`        | Bearer | owns exam + `exams.update` | —          | `ExamResource` |
+| DELETE | `/teacher/exams/{exam}`                | Bearer | owns exam + `exams.delete` | —          | — |
+| GET    | `/teacher/exams/{exam}/attempts`       | Bearer | owns exam + `students.view` | —          | `ExamAttemptDetailResource[]` |
+| GET    | `/teacher/attempts/{attempt}`          | Bearer | owns the attempt's exam | —          | `ExamAttemptDetailResource` |
+
+**Create validation:** `title` required; `duration_minutes` 1–600;
+`pass_percentage` 0–100; `max_attempts` 1–100; booleans nullable.
+
+**Publish validation (422 with message on failure):** course valid, ≥ 1
+question, every question ≥ 2 options, `single_choice` has exactly one correct
+option, `duration_minutes > 0`, `0 ≤ pass_percentage ≤ 100`,
+`max_attempts ≥ 1`.
+
+## Teacher — Question management
+
+| Method | URL                                    | Auth | Role/Permission | Request body | Response |
+|--------|----------------------------------------|------|-----------------|--------------|----------|
+| GET    | `/teacher/exams/{exam}/questions`      | Bearer | owns exam / admin | —          | `QuestionResource[]` |
+| POST   | `/teacher/exams/{exam}/questions`      | Bearer | owns exam + `exams.update` | `question_text, type?, points?, position?` | `QuestionResource` |
+| GET    | `/teacher/questions/{question}`        | Bearer | owns exam / admin | —          | `QuestionResource` |
+| PUT    | `/teacher/questions/{question}`        | Bearer | owns exam + `exams.update` | same as create, all optional | `QuestionResource` |
+| DELETE | `/teacher/questions/{question}`        | Bearer | owns exam + `exams.delete` | —          | — |
+
+**Validation:** `type` must be `single_choice`; `points` 1–1000; `position` ≥ 1.
+
+## Teacher — Option management
+
+| Method | URL                                    | Auth | Role/Permission | Request body | Response |
+|--------|----------------------------------------|------|-----------------|--------------|----------|
+| GET    | `/teacher/questions/{question}/options`| Bearer | owns exam / admin | —          | `OptionResource[]` |
+| POST   | `/teacher/questions/{question}/options`| Bearer | owns exam + `exams.update` | `option_text, is_correct?, position?` | `OptionResource` |
+| PUT    | `/teacher/options/{option}`            | Bearer | owns exam + `exams.update` | same as create, all optional | `OptionResource` |
+| DELETE | `/teacher/options/{option}`            | Bearer | owns exam + `exams.delete` | —          | — |
+
+> `OptionResource` (teacher) exposes `is_correct`. It is used **only** in these
+> teacher endpoints.
+
+## Student — Exam discovery
+
+| Method | URL                                  | Auth | Role | Request body | Response |
+|--------|--------------------------------------|------|------|--------------|----------|
+| GET    | `/student/exams`                     | Bearer | enrolled + `student` | — | `StudentExamResource[]` |
+| GET    | `/student/exams/{exam}`              | Bearer | enrolled + `student` | — | `StudentExamDetailResource` (metadata + my_attempts; **no questions/answer key**) |
+| GET    | `/student/exams/{exam}/attempts`     | Bearer | enrolled + `student` | — | `[{ attempt_number, status, score, percentage, started_at, submitted_at }]` |
+| POST   | `/student/exams/{exam}/start`        | Bearer | enrolled + `student` | —          | `ExamAttemptResource` |
+
+**Start behavior:** validates published + enrollment + attempt limit; reuses an
+existing active attempt (no duplicate); otherwise creates one with
+`attempt_number`, `started_at`, `expires_at`, and freezes the snapshot with
+randomization applied once. Errors: 403 not accessible, 422 not published /
+limit reached.
+
+## Student — Attempt
+
+| Method | URL                                  | Auth | Role | Request body | Response |
+|--------|--------------------------------------|------|------|--------------|----------|
+| GET    | `/student/attempts/{attempt}`        | Bearer | owns attempt | — | `ExamAttemptResource` (ordered questions+options, timing, status; **no is_correct**) |
+| POST   | `/student/attempts/{attempt}/answers`| Bearer | owns attempt | `question_id, option_id` | `ExamAttemptResource` |
+| POST   | `/student/attempts/{attempt}/submit` | Bearer | owns attempt | —          | `ExamResultResource` if `show_result_immediately`, else `{ attempt_id, status }` |
+
+**Answer validation:** attempt must be `in_progress`; question must be in the
+attempt snapshot; option must belong to that question; attempt not expired
+(server-side). 422 on failure.
+
+**Submit:** grades server-side (score, percentage, pass/fail), then marks
+`submitted`. Idempotent — re-submitting a submitted attempt returns the existing
+result without re-grading. An expired attempt cannot be submitted (422) and is
+transitioned to `expired`. Errors use 403 / 422.
+
+---
+
+## Phase 3 status codes
+
+| Code | Meaning |
+|------|---------|
+| 200  | Success |
+| 201  | Created (exam, question, option, attempt start) |
+| 401  | Unauthenticated |
+| 403  | Unauthorized / not enrolled / not accessible |
+| 404  | Not found / exam not published for student |
+| 409  | Duplicate enrollment |
+| 422  | Validation failed / not publishable / attempt limit / invalid attempt state / expired |
+
 ## Status codes
 
 | Code | Meaning |

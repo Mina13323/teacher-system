@@ -47,6 +47,7 @@ class PermissionSeeder extends Seeder
         Role::findByName(UserRole::Teacher->value)->givePermissionTo([
             'courses.view', 'courses.create', 'courses.update', 'courses.delete',
             'lessons.view', 'lessons.create', 'lessons.update', 'lessons.delete',
+            'exams.view', 'exams.create', 'exams.update', 'exams.delete',
             'students.view',
             'reports.view',
         ]);

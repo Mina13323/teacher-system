@@ -3,12 +3,18 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\Student\DashboardController as StudentDashboardController;
+use App\Http\Controllers\Student\AttemptController as StudentAttemptController;
 use App\Http\Controllers\Student\EnrollmentController;
+use App\Http\Controllers\Student\ExamController as StudentExamController;
 use App\Http\Controllers\Student\ProgressController;
 use App\Http\Controllers\Student\RoadmapController;
+use App\Http\Controllers\Teacher\AttemptController as TeacherAttemptController;
 use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
 use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
+use App\Http\Controllers\Teacher\ExamController as TeacherExamController;
 use App\Http\Controllers\Teacher\LessonController as TeacherLessonController;
+use App\Http\Controllers\Teacher\OptionController as TeacherOptionController;
+use App\Http\Controllers\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Teacher\UnitController as TeacherUnitController;
 use App\Http\Controllers\Teacher\VideoController as TeacherVideoController;
 use Illuminate\Support\Facades\Route;
@@ -78,6 +84,29 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::patch('videos/{video}/publish', [TeacherVideoController::class, 'publish']);
     Route::patch('videos/{video}/unpublish', [TeacherVideoController::class, 'unpublish']);
     Route::delete('videos/{video}', [TeacherVideoController::class, 'destroy']);
+
+    // Exams (nested under a course) + question/option management
+    Route::get('courses/{course}/exams', [TeacherExamController::class, 'index']);
+    Route::post('courses/{course}/exams', [TeacherExamController::class, 'store']);
+    Route::get('exams/{exam}', [TeacherExamController::class, 'show']);
+    Route::put('exams/{exam}', [TeacherExamController::class, 'update']);
+    Route::post('exams/{exam}/publish', [TeacherExamController::class, 'publish']);
+    Route::post('exams/{exam}/archive', [TeacherExamController::class, 'archive']);
+    Route::delete('exams/{exam}', [TeacherExamController::class, 'destroy']);
+
+    Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
+    Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
+
+    Route::get('exams/{exam}/questions', [TeacherQuestionController::class, 'index']);
+    Route::post('exams/{exam}/questions', [TeacherQuestionController::class, 'store']);
+    Route::get('questions/{question}', [TeacherQuestionController::class, 'show']);
+    Route::put('questions/{question}', [TeacherQuestionController::class, 'update']);
+    Route::delete('questions/{question}', [TeacherQuestionController::class, 'destroy']);
+
+    Route::get('questions/{question}/options', [TeacherOptionController::class, 'index']);
+    Route::post('questions/{question}/options', [TeacherOptionController::class, 'store']);
+    Route::put('options/{option}', [TeacherOptionController::class, 'update']);
+    Route::delete('options/{option}', [TeacherOptionController::class, 'destroy']);
 });
 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
@@ -92,4 +121,14 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('progress', [ProgressController::class, 'index']);
     Route::get('lessons/{lesson}/progress', [ProgressController::class, 'show']);
     Route::put('lessons/{lesson}/progress', [ProgressController::class, 'store']);
+
+    // Exams: discovery, attempts, answering, submission
+    Route::get('exams', [StudentExamController::class, 'index']);
+    Route::get('exams/{exam}', [StudentExamController::class, 'show']);
+    Route::get('exams/{exam}/attempts', [StudentExamController::class, 'attempts']);
+    Route::post('exams/{exam}/start', [StudentExamController::class, 'start']);
+
+    Route::get('attempts/{attempt}', [StudentAttemptController::class, 'show']);
+    Route::post('attempts/{attempt}/answers', [StudentAttemptController::class, 'answer']);
+    Route::post('attempts/{attempt}/submit', [StudentAttemptController::class, 'submit']);
 });

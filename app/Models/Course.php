@@ -52,6 +52,11 @@ class Course extends Model
         return $this->hasMany(Enrollment::class);
     }
 
+    public function exams(): HasMany
+    {
+        return $this->hasMany(Exam::class);
+    }
+
     public function isOwnedBy(User $user): bool
     {
         return $this->created_by === $user->getKey();

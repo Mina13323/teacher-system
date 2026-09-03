@@ -1,0 +1,73 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\ExamAttemptStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class ExamAttempt extends Model
+{
+    /** @use HasFactory<\Database\Factories\ExamAttemptFactory> */
+    use HasFactory;
+
+    protected $fillable = [
+        'exam_id',
+        'student_id',
+        'attempt_number',
+        'started_at',
+        'submitted_at',
+        'expires_at',
+        'score',
+        'percentage',
+        'status',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'status' => ExamAttemptStatus::class,
+            'started_at' => 'datetime',
+            'submitted_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'score' => 'integer',
+            'percentage' => 'integer',
+        ];
+    }
+
+    public function exam(): BelongsTo
+    {
+        return $this->belongsTo(Exam::class);
+    }
+
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'student_id');
+    }
+
+    public function answers(): HasMany
+    {
+        return $this->hasMany(ExamAnswer::class);
+    }
+
+    public function attemptQuestions(): HasMany
+    {
+        return $this->hasMany(ExamAttemptQuestion::class)
+            ->orderBy('position');
+    }
+
+    public function isOwnedBy(User $user): bool
+    {
+        return $this->student_id === $user->getKey();
+    }
+
+    /**
+     * The backend is the source of truth for expiration.
+     */
+    public function isExpired(): bool
+    {
+        return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+}

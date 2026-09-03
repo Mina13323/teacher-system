@@ -1,8 +1,13 @@
 <?php
 
 use App\Exceptions\AccountDisabledException;
+use App\Exceptions\AttemptLimitReachedException;
 use App\Exceptions\CourseNotPublishedException;
 use App\Exceptions\DuplicateEnrollmentException;
+use App\Exceptions\ExamNotAccessibleException;
+use App\Exceptions\ExamNotPublishedException;
+use App\Exceptions\ExamNotReadyToPublishException;
+use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
 use App\Exceptions\LessonNotAccessibleException;
 use App\Http\Middleware\ForceJsonResponse;
@@ -114,6 +119,51 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 403);
+            }
+        });
+
+        $exceptions->render(function (ExamNotPublishedException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (ExamNotAccessibleException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 403);
+            }
+        });
+
+        $exceptions->render(function (AttemptLimitReachedException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (InvalidAttemptStateException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (ExamNotReadyToPublishException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
             }
         });
 
