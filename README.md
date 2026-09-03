@@ -20,6 +20,11 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
   integrity status, teacher review with an immutable audit trail, and dedicated
   rate limiting. Privacy-conscious — it records events and evidence, never
   arbitrary personal data.
+- **Phase 4.1 — Integrity Hardening:** the `MULTIPLE_SUSPICIOUS_EVENTS`
+  condition is now **server-derived** from recorded risk-bearing events rather
+  than a client-submittable summary event. It adds no synthetic risk (no
+  double-counting of the same evidence), and a student can never manufacture it
+  or inflate the risk score with it.
 
 Webcam/microphone/screen/keylogging/browser-fingerprinting/GPS monitoring, AI
 cheating detection, competitions, leaderboards, subscriptions, payments,
