@@ -15,8 +15,14 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
   question/option edits/deletions never corrupt existing attempts), frozen
   pass-percentage per attempt, single-active-attempt DB constraint, and
   regression tests.
+- **Phase 4 — Anti-Cheat & Exam Integrity:** per-exam integrity configuration,
+  student integrity-event recording, deterministic risk scoring, attempt
+  integrity status, teacher review with an immutable audit trail, and dedicated
+  rate limiting. Privacy-conscious — it records events and evidence, never
+  arbitrary personal data.
 
-Anti-cheat, competitions, leaderboards, subscriptions, payments,
+Webcam/microphone/screen/keylogging/browser-fingerprinting/GPS monitoring, AI
+cheating detection, competitions, leaderboards, subscriptions, payments,
 advanced analytics, AI features and video streaming/transcoding are
 intentionally **not** implemented yet.
 

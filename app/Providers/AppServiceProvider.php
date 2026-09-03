@@ -49,6 +49,14 @@ class AppServiceProvider extends ServiceProvider
                 ->by($request->user()?->id ?: $request->ip());
         });
 
+        // Dedicated rate limiter for the student integrity-event endpoint. It
+        // supports legitimate browser visibility/focus events while preventing a
+        // malicious client from flooding the endpoint.
+        RateLimiter::for('integrity-events', function (Request $request) {
+            return Limit::perMinute((int) config('integrity.rate_limit.per_minute', 60))
+                ->by($request->route('attempt')?->id ?: $request->user()?->id ?: $request->ip());
+        });
+
         // Admins are allowed every capability via a Gate "before" hook.
         Gate::before(function ($user, $ability) {
             if ($user) {

@@ -6,10 +6,12 @@ use App\Http\Controllers\Student\DashboardController as StudentDashboardControll
 use App\Http\Controllers\Student\AttemptController as StudentAttemptController;
 use App\Http\Controllers\Student\EnrollmentController;
 use App\Http\Controllers\Student\ExamController as StudentExamController;
+use App\Http\Controllers\Student\IntegrityController as StudentIntegrityController;
 use App\Http\Controllers\Student\ProgressController;
 use App\Http\Controllers\Student\RoadmapController;
 use App\Http\Controllers\Teacher\AttemptController as TeacherAttemptController;
 use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
+use App\Http\Controllers\Teacher\IntegrityController as TeacherIntegrityController;
 use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
 use App\Http\Controllers\Teacher\ExamController as TeacherExamController;
 use App\Http\Controllers\Teacher\LessonController as TeacherLessonController;
@@ -97,6 +99,13 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
 
+    // Exam integrity configuration + attempt integrity review
+    Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
+    Route::put('exams/{exam}/integrity', [TeacherIntegrityController::class, 'updateSettings']);
+    Route::get('attempts/{attempt}/integrity', [TeacherIntegrityController::class, 'showAttemptIntegrity']);
+    Route::get('attempts/{attempt}/integrity-events', [TeacherIntegrityController::class, 'indexAttemptEvents']);
+    Route::post('attempts/{attempt}/integrity/review', [TeacherIntegrityController::class, 'review']);
+
     Route::get('exams/{exam}/questions', [TeacherQuestionController::class, 'index']);
     Route::post('exams/{exam}/questions', [TeacherQuestionController::class, 'store']);
     Route::get('questions/{question}', [TeacherQuestionController::class, 'show']);
@@ -131,4 +140,8 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('attempts/{attempt}', [StudentAttemptController::class, 'show']);
     Route::post('attempts/{attempt}/answers', [StudentAttemptController::class, 'answer']);
     Route::post('attempts/{attempt}/submit', [StudentAttemptController::class, 'submit']);
+
+    // Integrity event recording (rate limited)
+    Route::post('attempts/{attempt}/integrity-events', [StudentIntegrityController::class, 'store'])
+        ->middleware('throttle:integrity-events');
 });

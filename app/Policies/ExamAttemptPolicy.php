@@ -43,6 +43,30 @@ class ExamAttemptPolicy
     }
 
     /**
+     * A student may record integrity events only for their own attempt.
+     */
+    public function recordEvent(User $user, ExamAttempt $attempt): bool
+    {
+        return $attempt->student_id === $user->getKey();
+    }
+
+    /**
+     * Teacher-only visibility of integrity evidence (risk score, events, reviews).
+     */
+    public function viewIntegrity(User $user, ExamAttempt $attempt): bool
+    {
+        return $this->canManageExam($user, $attempt);
+    }
+
+    /**
+     * Teacher-only review of an attempt's integrity evidence.
+     */
+    public function review(User $user, ExamAttempt $attempt): bool
+    {
+        return $this->canManageExam($user, $attempt);
+    }
+
+    /**
      * Teacher-only visibility of attempt detail.
      */
     public function viewAny(User $user): bool

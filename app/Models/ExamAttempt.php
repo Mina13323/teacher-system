@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use App\Enums\ExamAttemptStatus;
+use App\Enums\IntegrityStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ExamAttempt extends Model
 {
@@ -29,18 +31,23 @@ class ExamAttempt extends Model
         // Internal single-active-attempt guard: `{student_id}:{exam_id}` while
         // in progress, null otherwise. Only set within actions, never from input.
         'active_key',
+        // Server-controlled integrity signals; never writable from client input.
+        'integrity_status',
+        'risk_score',
     ];
 
     protected function casts(): array
     {
         return [
             'status' => ExamAttemptStatus::class,
+            'integrity_status' => IntegrityStatus::class,
             'started_at' => 'datetime',
             'submitted_at' => 'datetime',
             'expires_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',
             'pass_percentage' => 'integer',
+            'risk_score' => 'integer',
         ];
     }
 
@@ -63,6 +70,21 @@ class ExamAttempt extends Model
     {
         return $this->hasMany(ExamAttemptQuestion::class)
             ->orderBy('position');
+    }
+
+    public function integritySetting(): HasOne
+    {
+        return $this->hasOne(ExamAttemptIntegritySetting::class, 'attempt_id');
+    }
+
+    public function integrityEvents(): HasMany
+    {
+        return $this->hasMany(ExamIntegrityEvent::class);
+    }
+
+    public function integrityReviews(): HasMany
+    {
+        return $this->hasMany(ExamIntegrityReview::class);
     }
 
     public function isOwnedBy(User $user): bool

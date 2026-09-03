@@ -271,6 +271,100 @@ transitioned to `expired`. Errors use 403 / 422.
 | 409  | Duplicate enrollment |
 | 422  | Validation failed / not publishable / attempt limit / invalid attempt state / expired |
 
+---
+
+# Phase 4 — Anti-Cheat & Exam Integrity
+
+> **Anti-cheat signals are indicators of suspicious activity, NOT definitive
+> proof of cheating.** The system records evidence, calculates a risk score, and
+> flags attempts for a teacher/admin to review. It never auto-fails, auto-submits
+> or bans a student, and the final academic decision is a human decision.
+
+## Concepts
+
+- **Integrity settings** (per exam): `fullscreen_required`, `prevent_copy`,
+  `prevent_paste`, `prevent_context_menu`, `detect_tab_switch`,
+  `detect_window_blur`, `detect_keyboard_shortcuts`.
+- **Frozen per-attempt settings:** the exam's integrity settings are frozen onto
+  each attempt (`exam_attempt_integrity_settings`) when the attempt starts. A
+  teacher changing the live exam later never changes the rules of an existing
+  attempt. `New Attempt → Current Config; Existing Attempt → Frozen Config`.
+- **Integrity events** (`exam_integrity_events`): server-scored evidence with
+  `event_type`, `occurred_at`, `severity`, `risk_points`, `metadata`.
+- **Risk score & integrity status** are stored on the attempt and are always
+  server-controlled (`normal` | `monitoring` | `flagged` | `reviewed` |
+  `cleared`).
+- **Reviews** (`exam_integrity_reviews`): immutable teacher decisions
+  (`CLEARED`/`FLAGGED`) with a note and reviewer, forming an audit trail.
+
+Severity/risk points are **never** accepted from the client — the backend
+assigns them from a central config (`config/integrity.php`).
+
+## Teacher — Integrity configuration
+
+| Method | URL                                | Auth | Role/Permission | Request body | Response |
+|--------|------------------------------------|------|-----------------|--------------|----------|
+| GET    | `/teacher/exams/{exam}/integrity`  | Bearer | owns exam / admin | — | `{ exam_id, configured, settings }` |
+| PUT    | `/teacher/exams/{exam}/integrity`  | Bearer | owns exam + `exams.update` | any of the 7 boolean flags below | `ExamIntegritySettingsResource` |
+
+**Settings fields:** `fullscreen_required`, `prevent_copy`, `prevent_paste`,
+`prevent_context_menu`, `detect_tab_switch`, `detect_window_blur`,
+`detect_keyboard_shortcuts` — each `boolean`, all optional (partial updates
+allowed). A 403 is returned if the teacher does not own the exam.
+
+## Teacher — Attempt integrity & review
+
+| Method | URL                                             | Auth | Role | Response |
+|--------|-------------------------------------------------|------|------|----------|
+| GET    | `/teacher/attempts/{attempt}/integrity`         | Bearer | teacher manages exam | `ExamAttemptIntegrityResource` (student, exam, attempt, `integrity_status`, `risk_score`, `event_count`, `events`, frozen settings, reviews) |
+| GET    | `/teacher/attempts/{attempt}/integrity-events`  | Bearer | teacher manages exam | `IntegrityEventResource[]` |
+| POST   | `/teacher/attempts/{attempt}/integrity/review`  | Bearer | teacher manages exam | `{ decision, note? }` → `IntegrityReviewResource` |
+
+**Review body:** `decision` required (`CLEARED` or `FLAGGED`), `note` optional
+string. `CLEARED` sets the attempt status to `cleared`; `FLAGGED` sets it to
+`flagged`. Each review inserts a new immutable audit record; historical reviews
+are never overwritten.
+
+## Student — Integrity event recording
+
+| Method | URL                                          | Auth | Role | Request body | Response |
+|--------|----------------------------------------------|------|------|--------------|----------|
+| POST   | `/student/attempts/{attempt}/integrity-events` | Bearer | owns attempt | `event_type, occurred_at?, metadata?` | `{ recorded, deduplicated }` |
+
+**Request:** `event_type` required (one of `TAB_SWITCH`, `WINDOW_BLUR`,
+`WINDOW_FOCUS`, `FULLSCREEN_ENTER`, `FULLSCREEN_EXIT`, `COPY_ATTEMPT`,
+`PASTE_ATTEMPT`, `CUT_ATTEMPT`, `CONTEXT_MENU_ATTEMPT`, `KEYBOARD_SHORTCUT`,
+`MULTIPLE_SUSPICIOUS_EVENTS`); `occurred_at` optional ISO timestamp (validated to
+a reasonable range — client timestamps are untrusted); `metadata` optional
+object of simple strings (e.g. `{"visibility_state":"hidden"}`), **never**
+clipboard contents, keystrokes, or arbitrary payloads.
+
+**Behavior:** only accepted for the student's own `in_progress`, non-expired
+attempt. Severity and risk points are assigned server-side. If the corresponding
+protection is disabled the event is recorded as ignored (0 risk). Repeated
+identical events within a short window are deduplicated (the first contributes
+risk, later ones report `deduplicated: true` without being stored).
+
+**Rate limiting:** this endpoint is limited to **60 events per minute per user**
+(`throttle:integrity-events`).
+
+**Frontend integration contract:** hidden → `TAB_SWITCH`; visible → `WINDOW_FOCUS`;
+blur → `WINDOW_BLUR`; fullscreen exit → `FULLSCREEN_EXIT`; copy → `COPY_ATTEMPT`;
+paste → `PASTE_ATTEMPT`; context menu → `CONTEXT_MENU_ATTEMPT`; recognized
+shortcut → `KEYBOARD_SHORTCUT`. The backend remains authoritative, and the exam
+experience does not depend on this endpoint being reachable (events may be
+queued/retried client-side). Failure of the endpoint does not block the exam.
+
+## Phase 4 status codes
+
+| Code | Meaning |
+|------|---------|
+| 200  | Success |
+| 201  | Event recorded / review recorded |
+| 401  | Unauthenticated |
+| 403  | Unauthorized / not the attempt owner / not the managing teacher |
+| 422  | Invalid event type / timestamp, attempt not active, expired, submitted |
+
 ## Status codes
 
 | Code | Meaning |

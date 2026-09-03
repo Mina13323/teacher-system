@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Exam extends Model
 {
@@ -59,6 +60,11 @@ class Exam extends Model
     public function attempts(): HasMany
     {
         return $this->hasMany(ExamAttempt::class);
+    }
+
+    public function integritySetting(): HasOne
+    {
+        return $this->hasOne(ExamIntegritySetting::class, 'exam_id');
     }
 
     public function isOwnedBy(User $user): bool

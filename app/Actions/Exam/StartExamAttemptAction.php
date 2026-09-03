@@ -6,6 +6,7 @@ use App\Enums\ExamAttemptStatus;
 use App\Exceptions\AttemptLimitReachedException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
+use App\Actions\Integrity\CreateAttemptIntegritySettingsAction;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\User;
@@ -38,6 +39,7 @@ class StartExamAttemptAction
 {
     public function __construct(
         private readonly BuildAttemptSnapshotAction $buildSnapshot,
+        private readonly CreateAttemptIntegritySettingsAction $createIntegritySettings,
         private readonly EnrollmentService $enrollments,
     ) {
     }
@@ -99,6 +101,10 @@ class StartExamAttemptAction
                 ]);
 
                 $this->buildSnapshot->execute($attempt, $exam);
+
+                // Freeze the exam's integrity configuration onto this attempt so
+                // later teacher changes never alter the rules of this attempt.
+                $this->createIntegritySettings->execute($attempt, $exam);
 
                 return $attempt->fresh();
             });
