@@ -99,4 +99,15 @@ class ExamAttempt extends Model
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
     }
+
+    /**
+     * Server-derived "multiple suspicious events" condition. This requires the
+     * integrity events relation to be loaded and adds NO synthetic risk; it is
+     * informational only.
+     */
+    public function isMultipleSuspicious(): bool
+    {
+        return app(\App\Services\Integrity\IntegrityRiskConfig::class)
+            ->isMultipleSuspicious($this->integrityEvents);
+    }
 }

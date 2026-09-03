@@ -296,9 +296,15 @@ transitioned to `expired`. Errors use 403 / 422.
   `cleared`).
 - **Reviews** (`exam_integrity_reviews`): immutable teacher decisions
   (`CLEARED`/`FLAGGED`) with a note and reviewer, forming an audit trail.
+- **Aggregate condition** (`multiple_suspicious_events`): a **server-derived**
+  state computed from the distinct risk-bearing event types actually recorded.
+  It is exposed to teachers on the attempt integrity response and **never** adds
+  extra risk or a synthetic event row.
 
 Severity/risk points are **never** accepted from the client — the backend
-assigns them from a central config (`config/integrity.php`).
+assigns them from a central config (`config/integrity.php`). The aggregate
+`MULTIPLE_SUSPICIOUS_EVENTS` condition is likewise **never** client-submittable;
+it is derived server-side so the same evidence is never double-counted.
 
 ## Teacher — Integrity configuration
 
@@ -316,7 +322,7 @@ allowed). A 403 is returned if the teacher does not own the exam.
 
 | Method | URL                                             | Auth | Role | Response |
 |--------|-------------------------------------------------|------|------|----------|
-| GET    | `/teacher/attempts/{attempt}/integrity`         | Bearer | teacher manages exam | `ExamAttemptIntegrityResource` (student, exam, attempt, `integrity_status`, `risk_score`, `event_count`, `events`, frozen settings, reviews) |
+| GET    | `/teacher/attempts/{attempt}/integrity`         | Bearer | teacher manages exam | `ExamAttemptIntegrityResource` (student, exam, attempt, `integrity_status`, `risk_score`, `multiple_suspicious_events`, `event_count`, `events`, frozen settings, reviews) |
 | GET    | `/teacher/attempts/{attempt}/integrity-events`  | Bearer | teacher manages exam | `IntegrityEventResource[]` |
 | POST   | `/teacher/attempts/{attempt}/integrity/review`  | Bearer | teacher manages exam | `{ decision, note? }` → `IntegrityReviewResource` |
 
@@ -331,13 +337,19 @@ are never overwritten.
 |--------|----------------------------------------------|------|------|--------------|----------|
 | POST   | `/student/attempts/{attempt}/integrity-events` | Bearer | owns attempt | `event_type, occurred_at?, metadata?` | `{ recorded, deduplicated }` |
 
-**Request:** `event_type` required (one of `TAB_SWITCH`, `WINDOW_BLUR`,
-`WINDOW_FOCUS`, `FULLSCREEN_ENTER`, `FULLSCREEN_EXIT`, `COPY_ATTEMPT`,
-`PASTE_ATTEMPT`, `CUT_ATTEMPT`, `CONTEXT_MENU_ATTEMPT`, `KEYBOARD_SHORTCUT`,
-`MULTIPLE_SUSPICIOUS_EVENTS`); `occurred_at` optional ISO timestamp (validated to
-a reasonable range — client timestamps are untrusted); `metadata` optional
-object of simple strings (e.g. `{"visibility_state":"hidden"}`), **never**
-clipboard contents, keystrokes, or arbitrary payloads.
+**Request:** `event_type` required (one of the client-reportable,
+browser-observable types: `TAB_SWITCH`, `WINDOW_BLUR`, `WINDOW_FOCUS`,
+`FULLSCREEN_ENTER`, `FULLSCREEN_EXIT`, `COPY_ATTEMPT`, `PASTE_ATTEMPT`,
+`CUT_ATTEMPT`, `CONTEXT_MENU_ATTEMPT`, `KEYBOARD_SHORTCUT`);
+`occurred_at` optional ISO timestamp (validated to a reasonable range — client
+timestamps are untrusted); `metadata` optional object of simple strings (e.g.
+`{"visibility_state":"hidden"}`), **never** clipboard contents, keystrokes, or
+arbitrary payloads.
+
+> **`MULTIPLE_SUSPICIOUS_EVENTS` is rejected here (422).** It is a
+> server-derived aggregate condition, not a valid client submission. The backend
+> computes it from the recorded risk-bearing events and exposes it to teachers; a
+> student can never manufacture it or inflate the risk score with it.
 
 **Behavior:** only accepted for the student's own `in_progress`, non-expired
 attempt. Severity and risk points are assigned server-side. If the corresponding

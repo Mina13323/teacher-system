@@ -42,6 +42,13 @@ class RecordIntegrityEventAction
      */
     public function execute(ExamAttempt $attempt, IntegrityEventType $type, ?Carbon $occurredAt, array $metadata = []): array
     {
+        // Defense in depth: the client may only submit browser-observable event
+        // types. The aggregate MULTIPLE_SUSPICIOUS_EVENTS condition is derived
+        // server-side and is never a valid client submission.
+        if (! $type->isClientReportable()) {
+            throw new InvalidAttemptStateException('This event type must be derived server-side.');
+        }
+
         if (! $attempt->status->isInProgress() || $attempt->isExpired()) {
             throw new InvalidAttemptStateException('Integrity events can only be recorded for an active attempt.');
         }

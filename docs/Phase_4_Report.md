@@ -1,5 +1,23 @@
 # Phase 4 — Anti-Cheat & Exam Integrity: Final Report
 
+## PHASE 4.1 — Integrity Hardening (Amendment)
+
+This amendment removes the client-controlled `MULTIPLE_SUSPICIOUS_EVENTS` summary
+event. The aggregate "multiple suspicious events" condition is now a
+**server-derived** state computed from the recorded risk-bearing events, and is
+never a valid client submission. No Phase 5 work was started.
+
+- **Client summary event removed/rejected:** `POST .../integrity-events` now
+  rejects `MULTIPLE_SUSPICIOUS_EVENTS` (422) at validation and in the action.
+  Only browser-observable event types are client-reportable
+  (`IntegrityEventType::clientReportable()`).
+- **Server derivation:** `EvaluateAttemptRiskAction` computes a derived
+  `multiple_suspicious_events` boolean from the distinct, risk-bearing event
+  types actually recorded, and exposes it on the teacher integrity response.
+- **No double counting:** the derived condition is informational only — it does
+  **not** add any synthetic risk or event row. `TAB_SWITCH(+2) + COPY(+2) +
+  FULLSCREEN_EXIT(+2) = 6` (flagged), never `6 + 3`.
+
 ## PHASE
 Phase 4 — Anti-Cheat & Exam Integrity System. A privacy-conscious
 integrity layer on top of the existing Examination System (Phases 1, 2, 3, 3.1).
@@ -22,7 +40,8 @@ system. No Phase 5 work was started.
 - **Integrity event logging** (`exam_integrity_events`) with extensible
   `IntegrityEventType` enum (TAB_SWITCH, WINDOW_BLUR, WINDOW_FOCUS,
   FULLSCREEN_ENTER/EXIT, COPY/PASTE/CUT_ATTEMPT, CONTEXT_MENU_ATTEMPT,
-  KEYBOARD_SHORTCUT, MULTIPLE_SUSPICIOUS_EVENTS).
+  KEYBOARD_SHORTCUT, and the server-derived MULTIPLE_SUSPICIOUS_EVENTS which is
+  never client-submittable).
 - **Privacy-conscious metadata** — only simple strings such as
   `{"visibility_state":"hidden"}`, `{"shortcut":"CTRL+C"}`,
   `{"fullscreen":false}`. Clipboard contents, typed text, keystroke streams,
@@ -84,12 +103,17 @@ destructive cascades were introduced.
 ## RISK MODEL
 Baseline risk points (centralized, not magic numbers): WINDOW_BLUR +1,
 TAB_SWITCH +2, FULLSCREEN_EXIT +2, COPY/PASTE/CUT_ATTEMPT +2,
-CONTEXT_MENU_ATTEMPT +1, KEYBOARD_SHORTCUT +2, MULTIPLE_SUSPICIOUS_EVENTS +3,
-WINDOW_FOCUS +0, FULLSCREEN_ENTER +0.
+CONTEXT_MENU_ATTEMPT +1, KEYBOARD_SHORTCUT +2, WINDOW_FOCUS +0,
+FULLSCREEN_ENTER +0.
+
+`MULTIPLE_SUSPICIOUS_EVENTS` is **not** a risk-scored event type — it is a
+server-derived condition computed from the recorded risk-bearing events and adds
+no synthetic risk (so the same evidence is never double-counted).
 
 Thresholds: risk >= `flagged` (6) → `flagged`; risk >= `monitoring` (3) →
 `monitoring`; otherwise `normal`. `EvaluateAttemptRiskAction` produces a
-deterministic `{ risk_score, integrity_status }` from the recorded events.
+deterministic `{ risk_score, integrity_status, multiple_suspicious_events }` from
+the recorded events.
 
 ## INTEGRITY STATUS
 Automatic: `normal` / `monitoring` / `flagged`. Teacher review sets `cleared`
@@ -148,6 +172,9 @@ Full request/response/validation documentation is in `docs/API.md`.
 - `IntegrityReviewTest` — teacher review, decision recording, status updates,
   audit-history preservation, teacher evidence endpoint.
 - `IntegrityPrivacyTest` — student resources do not expose risk/severity/review.
+- `IntegrityMultipleSuspiciousTest` (Phase 4.1) — client cannot submit the
+  synthetic summary event, server derives suspicious state from individual
+  events, and no double-counting of the same evidence.
 
 ## FULL TEST RESULT
 ⚠️ **PHP/Composer are not installed in this sandbox** (`php: command not found`),
@@ -166,8 +193,10 @@ confirm no regressions.
   to sweep expired attempts or recompute risk between event arrivals.
 - `show_result_immediately` and the live exam's other settings are not frozen
   here (only integrity config and pass % are frozen).
-- `MULTIPLE_SUSPICIOUS_EVENTS` is an accepted summary event type the client may
-  report; it is not automatically synthesized server-side.
+- The aggregate `MULTIPLE_SUSPICIOUS_EVENTS` condition is derived server-side
+  from recorded risk-bearing events and is exposed to teachers on the attempt
+  integrity response; it is never a client-submittable event and never adds
+  risk.
 - The deduplication window and rate limit are fixed constants in config; no
   per-exam override is provided.
 - Students are not shown their integrity status (no explicit product requirement;

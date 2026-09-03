@@ -30,6 +30,13 @@ class ExamAttemptIntegrityResource extends JsonResource
             'status' => $this->status?->value,
             'integrity_status' => $this->integrity_status?->value,
             'risk_score' => $this->risk_score,
+            // Server-derived condition (never submitted by the client). It is
+            // computed from the recorded risk-bearing events and does NOT add
+            // any synthetic risk, so the same evidence is never double-counted.
+            'multiple_suspicious_events' => $this->when(
+                $this->relationLoaded('integrityEvents'),
+                fn () => $this->isMultipleSuspicious()
+            ),
             'event_count' => $this->when(
                 $this->relationLoaded('integrityEvents'),
                 fn () => $this->integrityEvents->count()

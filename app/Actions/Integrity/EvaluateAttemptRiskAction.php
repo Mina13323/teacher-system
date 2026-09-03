@@ -14,7 +14,12 @@ use App\Services\Integrity\IntegrityRiskConfig;
  * status is derived from that total using the configured thresholds. The result
  * is fully traceable to the events that produced it.
  *
- * @return array{risk_score: int, integrity_status: IntegrityStatus}
+ * The `multiple_suspicious_events` flag is a server-derived CONDITION, not an
+ * event. It is computed from the distinct risk-bearing event types that were
+ * actually recorded and does NOT add any synthetic risk, so there is never
+ * double-counting.
+ *
+ * @return array{risk_score: int, integrity_status: IntegrityStatus, multiple_suspicious_events: bool}
  */
 class EvaluateAttemptRiskAction
 {
@@ -25,11 +30,13 @@ class EvaluateAttemptRiskAction
 
     public function execute(ExamAttempt $attempt): array
     {
-        $riskScore = (int) $attempt->integrityEvents()->sum('risk_points');
+        $events = $attempt->integrityEvents()->get();
+        $riskScore = (int) $events->sum('risk_points');
 
         return [
             'risk_score' => $riskScore,
             'integrity_status' => $this->riskConfig->statusFor($riskScore),
+            'multiple_suspicious_events' => $this->riskConfig->isMultipleSuspicious($events),
         ];
     }
 }

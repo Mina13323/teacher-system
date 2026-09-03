@@ -36,8 +36,11 @@ return [
         'CUT_ATTEMPT' => 2,
         'CONTEXT_MENU_ATTEMPT' => 1,
         'KEYBOARD_SHORTCUT' => 2,
-        'MULTIPLE_SUSPICIOUS_EVENTS' => 3,
         'WINDOW_FOCUS' => 0,
+        // NOTE: MULTIPLE_SUSPICIOUS_EVENTS is intentionally absent here. It is a
+        // server-derived CONDITION, not a client-submittable, risk-scored event.
+        // Adding it here would allow double-counting (individual event risk plus
+        // a synthetic summary of the same evidence), which the design forbids.
     ],
 
     /*
@@ -61,7 +64,6 @@ return [
         'CUT_ATTEMPT' => 'medium',
         'CONTEXT_MENU_ATTEMPT' => 'low',
         'KEYBOARD_SHORTCUT' => 'medium',
-        'MULTIPLE_SUSPICIOUS_EVENTS' => 'high',
     ],
 
     /*
@@ -80,6 +82,19 @@ return [
         'monitoring' => 3,
         'flagged' => 6,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Multiple-suspicious-events derivation
+    |--------------------------------------------------------------------------
+    |
+    | An attempt is treated as "multiple suspicious events" when at least this
+    | many distinct, risk-bearing event types have been recorded. This is a
+    | server-derived CONDITION only — it does NOT add any synthetic risk, so the
+    | same evidence is never double-counted.
+    |
+    */
+    'multiple_suspicious_min_event_types' => 2,
 
     /*
     |--------------------------------------------------------------------------
@@ -124,7 +139,8 @@ return [
         'CUT_ATTEMPT' => 'prevent_copy',
         'CONTEXT_MENU_ATTEMPT' => 'prevent_context_menu',
         'KEYBOARD_SHORTCUT' => 'detect_keyboard_shortcuts',
-        'MULTIPLE_SUSPICIOUS_EVENTS' => null,
+        // MULTIPLE_SUSPICIOUS_EVENTS is server-derived and not client-submittable,
+        // so it has no gating setting. It is never recorded as an event row.
     ],
 
     /*

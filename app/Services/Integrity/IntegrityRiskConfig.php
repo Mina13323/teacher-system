@@ -5,6 +5,7 @@ namespace App\Services\Integrity;
 use App\Enums\IntegrityEventType;
 use App\Enums\IntegritySeverity;
 use App\Enums\IntegrityStatus;
+use Illuminate\Support\Collection;
 
 /**
  * Reads the central integrity configuration and exposes the deterministic risk
@@ -79,6 +80,36 @@ class IntegrityRiskConfig
     public function deduplicationWindowSeconds(): int
     {
         return max(1, (int) config('integrity.dedup_window_seconds', 5));
+    }
+
+    /**
+     * The minimum number of distinct risk-bearing event types required for an
+     * attempt to be treated as "multiple suspicious events".
+     */
+    public function multipleSuspiciousMinEventTypes(): int
+    {
+        return max(1, (int) config('integrity.multiple_suspicious_min_event_types', 2));
+    }
+
+    /**
+     * Determines whether an attempt exhibits a server-derived "multiple
+     * suspicious events" condition from its recorded, risk-bearing events. This
+     * is informational only — it does NOT add synthetic risk. The attempt's risk
+     * score already reflects each individual event, so this is never a duplicate
+     * or bonus score.
+     *
+     * @param  Collection<int, \App\Models\ExamIntegrityEvent>  $events
+     */
+    public function isMultipleSuspicious(Collection $events): bool
+    {
+        $distinctRiskBearingTypes = $events
+            ->where('risk_points', '>', 0)
+            ->pluck('event_type')
+            ->reject(fn ($type) => $type === null)
+            ->unique()
+            ->count();
+
+        return $distinctRiskBearingTypes >= $this->multipleSuspiciousMinEventTypes();
     }
 
     /**
