@@ -252,7 +252,7 @@ Audited for:
 ⚠️ **PHP/Composer are not installed in this sandbox** (`php: command not found`),
 so `php artisan test`, `migrate:fresh --seed`, and `route:list` could **not** be
 executed here. Verification was done statically via a PHP AST parser:
-- **Syntax:** 303 PHP files, **0 parse errors**
+- **Syntax:** 304 PHP files, **0 parse errors**
 - **Refcheck:** 227 referenced `App/Tests` classes, **0 missing**
 
 The new migrations (RESTRICT FK on `competitions.exam_id`, unique participant and
