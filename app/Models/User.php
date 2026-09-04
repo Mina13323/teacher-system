@@ -108,4 +108,35 @@ class User extends Authenticatable
     {
         return (bool) $this->is_active;
     }
+
+    /**
+     * A safe, public-facing display name used on leaderboards and anywhere a
+     * user's identity is shown to peers. Never exposes an email address or an
+     * internal identifier.
+     *
+     * Examples:
+     *  - "Mina W." from "Mina Walid"
+     *  - "Mina" from a single-word name
+     */
+    public function publicDisplayName(): string
+    {
+        $name = trim((string) $this->name);
+
+        if ($name === '') {
+            return 'Participant';
+        }
+
+        $parts = preg_split('/\s+/', $name);
+
+        if (count($parts) === 1) {
+            return $parts[0];
+        }
+
+        $first = $parts[0];
+        $initial = mb_substr($parts[1], 0, 1);
+
+        return $initial !== ''
+            ? $first.' '.mb_strtoupper($initial).'.'
+            : $first;
+    }
 }

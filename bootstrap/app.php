@@ -2,7 +2,11 @@
 
 use App\Exceptions\AccountDisabledException;
 use App\Exceptions\AttemptLimitReachedException;
+use App\Exceptions\CompetitionCapacityFullException;
+use App\Exceptions\CompetitionNotAccessibleException;
 use App\Exceptions\CourseNotPublishedException;
+use App\Exceptions\DuplicateCompetitionParticipationException;
+use App\Exceptions\InvalidCompetitionStateException;
 use App\Exceptions\DuplicateEnrollmentException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
@@ -164,6 +168,42 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 422);
+            }
+        });
+
+        $exceptions->render(function (InvalidCompetitionStateException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (CompetitionNotAccessibleException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 403);
+            }
+        });
+
+        $exceptions->render(function (CompetitionCapacityFullException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (DuplicateCompetitionParticipationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
             }
         });
 

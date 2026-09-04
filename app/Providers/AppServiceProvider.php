@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Competition;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Exam;
@@ -12,6 +13,7 @@ use App\Models\Option;
 use App\Models\Question;
 use App\Models\Unit;
 use App\Models\Video;
+use App\Policies\CompetitionPolicy;
 use App\Policies\CoursePolicy;
 use App\Policies\EnrollmentPolicy;
 use App\Policies\ExamAttemptPolicy;
@@ -76,5 +78,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Question::class, QuestionPolicy::class);
         Gate::policy(Option::class, OptionPolicy::class);
         Gate::policy(ExamAttempt::class, ExamAttemptPolicy::class);
+        Gate::policy(Competition::class, CompetitionPolicy::class);
     }
 }

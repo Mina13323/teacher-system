@@ -25,6 +25,12 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
   than a client-submittable summary event. It adds no synthetic risk (no
   double-counting of the same evidence), and a student can never manufacture it
   or inflate the risk score with it.
+- **Phase 5 — Competitions & Leaderboard:** a separate competition domain backed
+  by an existing exam, with a server-enforced lifecycle, registration and
+  capacity control, deterministic scoring (`highest_score` / `best_attempt`) and
+  ranking (standard competition tie handling), paginated teacher/student
+  leaderboards, frozen finalization, anti-cheat integration and a privacy-safe
+  student identity.
 
 Webcam/microphone/screen/keylogging/browser-fingerprinting/GPS monitoring, AI
 cheating detection, competitions, leaderboards, subscriptions, payments,

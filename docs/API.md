@@ -388,3 +388,86 @@ queued/retried client-side). Failure of the endpoint does not block the exam.
 | 404  | Not found |
 | 409  | Duplicate enrollment |
 | 422  | Validation failed / course not available |
+
+---
+
+## Competitions & Leaderboard (Phase 5)
+
+Competitions are a separate domain from exams. A competition is owned by the
+teacher who created it, references an existing exam as its scoring source, and
+produces a deterministic leaderboard. The aggregate competition result is
+always derived server-side from the linked exam attempt records.
+
+### Lifecycle & scheduling
+
+```
+DRAFT -> PUBLISHED -> ACTIVE -> ENDED -> ARCHIVED
+```
+
+`PUBLISHED -> ACTIVE` and `ACTIVE -> ENDED` are driven by the server-side
+scheduling window (`starts_at` / `ends_at`) and applied lazily when a
+competition is accessed or joined (no cron required). Participation is accepted
+only while the window is open. Invalid transitions (e.g. `ENDED -> ACTIVE`,
+`ARCHIVED -> ACTIVE`) are rejected.
+
+### Concepts
+
+- **Status** — `draft | published | active | ended | archived` (`CompetitionStatus`).
+- **Scoring type** — `highest_score | best_attempt` (`CompetitionScoringType`).
+  `highest_score` picks the best attempt by percentage; `best_attempt` by raw
+  score. Both reuse the trusted exam attempt result; the client never supplies a
+  value.
+- **Ranking type** — `score_desc` (`CompetitionRankingType`). Deterministic
+  ordering: `score DESC, completion_time ASC, completed_at ASC, participant_id ASC`.
+- **Participant status** — `registered | active | completed | disqualified | withdrawn`
+  (`CompetitionParticipantStatus`). Students cannot change their own status.
+- **Ranking / tie handling** — standard competition ranking on `score`: equal
+  scores share a rank and the next distinct score is skipped
+  (`100, 100, 95 -> 1, 1, 3`).
+- **Finalization** — when the window closes the competition becomes `ended` and
+  the leaderboard is frozen. Recalculation of an ended competition is an
+  explicit, authorized teacher action (`POST .../recalculate-leaderboard`) and is
+  idempotent.
+- **Anti-cheat** — a flagged attempt remains recorded and ranked (never
+  auto-disqualified). A teacher reviews it and may explicitly disqualify the
+  participant; a disqualified participant is excluded from ranked positions but
+  their historical result is preserved.
+
+### Teacher / Admin — Competitions
+
+All routes require ownership of the competition (or admin) and
+`competitions.manage`.
+
+| Method | URL | Auth | Request body | Response |
+|--------|-----|------|--------------|----------|
+| GET    | `/teacher/competitions` | Bearer | — | `TeacherCompetitionResource[]` (own only unless admin) |
+| POST   | `/teacher/competitions` | Bearer | `title, description?, exam_id, starts_at?, ends_at?, max_participants?, scoring_type?, ranking_type?` | `TeacherCompetitionResource` |
+| GET    | `/teacher/competitions/{competition}` | Bearer | — | `TeacherCompetitionResource` |
+| PUT    | `/teacher/competitions/{competition}` | Bearer | `title?, description?, starts_at?, ends_at?, max_participants?` | `TeacherCompetitionResource` |
+| DELETE | `/teacher/competitions/{competition}` | Bearer | — | — (fails 422 if participants/results exist) |
+| POST   | `/teacher/competitions/{competition}/publish` | Bearer | — | `TeacherCompetitionResource` |
+| POST   | `/teacher/competitions/{competition}/archive` | Bearer | — | `TeacherCompetitionResource` |
+| GET    | `/teacher/competitions/{competition}/participants` | Bearer | — | `CompetitionParticipantResource[]` |
+| GET    | `/teacher/competitions/{competition}/leaderboard` | Bearer | — | `LeaderboardResource[]` (incl. internal ids, `qualified`) |
+| POST   | `/teacher/competitions/{competition}/recalculate-leaderboard` | Bearer | — | — |
+| POST   | `/teacher/competitions/{competition}/participants/{participant}/disqualify` | Bearer | — | `CompetitionParticipantResource` |
+
+### Student — Competitions
+
+| Method | URL | Auth | Request body | Response |
+|--------|-----|------|--------------|----------|
+| GET    | `/student/competitions` | Bearer | — | `StudentCompetitionResource[]` |
+| GET    | `/student/competitions/{competition}` | Bearer | — | `StudentCompetitionResource` |
+| POST   | `/student/competitions/{competition}/join` | Bearer | — | `StudentCompetitionResource` (`is_joined=true`) |
+| GET    | `/student/competitions/{competition}/leaderboard` | Bearer | — | `LeaderboardResource[]` (public fields only) |
+| GET    | `/student/competitions/{competition}/leaderboard/me` | Bearer | — | `rank, score, percentage, completion_time, qualified, total_participants` |
+
+> Pagination: `?page=` / `?per_page=`. `per_page` is capped at 100.
+
+### Phase 5 errors
+
+| Code | Meaning |
+|------|---------|
+| 403 | Not the owner / not eligible (not enrolled, outside window, already the wrong role) |
+| 409 | Duplicate participation or competition at capacity |
+| 422 | Invalid lifecycle transition / read-only state / publish without a schedule / invalid validation |

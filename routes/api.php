@@ -6,10 +6,12 @@ use App\Http\Controllers\Student\DashboardController as StudentDashboardControll
 use App\Http\Controllers\Student\AttemptController as StudentAttemptController;
 use App\Http\Controllers\Student\EnrollmentController;
 use App\Http\Controllers\Student\ExamController as StudentExamController;
+use App\Http\Controllers\Student\CompetitionController as StudentCompetitionController;
 use App\Http\Controllers\Student\IntegrityController as StudentIntegrityController;
 use App\Http\Controllers\Student\ProgressController;
 use App\Http\Controllers\Student\RoadmapController;
 use App\Http\Controllers\Teacher\AttemptController as TeacherAttemptController;
+use App\Http\Controllers\Teacher\CompetitionController as TeacherCompetitionController;
 use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
 use App\Http\Controllers\Teacher\IntegrityController as TeacherIntegrityController;
 use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
@@ -116,6 +118,19 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::post('questions/{question}/options', [TeacherOptionController::class, 'store']);
     Route::put('options/{option}', [TeacherOptionController::class, 'update']);
     Route::delete('options/{option}', [TeacherOptionController::class, 'destroy']);
+
+    // Competitions (separate domain, owned by the creating teacher)
+    Route::get('competitions', [TeacherCompetitionController::class, 'index']);
+    Route::post('competitions', [TeacherCompetitionController::class, 'store']);
+    Route::get('competitions/{competition}', [TeacherCompetitionController::class, 'show']);
+    Route::put('competitions/{competition}', [TeacherCompetitionController::class, 'update']);
+    Route::delete('competitions/{competition}', [TeacherCompetitionController::class, 'destroy']);
+    Route::post('competitions/{competition}/publish', [TeacherCompetitionController::class, 'publish']);
+    Route::post('competitions/{competition}/archive', [TeacherCompetitionController::class, 'archive']);
+    Route::get('competitions/{competition}/participants', [TeacherCompetitionController::class, 'participants']);
+    Route::get('competitions/{competition}/leaderboard', [TeacherCompetitionController::class, 'leaderboard']);
+    Route::post('competitions/{competition}/recalculate-leaderboard', [TeacherCompetitionController::class, 'recalculate']);
+    Route::post('competitions/{competition}/participants/{participant}/disqualify', [TeacherCompetitionController::class, 'disqualify']);
 });
 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
@@ -144,4 +159,11 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     // Integrity event recording (rate limited)
     Route::post('attempts/{attempt}/integrity-events', [StudentIntegrityController::class, 'store'])
         ->middleware('throttle:integrity-events');
+
+    // Competitions (discovery, participation, leaderboard)
+    Route::get('competitions', [StudentCompetitionController::class, 'index']);
+    Route::get('competitions/{competition}', [StudentCompetitionController::class, 'show']);
+    Route::post('competitions/{competition}/join', [StudentCompetitionController::class, 'join']);
+    Route::get('competitions/{competition}/leaderboard', [StudentCompetitionController::class, 'leaderboard']);
+    Route::get('competitions/{competition}/leaderboard/me', [StudentCompetitionController::class, 'me']);
 });

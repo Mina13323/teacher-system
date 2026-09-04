@@ -50,6 +50,7 @@ class PermissionSeeder extends Seeder
             'exams.view', 'exams.create', 'exams.update', 'exams.delete',
             'students.view',
             'reports.view',
+            'competitions.manage',
         ]);
     }
 
