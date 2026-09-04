@@ -38,9 +38,17 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
   report a consistent status; disqualification re-ranks the remaining
   participants; deleting an exam/course referenced by a competition returns a
   clean 409 instead of a SQL error; and aligned the competition state machine.
+- **Phase 5.2 — Deep Integrity, Transaction & Cross-Domain Audit:** a final deep
+  technical audit of snapshot integrity, database integrity, transactions,
+  concurrency, state machines and cross-domain consistency. Competition
+  finalization and leaderboard recomputation are now atomic (a failure cannot
+  leave an `ended` competition with a stale or partially recomputed leaderboard);
+  regression tests cover snapshot deletion/edit integrity end-to-end, attempt
+  state-machine legality, expiration authority, submission idempotency, and
+  disqualification/re-ranking consistency.
 
 Webcam/microphone/screen/keylogging/browser-fingerprinting/GPS monitoring, AI
-cheating detection, competitions, leaderboards, subscriptions, payments,
+cheating detection (automatic classification), subscriptions, payments,
 advanced analytics, AI features and video streaming/transcoding are
 intentionally **not** implemented yet.
 

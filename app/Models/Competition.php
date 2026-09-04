@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Competition extends Model
 {
@@ -92,10 +93,38 @@ class Competition extends Model
         $windowClosed = $this->ends_at !== null && $now->greaterThanOrEqualTo($this->ends_at);
 
         if ($this->status->isActive() && $windowClosed) {
-            $this->status = CompetitionStatus::Ended->value;
-            $this->save();
+            // Finalization changes the persisted status AND recomputes the frozen
+            // leaderboard. Run both inside one transaction so a failure cannot
+            // leave a competition marked ENDED with a stale or partially
+            // recomputed leaderboard.
+            $finalized = DB::transaction(function () use ($now) {
+                $locked = Competition::query()
+                    ->lockForUpdate()
+                    ->find($this->getKey());
 
-            app(RecalculateCompetitionLeaderboardAction::class)->execute($this);
+                if (! $locked || ! $locked->status->isActive()) {
+                    return false;
+                }
+
+                $closed = $locked->ends_at !== null && $now->greaterThanOrEqualTo($locked->ends_at);
+
+                if (! $closed) {
+                    return false;
+                }
+
+                $locked->status = CompetitionStatus::Ended->value;
+                $locked->save();
+
+                app(RecalculateCompetitionLeaderboardAction::class)->execute($locked);
+
+                return true;
+            });
+
+            // Reflect the transition on the current instance for callers, only if
+            // we actually finalized it (a concurrent request may have won first).
+            if ($finalized) {
+                $this->status = CompetitionStatus::Ended;
+            }
         }
 
         return $this;

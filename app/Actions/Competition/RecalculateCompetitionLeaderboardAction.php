@@ -6,6 +6,7 @@ use App\Enums\CompetitionParticipantStatus;
 use App\Enums\CompetitionRankingType;
 use App\Models\Competition;
 use App\Models\CompetitionResult;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Deterministically recomputes the competition leaderboard and persists ranks.
@@ -33,37 +34,43 @@ class RecalculateCompetitionLeaderboardAction
 
     public function execute(Competition $competition): void
     {
-        $this->syncResults->execute($competition);
+        // The leaderboard recomputation spans many writes (syncing each
+        // participant's result and persisting the assigned ranks). Run it inside
+        // a transaction so a failure cannot leave a partially updated leaderboard
+        // (e.g. some ranks assigned and others stale). Recalculation is idempotent.
+        DB::transaction(function () use ($competition) {
+            $this->syncResults->execute($competition);
 
-        $results = $competition->results()
-            ->whereHas('participant', function ($query) {
-                $query->where('status', '!=', CompetitionParticipantStatus::Disqualified->value);
-            })
-            ->with('participant')
-            ->get();
+            $results = $competition->results()
+                ->whereHas('participant', function ($query) {
+                    $query->where('status', '!=', CompetitionParticipantStatus::Disqualified->value);
+                })
+                ->with('participant')
+                ->get();
 
-        $sorted = $results
-            ->sortBy([
-                ['score', 'desc'],
-                ['completion_time', 'asc'],
-                ['completed_at', 'asc'],
-                ['participant_id', 'asc'],
-            ])
-            ->values();
+            $sorted = $results
+                ->sortBy([
+                    ['score', 'desc'],
+                    ['completion_time', 'asc'],
+                    ['completed_at', 'asc'],
+                    ['participant_id', 'asc'],
+                ])
+                ->values();
 
-        $rank = 0;
-        $previousScore = null;
+            $rank = 0;
+            $previousScore = null;
 
-        foreach ($sorted as $index => $result) {
-            /** @var CompetitionResult $result */
-            if ($previousScore === null || $result->score !== $previousScore) {
-                $rank = $index + 1;
-                $previousScore = $result->score;
+            foreach ($sorted as $index => $result) {
+                /** @var CompetitionResult $result */
+                if ($previousScore === null || $result->score !== $previousScore) {
+                    $rank = $index + 1;
+                    $previousScore = $result->score;
+                }
+
+                $result->rank = $rank;
+                $result->qualified = true;
+                $result->save();
             }
-
-            $result->rank = $rank;
-            $result->qualified = true;
-            $result->save();
-        }
+        });
     }
 }

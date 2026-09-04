@@ -425,6 +425,13 @@ not just in `show`. Retiring a competition that has not started (DRAFT /
 PUBLISHED) directly to ARCHIVED is permitted; an ACTIVE competition must first
 be ended.
 
+**Atomic finalization (Phase 5.2):** finalizing an active competition
+(ACTIVE → ENDED) now persists the status change and recomputes the frozen
+leaderboard inside a single transaction, with a row lock on the competition, so
+a concurrent request or failure cannot leave an `ended` competition with a
+stale or partially recomputed leaderboard. Leaderboard recomputation is itself
+transactional and idempotent.
+
 ### Concepts
 
 - **Status** — `draft | published | active | ended | archived` (`CompetitionStatus`).
