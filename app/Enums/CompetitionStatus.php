@@ -59,14 +59,18 @@ enum CompetitionStatus: string
     /**
      * Whether a transition to the given next status is permitted by the state
      * machine. Lazy scheduling transitions (PUBLISHED -> ACTIVE and
-     * ACTIVE -> ENDED driven by the time window) are the only implicit paths;
-     * every other move must be an explicit, allowed transition.
+     * ACTIVE -> ENDED driven by the time window) are implicit paths; every
+     * other move must be an explicit, allowed transition.
+     *
+     * Retirement is an explicit exception: a competition that has not started
+     * (DRAFT or PUBLISHED with its window still in the future) may be retired
+     * directly to ARCHIVED because it has no participation.
      */
     public function canTransitionTo(self $next): bool
     {
         return match ($this) {
-            self::Draft => $next === self::Published,
-            self::Published => $next === self::Active,
+            self::Draft => $next === self::Published || $next === self::Archived,
+            self::Published => $next === self::Active || $next === self::Archived,
             self::Active => $next === self::Ended,
             self::Ended => $next === self::Archived,
             self::Archived => false,

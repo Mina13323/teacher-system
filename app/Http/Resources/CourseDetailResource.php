@@ -26,7 +26,9 @@ class CourseDetailResource extends JsonResource
             'description' => $this->description,
             'thumbnail' => $this->thumbnail,
             'status' => $this->status?->value,
-            'creator' => $this->whenLoaded('creator', fn () => new UserResource($this->creator)),
+            // Public course catalog: never expose the creator's email or account
+            // metadata. Use the privacy-safe representation.
+            'creator' => $this->whenLoaded('creator', fn () => new PublicUserResource($this->creator)),
             'units_count' => $this->whenCounted('units'),
             'lessons_count' => $this->whenCounted('lessons'),
             'enrollments_count' => $this->whenCounted('enrollments'),

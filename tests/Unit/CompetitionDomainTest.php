@@ -36,6 +36,17 @@ class CompetitionDomainTest extends TestCase
         $this->assertFalse(CompetitionStatus::Archived->canTransitionTo(CompetitionStatus::Draft));
         $this->assertFalse(CompetitionStatus::Ended->canTransitionTo(CompetitionStatus::Active));
         $this->assertFalse(CompetitionStatus::Draft->canTransitionTo(CompetitionStatus::Ended));
+        $this->assertFalse(CompetitionStatus::Active->canTransitionTo(CompetitionStatus::Published));
+    }
+
+    public function test_retirement_transitions_are_explicitly_allowed(): void
+    {
+        // A competition that has not started may be retired directly to archived.
+        $this->assertTrue(CompetitionStatus::Draft->canTransitionTo(CompetitionStatus::Archived));
+        $this->assertTrue(CompetitionStatus::Published->canTransitionTo(CompetitionStatus::Archived));
+
+        // An active competition must end before archiving.
+        $this->assertFalse(CompetitionStatus::Active->canTransitionTo(CompetitionStatus::Archived));
     }
 
     public function test_public_display_name_never_exposes_email_or_internal_id(): void

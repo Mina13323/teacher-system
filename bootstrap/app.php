@@ -7,6 +7,7 @@ use App\Exceptions\CompetitionNotAccessibleException;
 use App\Exceptions\CourseNotPublishedException;
 use App\Exceptions\DuplicateCompetitionParticipationException;
 use App\Exceptions\InvalidCompetitionStateException;
+use App\Exceptions\ResourceDeletionBlockedException;
 use App\Exceptions\DuplicateEnrollmentException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
@@ -199,6 +200,15 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (DuplicateCompetitionParticipationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (ResourceDeletionBlockedException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,

@@ -47,6 +47,11 @@ class CompetitionController extends Controller
 
         $competitions = $query->latest()->paginate($this->perPage($request));
 
+        // Resolve the lifecycle consistently with show/join/leaderboard so the
+        // listing never reports a misleading status for a competition whose
+        // scheduling window has already advanced.
+        $competitions->getCollection()->each(fn (Competition $competition) => $competition->lazyFinalize());
+
         return $this->success(TeacherCompetitionResource::collection($competitions), 'Competitions retrieved.');
     }
 

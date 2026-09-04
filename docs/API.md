@@ -35,6 +35,13 @@ lessons/videos are never exposed here.
 | GET    | `/courses`            | —    | —               | —            | `CourseResource[]` |
 | GET    | `/courses/{course}`   | —    | —               | —            | `CourseDetailResource` |
 
+> **Privacy (Phase 5.1 hardening):** These are public/unauthenticated
+> endpoints. The course creator is returned as a privacy-safe object with only
+> `{ id, name, display_name }` — never an email address, `avatar`, `is_active`,
+> `roles`, or other account metadata. Published video entries expose metadata
+> (`title`, `duration`, `position`, `is_published`) but **not** the internal
+> `storage_path`; that is visible only to authenticated teachers/admins.
+
 ---
 
 ## Teacher / Admin — Courses
@@ -48,9 +55,10 @@ lessons/videos are never exposed here.
 | PUT    | `/teacher/courses/{course}`           | Bearer | owns course + `courses.update` | `title?, slug?, description?, thumbnail?, status?` | `CourseResource` |
 | PATCH  | `/teacher/courses/{course}/publish`   | Bearer | owns course + `courses.update` | —          | `CourseResource` |
 | PATCH  | `/teacher/courses/{course}/unpublish` | Bearer | owns course + `courses.update` | —          | `CourseResource` |
-| DELETE | `/teacher/courses/{course}`           | Bearer | owns course + `courses.delete` | —          | — |
+| DELETE | `/teacher/courses/{course}`           | Bearer | owns course + `courses.delete` | —          | — (409 if a competition references an exam in the course) |
 
-**Errors:** 401 unauthenticated, 403 not owner, 404 not found.
+**Errors:** 401 unauthenticated, 403 not owner, 404 not found, 409 deletion
+blocked by a competing dependency.
 
 ---
 
@@ -189,7 +197,7 @@ grading, score and pass/fail.
 | PUT    | `/teacher/exams/{exam}`                | Bearer | owns exam + `exams.update` | same fields as create, all optional | `ExamResource` |
 | POST   | `/teacher/exams/{exam}/publish`        | Bearer | owns exam + `exams.update` | —          | `ExamResource` |
 | POST   | `/teacher/exams/{exam}/archive`        | Bearer | owns exam + `exams.update` | —          | `ExamResource` |
-| DELETE | `/teacher/exams/{exam}`                | Bearer | owns exam + `exams.delete` | —          | — |
+| DELETE | `/teacher/exams/{exam}`                | Bearer | owns exam + `exams.delete` | —          | — (409 if a competition references the exam) |
 | GET    | `/teacher/exams/{exam}/attempts`       | Bearer | owns exam + `students.view` | —          | `ExamAttemptDetailResource[]` |
 | GET    | `/teacher/attempts/{attempt}`          | Bearer | owns the attempt's exam | —          | `ExamAttemptDetailResource` |
 
@@ -410,6 +418,13 @@ competition is accessed or joined (no cron required). Participation is accepted
 only while the window is open. Invalid transitions (e.g. `ENDED -> ACTIVE`,
 `ARCHIVED -> ACTIVE`) are rejected.
 
+**Lifecycle consistency (Phase 5.1):** the lifecycle is resolved centrally on
+every endpoint — list/discovery, show, join and leaderboard — so a published
+competition whose window has already opened is reported as `active` everywhere,
+not just in `show`. Retiring a competition that has not started (DRAFT /
+PUBLISHED) directly to ARCHIVED is permitted; an ACTIVE competition must first
+be ended.
+
 ### Concepts
 
 - **Status** — `draft | published | active | ended | archived` (`CompetitionStatus`).
@@ -432,6 +447,10 @@ only while the window is open. Invalid transitions (e.g. `ENDED -> ACTIVE`,
   auto-disqualified). A teacher reviews it and may explicitly disqualify the
   participant; a disqualified participant is excluded from ranked positions but
   their historical result is preserved.
+- **Disqualification re-ranking (Phase 5.1)** — disqualifying a participant
+  re-ranks the remaining valid participants so the leaderboard has no gaps (the
+  next-best a participant becomes #1), while the disqualifed participant's
+  historical result is retained but unranked (`qualified=false`, `rank=null`).
 
 ### Teacher / Admin — Competitions
 
@@ -456,8 +475,8 @@ All routes require ownership of the competition (or admin) and
 
 | Method | URL | Auth | Request body | Response |
 |--------|-----|------|--------------|----------|
-| GET    | `/student/competitions` | Bearer | — | `StudentCompetitionResource[]` |
-| GET    | `/student/competitions/{competition}` | Bearer | — | `StudentCompetitionResource` |
+| GET    | `/student/competitions` | Bearer | enrolled in the linked exam's course | `StudentCompetitionResource[]` |
+| GET    | `/student/competitions/{competition}` | Bearer | enrolled in the linked exam's course | `StudentCompetitionResource` |
 | POST   | `/student/competitions/{competition}/join` | Bearer | — | `StudentCompetitionResource` (`is_joined=true`) |
 | GET    | `/student/competitions/{competition}/leaderboard` | Bearer | — | `LeaderboardResource[]` (public fields only) |
 | GET    | `/student/competitions/{competition}/leaderboard/me` | Bearer | — | `rank, score, percentage, completion_time, qualified, total_participants` |

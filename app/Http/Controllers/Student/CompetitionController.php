@@ -28,9 +28,14 @@ class CompetitionController extends Controller
     {
         $student = $request->user();
 
+        // A student may only discover competitions whose linked exam belongs to a
+        // course they are actively enrolled in — consistent with show/join.
+        $enrolledCourseIds = $this->enrollments->enrolledCourseIds($student);
+
         $competitions = Competition::query()
             ->with('exam')
             ->withCount('participants')
+            ->whereHas('exam', fn ($q) => $q->whereIn('course_id', $enrolledCourseIds))
             ->whereIn('status', [CompetitionStatus::Published->value, CompetitionStatus::Active->value])
             ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>', now()))
             ->latest()
@@ -42,6 +47,9 @@ class CompetitionController extends Controller
             ->all();
 
         $competitions->each(function (Competition $competition) use ($joinedIds) {
+            // Resolve the lifecycle consistently with show/join/leaderboard so a
+            // published competition whose window has opened is shown as active.
+            $competition->lazyFinalize();
             $competition->is_joined = in_array($competition->getKey(), $joinedIds, true);
         });
 

@@ -31,6 +31,13 @@ A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
   ranking (standard competition tie handling), paginated teacher/student
   leaderboards, frozen finalization, anti-cheat integration and a privacy-safe
   student identity.
+- **Phase 5.1 — Cross-Phase Integration & Production Hardening:** hardened the
+  integrated system across all phases — no internal IDs/emails leak on public
+  course endpoints and no internal video storage path is exposed publicly;
+  centralized competition lifecycle resolution so list/show/join/leaderboard
+  report a consistent status; disqualification re-ranks the remaining
+  participants; deleting an exam/course referenced by a competition returns a
+  clean 409 instead of a SQL error; and aligned the competition state machine.
 
 Webcam/microphone/screen/keylogging/browser-fingerprinting/GPS monitoring, AI
 cheating detection, competitions, leaderboards, subscriptions, payments,
