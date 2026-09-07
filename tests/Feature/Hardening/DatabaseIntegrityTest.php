@@ -120,4 +120,39 @@ class DatabaseIntegrityTest extends ApiTestCase
             ->deleteJson("/api/v1/teacher/exams/{$exam->id}")
             ->assertStatus(409);
     }
+
+    public function test_exam_with_recorded_attempts_cannot_be_deleted(): void
+    {
+        [$teacher, $course, $exam] = $this->setup();
+
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->makeSubmittedAttempt($student, $exam, 80, 80);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->deleteJson("/api/v1/teacher/exams/{$exam->id}")
+            ->assertStatus(409)
+            ->assertJson(['success' => false]);
+
+        // The exam (and its history) is preserved.
+        $this->assertDatabaseHas('exams', ['id' => $exam->id]);
+        $this->assertDatabaseHas('exam_attempts', ['exam_id' => $exam->id]);
+    }
+
+    public function test_course_with_an_exam_that_has_attempts_cannot_be_deleted(): void
+    {
+        [$teacher, $course, $exam] = $this->setup();
+
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->makeSubmittedAttempt($student, $exam, 80, 80);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->deleteJson("/api/v1/teacher/courses/{$course->id}")
+            ->assertStatus(409)
+            ->assertJson(['success' => false]);
+
+        // The course, its exam and its attempt history are preserved.
+        $this->assertDatabaseHas('courses', ['id' => $course->id]);
+        $this->assertDatabaseHas('exams', ['id' => $exam->id]);
+        $this->assertDatabaseHas('exam_attempts', ['exam_id' => $exam->id]);
+    }
 }
