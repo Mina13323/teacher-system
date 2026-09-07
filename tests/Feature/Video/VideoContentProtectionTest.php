@@ -104,7 +104,54 @@ class VideoContentProtectionTest extends ApiTestCase
         $this->assertArrayNotHasKey('url', $videos[0]);
     }
 
-    // 2. Student cannot access another teacher's video (different course they are not enrolled in).
+    // 2. Unauthenticated users cannot request playback.
+    public function test_unauthenticated_user_cannot_request_playback(): void
+    {
+        $teacher = $this->teacher();
+        [, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+
+        // No actingAs -> 401.
+        $this->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->assertStatus(401);
+    }
+
+    // 3. Student cannot access a lesson's videos when the lesson is unpublished.
+    public function test_student_cannot_access_unpublished_lesson_video_list(): void
+    {
+        $teacher = $this->teacher();
+        [$course, $lesson] = $this->courseWithPublishedLessonVideo($teacher);
+        $lesson->update(['is_published' => false]);
+
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/lessons/{$lesson->id}/videos")
+            ->assertStatus(403);
+    }
+
+    // 4. The student video list never leaks provider references or URLs.
+    public function test_student_list_never_exposes_provider_references(): void
+    {
+        $teacher = $this->teacher();
+        [$course, $lesson, $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/lessons/{$lesson->id}/videos")
+            ->assertStatus(200);
+
+        $videos = $response->json('data.data');
+        $this->assertIsArray($videos);
+        $flat = json_encode($videos);
+
+        foreach (['provider', 'provider_video_id', 'storage_path', 'media_ref', 'channel', 'playlist', 'embed_url', 'download'] as $sensitive) {
+            $this->assertStringNotContainsStringIgnoringCase($sensitive, $flat, "student list leaked: {$sensitive}");
+        }
+    }
+
+    // 5. Student cannot access another teacher's video (different course they are not enrolled in).
     public function test_student_cannot_access_another_teachers_video(): void
     {
         $teacherA = $this->teacher();
