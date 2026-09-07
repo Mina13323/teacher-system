@@ -27,7 +27,7 @@ class CourseStudentController extends Controller
 
     public function index(Request $request, Course $course): JsonResponse
     {
-        $this->authorize('view', $course);
+        $this->authorize('manageEnrollments', $course);
 
         $enrollments = Enrollment::query()
             ->where('course_id', $course->getKey())
@@ -54,7 +54,7 @@ class CourseStudentController extends Controller
 
     public function destroy(Request $request, Course $course, \App\Models\User $student): JsonResponse
     {
-        $this->authorize('update', $course);
+        $this->authorize('manageEnrollments', $course);
 
         $enrollment = Enrollment::query()
             ->where('course_id', $course->getKey())

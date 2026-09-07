@@ -122,6 +122,11 @@ class User extends Authenticatable
         return $this->hasRole(UserRole::Teacher->value);
     }
 
+    public function isAssistant(): bool
+    {
+        return $this->hasRole(UserRole::Assistant->value);
+    }
+
     public function isStudent(): bool
     {
         return $this->hasRole(UserRole::Student->value);

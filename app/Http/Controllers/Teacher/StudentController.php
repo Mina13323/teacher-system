@@ -45,7 +45,7 @@ class StudentController extends Controller
             ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
             ->with('roles');
 
-        if (! $request->user()->isAdmin()) {
+        if (! $request->user()->isAdmin() && ! $request->user()->isAssistant()) {
             $teacherId = $request->user()->getKey();
             $enrolledInOwnCourses = Enrollment::query()
                 ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))

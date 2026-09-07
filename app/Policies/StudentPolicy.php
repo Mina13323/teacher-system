@@ -32,6 +32,7 @@ class StudentPolicy
     {
         return $user->hasRole('teacher')
             || $user->hasRole('admin')
+            || $user->hasRole('assistant')
             || $user->hasPermissionTo('students.view');
     }
 
@@ -77,6 +78,13 @@ class StudentPolicy
      */
     private function managesStudent(User $user, User $student): bool
     {
+        // A staff assistant operates on behalf of the single main teacher and
+        // may manage any student account (student operations only). They never
+        // receive content/exam/competition/analytics powers.
+        if ($user->hasRole('assistant')) {
+            return true;
+        }
+
         if (! $user->hasRole('teacher')) {
             return false;
         }

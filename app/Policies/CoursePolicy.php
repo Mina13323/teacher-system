@@ -21,16 +21,34 @@ class CoursePolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->hasRole('teacher')
+            || $user->hasRole('admin')
+            || $user->hasRole('assistant');
     }
 
     /**
-     * Viewing a specific course is restricted to its owner or an admin.
-     * Public browsing of published courses bypasses this policy.
+     * Viewing a specific course is restricted to its owner or an admin. A staff
+     * assistant may also view a course (read-only) so they can see the enrolled
+     * students it maps to; they never receive teacher-only staff resource fields
+     * (e.g. provider metadata) or editing powers. Public browsing of published
+     * courses bypasses this policy.
      */
     public function view(User $user, Course $course): bool
     {
-        return $this->canManage($user, $course);
+        return $user->hasRole('assistant') || $this->canManage($user, $course);
+    }
+
+    /**
+     * Enrollment management on a course. Separate from `update` (course structure
+     * editing): a staff assistant may enrol/unenrol students on behalf of the main
+     * teacher without being able to edit the course, its units, lessons, videos or
+     * exams.
+     */
+    public function manageEnrollments(User $user, Course $course): bool
+    {
+        return $user->hasRole('admin')
+            || $user->hasRole('assistant')
+            || $course->isOwnedBy($user);
     }
 
     public function create(User $user): bool

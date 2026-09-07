@@ -21,6 +21,7 @@ class PermissionSeeder extends Seeder
         'exams.view', 'exams.create', 'exams.update', 'exams.delete',
         'students.view', 'students.create', 'students.manage',
         'teachers.view', 'teachers.create', 'teachers.manage',
+        'assistants.view', 'assistants.create', 'assistants.manage',
         'reports.view',
         'competitions.manage',
     ];
@@ -35,6 +36,7 @@ class PermissionSeeder extends Seeder
 
         $this->assignAdminPermissions();
         $this->assignTeacherPermissions();
+        $this->assignAssistantPermissions();
         $this->assignStudentPermissions();
     }
 
@@ -50,8 +52,24 @@ class PermissionSeeder extends Seeder
             'lessons.view', 'lessons.create', 'lessons.update', 'lessons.delete',
             'exams.view', 'exams.create', 'exams.update', 'exams.delete',
             'students.view', 'students.create', 'students.manage',
+            'assistants.view', 'assistants.create', 'assistants.manage',
             'reports.view',
             'competitions.manage',
+        ]);
+    }
+
+    /**
+     * An Assistant is operational staff that works for the (single main)
+     * Teacher. Their role is limited to student operations: viewing/creating/
+     * managing student accounts and enrolling them in courses. They are
+     * deliberately NOT given any content (course/unit/lesson/video/exam),
+     * competition, analytics/integrity, or system-management permission.
+     */
+    private function assignAssistantPermissions(): void
+    {
+        Role::findByName(UserRole::Assistant->value)->givePermissionTo([
+            'courses.view',
+            'students.view', 'students.create', 'students.manage',
         ]);
     }
 

@@ -11,5 +11,6 @@ enum UserRole: string
 {
     case Admin = 'admin';
     case Teacher = 'teacher';
+    case Assistant = 'assistant';
     case Student = 'student';
 }

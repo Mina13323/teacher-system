@@ -29,6 +29,7 @@ use App\Http\Controllers\Teacher\QuestionController as TeacherQuestionController
 use App\Http\Controllers\Teacher\UnitController as TeacherUnitController;
 use App\Http\Controllers\Teacher\VideoController as TeacherVideoController;
 use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
+use App\Http\Controllers\Teacher\AssistantController as TeacherAssistantController;
 use App\Http\Controllers\Teacher\CourseStudentController as TeacherCourseStudentController;
 use App\Http\Controllers\Teacher\AnalyticsController as TeacherAnalyticsController;
 use Illuminate\Support\Facades\Route;
@@ -155,7 +156,18 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::post('students/{student}/reset-password', [TeacherStudentController::class, 'resetPassword']);
     Route::post('students/{student}/notify', [NotificationController::class, 'sendMessage']);
 
-    // Course enrollment management (teacher enrolls/manages students in courses)
+    // Assistant account management (teacher/admin). Assistants are operational
+    // staff that work under the main teacher — student ops only.
+    Route::get('assistants', [TeacherAssistantController::class, 'index']);
+    Route::post('assistants', [TeacherAssistantController::class, 'store']);
+    Route::get('assistants/{assistant}', [TeacherAssistantController::class, 'show']);
+    Route::put('assistants/{assistant}', [TeacherAssistantController::class, 'update']);
+    Route::patch('assistants/{assistant}/activate', [TeacherAssistantController::class, 'activate']);
+    Route::patch('assistants/{assistant}/deactivate', [TeacherAssistantController::class, 'deactivate']);
+    Route::post('assistants/{assistant}/reset-password', [TeacherAssistantController::class, 'resetPassword']);
+
+    // Course enrollment management (teacher enrolls/manages students in courses;
+    // assistants may also manage enrollments on behalf of the main teacher).
     Route::get('courses/{course}/students', [TeacherCourseStudentController::class, 'index']);
     Route::post('courses/{course}/students', [TeacherCourseStudentController::class, 'store']);
     Route::delete('courses/{course}/students/{student}', [TeacherCourseStudentController::class, 'destroy']);

@@ -8,7 +8,7 @@ class EnrollStudentCourseRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('update', $this->route('course'));
+        return $this->user()->can('manageEnrollments', $this->route('course'));
     }
 
     /**
