@@ -22,6 +22,8 @@ class VideoFactory extends Factory
             'lesson_id' => Lesson::factory(),
             'title' => fake()->sentence(3),
             'storage_path' => 'videos/'.Str::random(20).'.mp4',
+            'provider' => \App\Enums\VideoProvider::Storage->value,
+            'provider_video_id' => null,
             'duration' => fake()->numberBetween(60, 1800),
             'position' => fake()->numberBetween(1, 100),
             'is_published' => true,

@@ -19,6 +19,8 @@ class UpdateVideoRequest extends FormRequest
         return [
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'storage_path' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'provider' => ['sometimes', 'nullable', 'string', 'in:storage,youtube'],
+            'provider_video_id' => ['sometimes', 'nullable', 'string', 'max:255'],
             'duration' => ['sometimes', 'integer', 'min:0'],
             'position' => ['sometimes', 'integer', 'min:0'],
             'is_published' => ['sometimes', 'boolean'],

@@ -19,6 +19,8 @@ class CreateVideoRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'storage_path' => ['nullable', 'string', 'max:255'],
+            'provider' => ['nullable', 'string', 'in:storage,youtube'],
+            'provider_video_id' => ['nullable', 'string', 'max:255'],
             'duration' => ['nullable', 'integer', 'min:0'],
             'position' => ['nullable', 'integer', 'min:0'],
             'is_published' => ['nullable', 'boolean'],

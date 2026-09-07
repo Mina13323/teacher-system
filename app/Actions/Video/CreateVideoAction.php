@@ -17,6 +17,7 @@ class CreateVideoAction
     public function execute(Lesson $lesson, array $data): Video
     {
         $data['lesson_id'] = $lesson->getKey();
+        $data['provider'] ??= \App\Enums\VideoProvider::Storage->value;
         $data['storage_path'] ??= $this->defaultStoragePath($data['title']);
         $data['position'] ??= $this->nextPosition($lesson);
 

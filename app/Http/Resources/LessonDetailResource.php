@@ -29,9 +29,22 @@ class LessonDetailResource extends JsonResource
             'position' => $this->position,
             'is_published' => $this->is_published,
             'videos_count' => $this->whenCounted('videos'),
-            'videos' => VideoResource::collection($this->whenLoaded('videos')),
+            'videos' => $this->isStaffView($request)
+                ? VideoResource::collection($this->whenLoaded('videos'))
+                : StudentVideoResource::collection($this->whenLoaded('videos')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
+    }
+
+    private function isStaffView(Request $request): bool
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasRole('teacher') || $user->hasRole('admin');
     }
 }

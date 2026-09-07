@@ -16,6 +16,7 @@ use App\Http\Controllers\Student\CompetitionController as StudentCompetitionCont
 use App\Http\Controllers\Student\IntegrityController as StudentIntegrityController;
 use App\Http\Controllers\Student\ProgressController;
 use App\Http\Controllers\Student\RoadmapController;
+use App\Http\Controllers\Student\VideoController as StudentVideoController;
 use App\Http\Controllers\Teacher\AttemptController as TeacherAttemptController;
 use App\Http\Controllers\Teacher\CompetitionController as TeacherCompetitionController;
 use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
@@ -204,6 +205,11 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('progress', [ProgressController::class, 'index']);
     Route::get('lessons/{lesson}/progress', [ProgressController::class, 'show']);
     Route::put('lessons/{lesson}/progress', [ProgressController::class, 'store']);
+
+    // Video content access (published, enrolled-course only).
+    Route::get('lessons/{lesson}/videos', [StudentVideoController::class, 'index']);
+    // Protected playback: only place a student receives a playable reference.
+    Route::get('videos/{video}/playback', [StudentVideoController::class, 'playback']);
 
     // Exams: discovery, attempts, answering, submission
     Route::get('exams', [StudentExamController::class, 'index']);
