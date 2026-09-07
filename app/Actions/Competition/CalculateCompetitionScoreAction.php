@@ -18,6 +18,15 @@ use App\Models\ExamAttempt;
  * The value is always derived server-side from the trusted exam attempt record;
  * the client never supplies a score.
  *
+ * Timing rule: an attempt contributes to a competition result only if it was
+ * completed (submitted) before the competition closed (`ends_at`). Participation
+ * is only accepted while the window is open (`now < ends_at`), so an attempt
+ * submitted at or after `ends_at` is outside the competition and is not counted.
+ * If the competition has no `ends_at`, any submitted attempt counts.
+ *
+ * `qualified` (set during ranking, not here) means "has a rankable result and is
+ * not disqualified" — it is competition ranking eligibility, never exam pass/fail.
+ *
  * @return array{attempt_id: int, score: int, percentage: int, completion_time: int, completed_at: \Illuminate\Support\Carbon|null}|null
  */
 class CalculateCompetitionScoreAction
@@ -28,6 +37,9 @@ class CalculateCompetitionScoreAction
             ->where('exam_id', $competition->exam_id)
             ->where('student_id', $studentId)
             ->where('status', ExamAttemptStatus::Submitted->value)
+            ->when($competition->ends_at !== null, function ($query) use ($competition) {
+                $query->where('submitted_at', '<', $competition->ends_at);
+            })
             ->get();
 
         if ($attempts->isEmpty()) {

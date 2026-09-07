@@ -11,4 +11,9 @@ enum EnrollmentStatus: string
     case Completed = 'completed';
     case Suspended = 'suspended';
     case Cancelled = 'cancelled';
+
+    public function isActive(): bool
+    {
+        return $this === self::Active;
+    }
 }

@@ -63,6 +63,22 @@ trait InteractsWithCompetitions
     }
 
     /**
+     * Register a participant directly, bypassing the join endpoint. Used by tests
+     * that model a competition whose window has already closed (so the endpoint
+     * would correctly reject a new join) yet which still had people participating
+     * while it was open — those participants must exist as fixtures.
+     */
+    protected function registerParticipantDirectly(User $student, Competition $competition, ?\Carbon\Carbon $joinedAt = null): \App\Models\CompetitionParticipant
+    {
+        return \App\Models\CompetitionParticipant::create([
+            'competition_id' => $competition->getKey(),
+            'student_id' => $student->getKey(),
+            'joined_at' => $joinedAt ?? now()->subHour(),
+            'status' => \App\Enums\CompetitionParticipantStatus::Registered->value,
+        ]);
+    }
+
+    /**
      * Create a submitted exam attempt for a student on a given exam.
      *
      * @return \App\Models\ExamAttempt

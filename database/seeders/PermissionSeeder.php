@@ -19,7 +19,8 @@ class PermissionSeeder extends Seeder
         'courses.view', 'courses.create', 'courses.update', 'courses.delete',
         'lessons.view', 'lessons.create', 'lessons.update', 'lessons.delete',
         'exams.view', 'exams.create', 'exams.update', 'exams.delete',
-        'students.view', 'students.manage',
+        'students.view', 'students.create', 'students.manage',
+        'teachers.view', 'teachers.create', 'teachers.manage',
         'reports.view',
         'competitions.manage',
     ];
@@ -48,7 +49,7 @@ class PermissionSeeder extends Seeder
             'courses.view', 'courses.create', 'courses.update', 'courses.delete',
             'lessons.view', 'lessons.create', 'lessons.update', 'lessons.delete',
             'exams.view', 'exams.create', 'exams.update', 'exams.delete',
-            'students.view',
+            'students.view', 'students.create', 'students.manage',
             'reports.view',
             'competitions.manage',
         ]);

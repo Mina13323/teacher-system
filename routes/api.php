@@ -1,8 +1,14 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\ProfileController;
 use App\Http\Controllers\CourseController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\StudentController as AdminStudentController;
+use App\Http\Controllers\Admin\TeacherController as AdminTeacherController;
 use App\Http\Controllers\Student\DashboardController as StudentDashboardController;
+use App\Http\Controllers\Student\AnalyticsController as StudentAnalyticsController;
 use App\Http\Controllers\Student\AttemptController as StudentAttemptController;
 use App\Http\Controllers\Student\EnrollmentController;
 use App\Http\Controllers\Student\ExamController as StudentExamController;
@@ -21,6 +27,9 @@ use App\Http\Controllers\Teacher\OptionController as TeacherOptionController;
 use App\Http\Controllers\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Teacher\UnitController as TeacherUnitController;
 use App\Http\Controllers\Teacher\VideoController as TeacherVideoController;
+use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
+use App\Http\Controllers\Teacher\CourseStudentController as TeacherCourseStudentController;
+use App\Http\Controllers\Teacher\AnalyticsController as TeacherAnalyticsController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -42,6 +51,9 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
+        Route::get('profile', [ProfileController::class, 'show']);
+        Route::put('profile', [ProfileController::class, 'update']);
+        Route::put('password', [ProfileController::class, 'changePassword']);
     });
 });
 
@@ -131,6 +143,53 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::get('competitions/{competition}/leaderboard', [TeacherCompetitionController::class, 'leaderboard']);
     Route::post('competitions/{competition}/recalculate-leaderboard', [TeacherCompetitionController::class, 'recalculate']);
     Route::post('competitions/{competition}/participants/{participant}/disqualify', [TeacherCompetitionController::class, 'disqualify']);
+
+    // Student account management (teacher-owned LMS)
+    Route::get('students', [TeacherStudentController::class, 'index']);
+    Route::post('students', [TeacherStudentController::class, 'store']);
+    Route::get('students/{student}', [TeacherStudentController::class, 'show']);
+    Route::put('students/{student}', [TeacherStudentController::class, 'update']);
+    Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);
+    Route::patch('students/{student}/deactivate', [TeacherStudentController::class, 'deactivate']);
+    Route::post('students/{student}/reset-password', [TeacherStudentController::class, 'resetPassword']);
+    Route::post('students/{student}/notify', [NotificationController::class, 'sendMessage']);
+
+    // Course enrollment management (teacher enrolls/manages students in courses)
+    Route::get('courses/{course}/students', [TeacherCourseStudentController::class, 'index']);
+    Route::post('courses/{course}/students', [TeacherCourseStudentController::class, 'store']);
+    Route::delete('courses/{course}/students/{student}', [TeacherCourseStudentController::class, 'destroy']);
+
+    // Analytics & reporting
+    Route::get('analytics/overview', [TeacherAnalyticsController::class, 'overview']);
+    Route::get('analytics/courses/{course}', [TeacherAnalyticsController::class, 'courseAnalytics']);
+    Route::get('analytics/students/{student}', [TeacherAnalyticsController::class, 'studentAnalytics']);
+});
+
+// ---- Admin: system & account oversight --------------------------------------
+Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+    Route::get('dashboard', [AdminDashboardController::class, 'index']);
+    Route::get('teachers', [AdminTeacherController::class, 'index']);
+    Route::post('teachers', [AdminTeacherController::class, 'store']);
+    Route::get('teachers/{teacher}', [AdminTeacherController::class, 'show']);
+    Route::put('teachers/{teacher}', [AdminTeacherController::class, 'update']);
+    Route::patch('teachers/{teacher}/activate', [AdminTeacherController::class, 'activate']);
+    Route::patch('teachers/{teacher}/deactivate', [AdminTeacherController::class, 'deactivate']);
+    Route::post('teachers/{teacher}/reset-password', [AdminTeacherController::class, 'resetPassword']);
+    Route::get('students', [AdminStudentController::class, 'index']);
+    Route::get('students/{student}', [AdminStudentController::class, 'show']);
+    Route::put('students/{student}', [AdminStudentController::class, 'update']);
+    Route::patch('students/{student}/activate', [AdminStudentController::class, 'activate']);
+    Route::patch('students/{student}/deactivate', [AdminStudentController::class, 'deactivate']);
+    Route::post('students/{student}/reset-password', [AdminStudentController::class, 'resetPassword']);
+    Route::get('students/{student}/analytics', [AdminStudentController::class, 'analytics']);
+});
+
+// ---- Notifications (any authenticated user) ----------------------------------
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('notifications/{notification}/read', [NotificationController::class, 'read']);
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
 });
 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
@@ -166,4 +225,7 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::post('competitions/{competition}/join', [StudentCompetitionController::class, 'join']);
     Route::get('competitions/{competition}/leaderboard', [StudentCompetitionController::class, 'leaderboard']);
     Route::get('competitions/{competition}/leaderboard/me', [StudentCompetitionController::class, 'me']);
+
+    // Student's own analytics
+    Route::get('analytics/me', [StudentAnalyticsController::class, 'me']);
 });

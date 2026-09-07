@@ -3,8 +3,11 @@
 namespace App\Actions\Competition;
 
 use App\Enums\CompetitionStatus;
+use App\Enums\EnrollmentStatus;
 use App\Exceptions\InvalidCompetitionStateException;
 use App\Models\Competition;
+use App\Models\Enrollment;
+use App\Notifications\CompetitionPublishedNotification;
 
 /**
  * Publishes a competition, moving it from DRAFT to PUBLISHED.
@@ -39,6 +42,28 @@ class PublishCompetitionAction
         $competition->status = CompetitionStatus::Published->value;
         $competition->save();
 
+        $this->notifyEnrolledStudents($competition->load('exam'));
+
         return $competition->fresh();
+    }
+
+    /**
+     * Notify enrolled students (in the linked exam's course) that the
+     * competition is open. Contains no scoring/ranking data.
+     */
+    private function notifyEnrolledStudents(Competition $competition): void
+    {
+        if (! $competition->exam) {
+            return;
+        }
+
+        Enrollment::query()
+            ->where('course_id', $competition->exam->course_id)
+            ->where('status', EnrollmentStatus::Active->value)
+            ->with('student')
+            ->get()
+            ->each(function (Enrollment $enrollment) use ($competition) {
+                $enrollment->student?->notify(new CompetitionPublishedNotification($competition));
+            });
     }
 }

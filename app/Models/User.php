@@ -25,7 +25,11 @@ class User extends Authenticatable
         'email',
         'password',
         'avatar',
+        'phone',
+        'bio',
         'is_active',
+        'profile_completed_at',
+        'created_by',
     ];
 
     /**
@@ -49,7 +53,29 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'profile_completed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The teacher/admin account that created this student account, if any.
+     */
+    public function createdBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Whether the user has completed their profile. A profile is considered
+     * complete once the user has supplied a name, avatar or phone, or the
+     * account was created with enough detail to be usable.
+     */
+    public function isProfileComplete(): bool
+    {
+        return $this->profile_completed_at !== null
+            || $this->avatar !== null
+            || $this->phone !== null
+            || trim((string) $this->name) !== '';
     }
 
     /**

@@ -13,6 +13,8 @@ class DashboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Course::class);
+
         $query = Course::query()->withCount(['units', 'lessons', 'enrollments']);
 
         if (! $request->user()->isAdmin()) {

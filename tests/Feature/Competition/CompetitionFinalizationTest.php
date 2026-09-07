@@ -36,11 +36,15 @@ class CompetitionFinalizationTest extends ApiTestCase
 
         foreach ($students as $student) {
             $this->enrollStudent($student, $course);
-            $this->joinCompetition($student, $competition)->assertStatus(201);
+            // The window is already closed, so registration happened earlier in
+            // the competition's life; register the participant directly.
+            $this->registerParticipantDirectly($student, $competition, now()->subHours(5));
         }
 
-        $this->makeSubmittedAttempt($students[0], $exam, 90, 90);
-        $this->makeSubmittedAttempt($students[1], $exam, 70, 70);
+        // Attempts must be completed (submitted) before the competition closed
+        // (ends_at = now - 1 hour) to count toward the result.
+        $this->makeSubmittedAttempt($students[0], $exam, 90, 90, now()->subHours(3), now()->subHours(4));
+        $this->makeSubmittedAttempt($students[1], $exam, 70, 70, now()->subHours(3), now()->subHours(4));
 
         // Hitting the teacher view lazily finalizes the competition and freezes
         // the leaderboard snapshot.

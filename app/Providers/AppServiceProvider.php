@@ -12,6 +12,7 @@ use App\Models\LessonProgress;
 use App\Models\Option;
 use App\Models\Question;
 use App\Models\Unit;
+use App\Models\User;
 use App\Models\Video;
 use App\Policies\CompetitionPolicy;
 use App\Policies\CoursePolicy;
@@ -22,6 +23,7 @@ use App\Policies\LessonPolicy;
 use App\Policies\LessonProgressPolicy;
 use App\Policies\OptionPolicy;
 use App\Policies\QuestionPolicy;
+use App\Policies\StudentPolicy;
 use App\Policies\UnitPolicy;
 use App\Policies\VideoPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -79,5 +81,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Option::class, OptionPolicy::class);
         Gate::policy(ExamAttempt::class, ExamAttemptPolicy::class);
         Gate::policy(Competition::class, CompetitionPolicy::class);
+        Gate::policy(User::class, StudentPolicy::class);
     }
 }

@@ -137,13 +137,17 @@ class CompetitionTransactionTest extends ApiTestCase
 
         $a = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($a, $course);
-        $this->joinCompetition($a, $competition)->assertStatus(201);
-        $this->makeSubmittedAttempt($a, $exam, 90, 90);
+        // The window is already closed; registration happened earlier. Register
+        // the participant directly rather than via the (correctly rejecting) join
+        // endpoint.
+        $this->registerParticipantDirectly($a, $competition, now()->subHours(5));
+        // Must be submitted before the window closed (ends_at = now - 1 hour).
+        $this->makeSubmittedAttempt($a, $exam, 90, 90, now()->subHours(3), now()->subHours(4));
 
         $b = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($b, $course);
-        $this->joinCompetition($b, $competition)->assertStatus(201);
-        $this->makeSubmittedAttempt($b, $exam, 70, 70);
+        $this->registerParticipantDirectly($b, $competition, now()->subHours(5));
+        $this->makeSubmittedAttempt($b, $exam, 70, 70, now()->subHours(3), now()->subHours(4));
 
         // First hit finalizes + freezes ranks.
         $this->actingAs($teacher, 'sanctum')

@@ -3,8 +3,11 @@
 namespace App\Actions\Exam;
 
 use App\Enums\ExamStatus;
+use App\Enums\EnrollmentStatus;
 use App\Exceptions\ExamNotReadyToPublishException;
+use App\Models\Enrollment;
 use App\Models\Exam;
+use App\Notifications\ExamPublishedNotification;
 
 /**
  * Validates and publishes an exam.
@@ -25,7 +28,25 @@ class PublishExamAction
         $exam->status = ExamStatus::Published->value;
         $exam->save();
 
+        $this->notifyEnrolledStudents($exam);
+
         return $exam->fresh();
+    }
+
+    /**
+     * Notify enrolled students (in the exam's course) that the exam is available.
+     * The notification contains no questions or answer key.
+     */
+    private function notifyEnrolledStudents(Exam $exam): void
+    {
+        Enrollment::query()
+            ->where('course_id', $exam->course_id)
+            ->where('status', EnrollmentStatus::Active->value)
+            ->with('student')
+            ->get()
+            ->each(function (Enrollment $enrollment) use ($exam) {
+                $enrollment->student?->notify(new ExamPublishedNotification($exam));
+            });
     }
 
     public function assertValid(Exam $exam): void

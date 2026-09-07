@@ -6,6 +6,7 @@ use App\Enums\ExamAttemptStatus;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptOption;
+use App\Notifications\ResultAvailableNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -60,6 +61,13 @@ class GradeExamAttemptAction
             $attempt->submitted_at = $now;
 
             $attempt->save();
+
+            // Notify the student of the available result. This runs only when the
+            // attempt is genuinely graded (GradeExamAttemptAction is never re-run
+            // for an already-submitted attempt), so a re-submit never duplicates
+            // the notification. The notification contains no score or answer key.
+            $attempt->loadMissing('student');
+            $attempt->student?->notify(new ResultAvailableNotification($attempt));
         });
 
         return $attempt->fresh();
