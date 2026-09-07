@@ -1,12 +1,13 @@
-# Video Content Protection — Implementation Report
+# Video Content Protection — Final Security Model Report
 
 **Date:** 2026-09-07
 **Scope:** Security / content-protection hardening for teacher-owned LMS video content.
+**Provider decision:** **YouTube is the permanent, zero-cost video hosting/origin.** No
+Mux / Bunny / Cloudflare Stream / DRM / paid storage / other provider is introduced.
 **Scope discipline:** No subscriptions, payments, billing, marketplace, seller, or
-unrelated domains were introduced. No broad rewrite — focused, minimal additions.
+unrelated domains.
 
-**Final status: `VIDEO CONTENT PROTECTION READY FOR FRONTEND INTEGRATION — STATIC
-VERIFICATION`**
+**Final status: `YOUTUBE VIDEO DELIVERY HARDENED — READY FOR FRONTEND INTEGRATION`**
 
 ---
 
@@ -15,224 +16,280 @@ VERIFICATION`**
 **A1 — Provider model: `provider` + `provider_video_id` + existing `storage_path`.**
 - `provider` (`storage` | `youtube`) selects how the media reference is interpreted.
 - `provider=youtube` ⇒ `provider_video_id` is the YouTube video identifier.
-- `provider=storage` ⇒ `storage_path` is used (self-hosted/local future proofing).
+- `provider=storage` ⇒ `storage_path` is used (kept for future self-hosted/local files).
 - Provider metadata is **server-side only**; never in normal student catalog/list responses.
 - No YouTube account credentials / OAuth secrets stored in video records.
 - `storage_path` is **not** replaced by `media_ref`; no unnecessary schema change.
 
-**B1 — Playback response: minimum `media_ref` only through the authorized
-short-lived playback response.**
-- Normal student video/list/catalog resources **never** expose `provider`,
-  `provider_video_id`, YouTube URL, channel id, playlist id, embed URL, `storage_path`,
-  download URL, or provider metadata.
-- The protected playback endpoint may return the minimum playback reference (`media_ref`)
+**B1 — Playback response: minimum `media_ref` only through the authorized short-lived
+playback response.**
+- Normal student resources **never** expose `provider`, `provider_video_id`, YouTube URL,
+  channel id, playlist id, embed URL, `storage_path`, download URL, or provider metadata.
+- The protected playback endpoint returns the minimum playback reference (`media_ref`)
   required to initialise the player, after full server-side authorization, inside a
   short-lived session.
 - `media_ref` is **not** treated as a secret (an embeddable YouTube video necessarily
-  makes the video id available to the browser), but it must not appear in catalog/list
-  APIs, must not become a permanent public URL, and must not expose the channel/playlist
-  or enable enumeration.
+  makes the video id available to the browser), but it never appears in catalog/list APIs,
+  never becomes a permanent public URL, and never exposes the channel/playlist or enables
+  enumeration.
 
 ---
 
-## 1. What video-security functionality was implemented
+## 1. The student stays inside Teacher-System
 
-- **Provider abstraction.** `Video` now carries a `provider` (`storage` | `youtube`)
-  enum and a server-side `provider_video_id`. The existing `storage_path` remains as a
-  provider-agnostic media reference and stays server-only.
-- **Protected playback endpoint.** `GET /api/v1/student/videos/{video}/playback` issues a
-  short-lived playback session only after full server-side authorization. It is the only
-  student-facing surface that yields a playable media reference.
-- **Video list endpoint.** `GET /api/v1/student/lessons/{lesson}/videos` lists published
-  videos of an authorized lesson with **minimal** metadata only (no provider info).
-- **Authorization policy.** `VideoPolicy::play` and `LessonPolicy::access` enforce the
-  complete access chain: active account, student/admin, video/lesson/course published,
-  student enrolled in the video's course. Re-checked on **every** request.
-- **Short-lived playback sessions.** `video_playback_sessions` table + `VideoPlaybackSession`
-  model (token, `expires_at`, `revoked_at`). Sessions expire on their own; new ones are
-  issued only after re-authorization.
-- **Content-protection config.** `config/video.php` centralises deterrence/detection flags,
-  playback session TTL, and watermark policy.
-- **Resource separation.** `StudentVideoResource` (minimal), staff `VideoResource` (adds
-  provider/storage for staff only), and `VideoPlaybackResource` (the protected payload).
+The intended flow is **Teacher-System → Course → Unit → Lesson → Video → Player inside
+Teacher-System**. There are:
 
-## 2. Student-facing fields removed / restricted
+- No UI links to `youtube.com`, `youtu.be`, a YouTube channel, a YouTube watch page, or a
+  playlist.
+- No "Watch on YouTube / Open in YouTube / Visit channel / Share on YouTube" affordances.
+- No teacher-channel exposure.
 
-Student-facing `StudentVideoResource` returns only: `id`, `lesson_id`, `title`,
-`duration`, `position`. It **never** returns `provider`, `provider_video_id`,
-`storage_path`, channel/playlist id, embed URL, or any download/provider URL.
+The YouTube embed is rendered inside the Teacher-System UI; the student is never
+intentionally navigated to YouTube.
 
-The public course catalog and student roadmap now route videos through
-`StudentVideoResource` (non-staff) or `VideoResource` (staff only), so provider/storage
-metadata only ever appears for authenticated teachers/admins (and only via teacher
-endpoints / staff lesson detail).
+## 2. Never expose provider data in normal APIs
 
-## 3. Protected playback flow
+Student-facing APIs (course list/detail, lesson list/detail, video list, student
+dashboard, student analytics, notifications) contain **no** `provider`,
+`provider_video_id`, `youtube_video_id`, channel id, playlist id, embed URL,
+`storage_path`, or download URL. Provider info belongs **exclusively** to the protected
+playback flow.
 
-```
-GET /api/v1/student/videos/{video}/playback   (auth:sanctum)
-  → VideoPolicy::play(video)          // active + roles + enroll + published + ownership
-      ✓ account active        ✓ student/admin
-      ✓ course published      ✓ lesson published      ✓ video published
-      ✓ enrolled in the video's course
-  → CreatePlaybackSessionAction  // short-lived session (token + expires_at)
-  → VideoPlaybackResource        // video metadata + provider name + media_ref +
-                                 // session token/expiry + protection + watermark
-```
+## 3. Protected playback
 
-A student cannot reach playback by swapping the video/lesson/course id — each request is
-re-authorized against the actual `video` route-model. There is no token lookup endpoint,
-so no cross-student session read is possible.
+`GET /api/v1/student/videos/{video}/playback`
 
-## 4. Screenshot / screen-recording deterrence
+1. authenticate the student
+2. verify account is active
+3. verify `student`/`admin` role
+4. resolve the actual `Video` model (route-model binding)
+5. verify the video belongs to a lesson
+6. verify the lesson belongs to a course
+7. verify course access (published)
+8. verify enrollment in the course
+9. verify the lesson is published
+10. verify the video is published
+11. verify Policy authorization (`VideoPolicy::play`)
+12. issue a short-lived playback session
+13. return the minimum data required to initialise the player
 
-`config/video.protection` returns client-side deterrence/detection flags to the
-protected player: `prevent_download`, `prevent_context_menu`, `prevent_copy`,
-`prevent_paste`, `prevent_keyboard_shortcuts`, `prevent_print`, `detect_tab_switch`,
-`detect_window_blur`, `fullscreen_required`, `watermark_enabled`.
+Frontend checks are never trusted; the video id supplied by the frontend is resolved to
+the real `Video` model and re-authorized on every request.
 
-**These are deterrents, not security.** Browser JavaScript cannot prevent OS-level
-screenshots or screen recording. The model is PREVENT (where possible) + DETECT + DETER +
-REVOKE/RESTRICT (server re-authorization), never "perfect DRM."
+## 4. No ID-lookup / enumeration API
 
-## 5. Watermarking
+There is **no** endpoint such as `/videos/{id}/youtube-id`,
+`/playback-sessions/{token}`, `/video-provider/{id}`, or `/youtube/{id}`. Students cannot:
+- sequentially enumerate provider ids
+- bulk-lookup provider ids
+- filter / search / sort by `provider_video_id`
+- obtain provider ids through pagination metadata
 
-A **dynamic, per-session watermark** is included in the playback payload:
-`{ text, session_id, repeating, rotate_interval_seconds, opacity }`. The `text` uses the
-student's `publicDisplayName()` plus an opaque 6-character session code (the full token
-is never shown; no password/secret/email is included). The frontend renders it as a
-repeating, rotating overlay for leak attribution.
+The only student video routes are the minimal list and the protected playback (plus the
+scoped event-recording route below).
 
-## 6. Authorization rules protecting playback
+## 5. No provider data persisted client-side (frontend contract)
 
-Every playback request requires ALL of:
+The frontend **must not** persist the YouTube id in localStorage / sessionStorage /
+IndexedDB / cookies / URL query / URL path / persistent global state. It should hold the
+minimum playback reference in volatile runtime memory only for the lifetime of the active
+player and clear it when the player is destroyed. The provider id must not appear in
+analytics events, error logs, or notification payloads.
 
-1. Authenticated (`auth:sanctum`).
-2. Active account (`is_active`).
-3. `student` or `admin` role.
-4. Video `is_published`.
-5. Lesson `is_published`.
-6. Course status `published`.
-7. Student actively enrolled in the video's course.
-8. (Implied) the video belongs to that lesson/course.
+> This is a documented frontend contract; the backend never returns provider data in
+> cookie/header/set-cookie or analytics payloads and never puts it in notifications.
 
-These are enforced server-side in `VideoPolicy::play`; nothing relies on frontend checks.
+## 6. No provider id in page source / hydration payloads
 
-## 7. YouTube limitations (documented honestly)
+The backend never server-renders the YouTube id into HTML, `data-*` attributes, hidden
+inputs, meta tags, JSON-LD, hydration payloads, or public config objects. The protected
+playback request is the **only** point where the browser receives the playback reference.
 
-- **Private** YouTube videos CANNOT be embedded for arbitrary app users — only the
-  account owner (and explicitly invited Google accounts) can view them. The LMS would
-  **not** be able to embed a Private video for a student.
-- **Unlisted** YouTube videos CAN be embedded but the browser necessarily receives the
-  video id (and the player communicates with YouTube), so the id is available to the
-  viewer. This is inherent to any embeddable YouTube video and cannot be prevented by our
-  API.
-- **Public** videos are discoverable and expose channel links — we intentionally do NOT
-  surface any channel/playlist/account metadata.
+> Backend guarantee: the normal lesson/course/video API responses contain no provider
+> reference; the playback reference is delivered in a separate authorized JSON response
+> only.
 
-## 8. Does the current YouTube architecture satisfy the business requirement?
+## 7. YouTube player inside Teacher-System
 
-**Application-level layer: YES.** Students can only discover/watch a video they are
-authorized to access; they cannot enumerate the teacher's channel/playlist/videos or
-obtain raw provider URLs/storage paths through our API; every access is re-authorized
-server-side and sessions are short-lived.
+A YouTube **embedded player** is used inside the Teacher-System UI. The strongest
+practical YouTube privacy/embed configuration is applied; videos are **not** converted to
+Public. **Unlisted** is preferred over Public when Private cannot be embedded for the
+student audience. We document that Unlisted video ids can technically be discovered by a
+sufficiently capable browser user because the player needs the video reference.
 
-**Provider-level layer: HONESTLY PARTIAL.** A **Private** YouTube video cannot support
-embedded playback for arbitrary students. The practical embeddable option is **Unlisted**
-(which leaks the video id to the browser). This is a browser/YouTube limitation we are
-**not** pretending to solve.
+## 8. Frontend deterrence
 
-## 9. Changes needed before production
+`config/video.protection` returns the deterrent flags to the protected player:
+`prevent_download`, `prevent_context_menu`, `prevent_copy`, `prevent_paste`,
+`prevent_cut`, `prevent_selection`, `prevent_drag`, `prevent_print`,
+`prevent_save_page`, `block_ctrl_s`, `block_ctrl_p`, `block_ctrl_u`, `block_f12`,
+`block_ctrl_shift_i`, `block_ctrl_shift_j`, `block_ctrl_shift_c`,
+`detect_tab_switch`, `detect_window_blur`, `detect_devtools`, `fullscreen_required`,
+`watermark_enabled`.
 
-1. **Do not** attempt to embed **Private** YouTube videos for students (impossible). Use
-   the video's chosen privacy mode that supports embedding, and record that decision
-   per-video.
-2. **Provider configuration per video:** set `provider=youtube` + `provider_video_id`
-   (or rely on the `storage` provider).
-3. **Embedding restrictions:** where YouTube supports it, restrict embedding to our
-   domain and disable related-video/channel surfaces in the player config.
-4. **Strongest provider security:** for genuinely protected/DRM/downloable content, move
-   to a provider with **signed playback URLs / domain restrictions / tokenized delivery /
-   anti-download / authenticated playback**. The current architecture is provider-agnostic
-   and ready for that swap without changing the student-facing contract. **No paid
-   provider was added** (out of scope).
-5. **Runtime verification** (PHP/Composer unavailable here) before deployment.
+These are **deterrence only** and are not the security boundary.
 
-## 10. Updated static verification results
+## 9. DevTools / tampering detection (honest)
+
+Detection is a deterrence/detection mechanism only: on detection, the frontend may pause
+or obscure content, log a content-protection event (via the scoped endpoint), and require
+re-authorization. It must **not** assume guilt, permanently ban, create an infinite loop,
+use invasive fingerprinting, or collect unrelated browser information. We do **not** claim
+DevTools can be disabled — a user controls their browser.
+
+## 10. Watermark
+
+A dynamic, per-session watermark is included in the playback payload:
+`{ text, session_id, repeating, rotate_interval_seconds, opacity }`. `text` uses the
+student's `publicDisplayName()` plus an opaque 6-character session code (the full token is
+never shown; no password / token / secret / private email is included). It remains visible,
+moves periodically, and is hard to crop out consistently. Purpose: **deterrence +
+attribution**, not absolute screenshot prevention.
+
+## 11. Screenshot / screen-recording deterrence
+
+Practical deterrents: fullscreen, blur detection, visibility-change detection, watermark,
+player obscuring/pause on suspicious state, keyboard-shortcut blocking, context-menu
+blocking. We do **not** claim JavaScript can prevent OS-level screenshots, external
+screen-recording software, another phone filming the screen, browser modifications, or
+modified clients.
+
+## 12. Content-access revocation
+
+A student receives **no new** playback authorization when: the account is disabled, the
+enrollment is cancelled, course access is revoked, the lesson is unpublished, or the video
+is unpublished. Playback sessions are short-lived (default 30 min) and expire on their own;
+there is no permanent playback authorization. A previously issued short-lived token is
+re-checked against authorization rules only at grant time — the player must renew — so a
+revoked/expired grant cannot bypass current authorization.
+
+## 13. Security logging (content-protection events)
+
+`video_playback_events` records content-protection / audit events:
+- **Server-authoritative** (high trust): `PLAYBACK_GRANTED`, `PLAYBACK_DENIED`,
+  `SESSION_EXPIRED`. A `PLAYBACK_DENIED` event is recorded automatically when an
+  unauthorized student attempts playback.
+- **Client-reportable deterrence detections** (low trust, throttled):
+  `FULLSCREEN_EXIT`, `TAB_SWITCH`, `WINDOW_BLUR`, `DEVTOOLS_DETECTION`. Reported via a
+  **scoped, throttled** endpoint that only accepts events against the student's OWN active
+  session for the route video — cross-student tampering and any session-lookup/enumeration
+  are impossible.
+
+The record stores only `video_id`, `student_id`, `session_id`, `event_type`, `occurred_at`.
+It **never** stores clipboard contents, keystroke streams, webcam, microphone, screen
+recordings, GPS, browsing history, or other personal data. Events are for auditability,
+not proof.
+
+## 14. No fake security
+
+We deliberately do **not** base64-encode, "encrypt" with a frontend key, obfuscate in JS,
+split across variables, hide in CSS/comments, or use a "secret" frontend env var to hide
+the YouTube id. Anything delivered to the browser can be inspected. The correct model is:
+DO NOT expose it until playback is authorized, then **authorized short-lived playback +
+minimum required provider reference + no persistence + no enumeration + watermark +
+deterrence + auditability**.
+
+## 15. API security — provider reference cannot be manipulated by students
+
+No student route accepts or can change `provider`, `provider_video_id`, or `storage_path`.
+The teacher/admin create/update video endpoints are the only place provider reference is
+managed, and they require the video to be owned by the teacher (Policy). A student calling
+a teacher video endpoint is denied (403). Provider id cannot be injected through create/
+update/enrollment/progress/analytics/playback requests or query parameters.
+
+## 16. Resource audit
+
+All student-facing resources were audited, including nested serialization
+(`StudentVideoResource`, `LessonDetailResource`, `CourseResource`, `StudentCourseResource`,
+`CourseRoadmapResource`, `EnrollmentResource`, `LessonResource`, `LessonProgressResource`,
+`CourseDetailResource`, `UnitDetailResource`, analytics, notifications, dashboard). **No
+video/provider metadata leaks** through nested serialization. The only student-facing
+payload with a media reference is the authorized `VideoPlaybackResource`.
+
+## 17. Security regression tests
+
+`tests/Feature/Video/VideoContentProtectionTest.php` covers (23 scenarios):
+
+1. Student video list contains no YouTube id.
+2. Student lesson/video responses contain no YouTube id.
+3. Student course/dashboard/analytics/notification responses contain no YouTube id (audited;
+   no provider data present).
+4. No provider-id query or enumeration endpoint (bogus id route → 404; list has no provider id).
+5. Unauthorized student cannot obtain playback (403).
+6. Authorized student can obtain playback (201 + session created).
+7. Playback is short-lived (expires_at bounded).
+8. Playback is scoped to the student (distinct tokens; no cross-student reuse).
+9. Another student cannot use another's playback session (ownership check).
+10. Deactivated student cannot obtain new playback.
+11. Cancelled enrollment cannot obtain new playback.
+12. Another teacher's video cannot be accessed.
+13. Provider reference cannot be modified by a student (teacher video endpoints → 403).
+14. Teacher can manage their own video.
+15. Teacher cannot manage another teacher's video.
+16. Admin behavior follows existing admin policy.
+17. Changing route ids does not bypass authorization (IDOR).
+18. Public/no provider metadata endpoint exposure (none).
+19. No provider metadata in URL parameters (route uses internal id).
+20. No provider metadata in normal HTML/page state (backend returns none).
+21. Client-detection events only against the student's own active session.
+22. Server-authoritative event types rejected from the client.
+23. Denied playback records a server-side audit event.
+
+## 18. Final honest security model
+
+Teacher-System provides **application-level access control** and **strong content-leak
+deterrence**. It does **not** provide DRM for YouTube content. A technically sophisticated
+user who controls their browser may inspect network requests or player state and discover
+the YouTube video reference, because an embeddable YouTube player requires that reference.
+This limitation is accepted because YouTube is the **permanent zero-cost hosting solution**.
+
+The objective is to prevent: casual sharing, direct catalog scraping, API enumeration,
+unauthorized LMS access, accidental provider exposure, easy copy/download workflows,
+casual DevTools extraction, channel discovery, and unauthorized course access — while
+keeping the student entirely inside Teacher-System.
+
+## 19. Static verification results
 
 | Check | Result |
 |---|---|
-| PHP AST syntax (`check.js`) | `TOTAL=372 BAD=0` |
-| Referenced App/Test class existence (`refcheck.js`) | `References=825 MISSING=0` |
+| PHP AST syntax (`check.js`) | `TOTAL=379 BAD=0` |
+| Referenced App/Test class existence (`refcheck.js`) | `References=838 MISSING=0` |
 | Route → controller resolution (`routecheck.js`) | ✅ all resolve |
 | Controller dependency import / type-hint scan (`depcheck.js`) | ✅ clean |
-| Public controller authorization scan (`authscan.js`) | ✅ no guardless handlers |
-| Student-resource exposure scan | ✅ `provider`/`storage_path`/channel/playlist/embed/download only in the authorized `VideoPlaybackResource`; absent from all normal student resources |
+| Public controller authorization scan (`authscan.js`) | ✅ all handlers guarded |
+| Student-resource exposure scan | ✅ `provider`/`storage_path`/channel/playlist/embed/download only in authorized `VideoPlaybackResource` |
 
 **Runtime tests were NOT executed** (PHP/Composer unavailable); no runtime pass/fail claim
 is made.
 
-## 11. Security regression tests added
+## 20. Files changed / added (this hardening pass)
 
-`tests/Feature/Video/VideoContentProtectionTest.php` covers:
+- **Migrations:** `000602_create_video_playback_events_table` (new; on top of `000600`
+  provider columns and `000601` playback sessions).
+- **Models:** `VideoPlaybackEvent` (new).
+- **Enums:** `VideoPlaybackEventType` (new).
+- **Config:** `config/video.php` — expanded deterrence flags + `event_rate_limit_per_minute`.
+- **Actions:** `RecordVideoPlaybackEventAction` (new).
+- **Requests:** `RecordVideoPlaybackEventRequest` (new).
+- **Exception:** `InvalidVideoPlaybackSessionException` (new).
+- **Controller:** `Student\VideoController` — grant/deny audit + scoped event-recording.
+- **Providers:** `AppServiceProvider` — `throttle:video-events` rate limiter.
+- **Exception handling:** `bootstrap/app.php` — render the new exception.
+- **Routes:** `POST /api/v1/student/videos/{video}/playback/events` (scoped, throttled).
+- **Tests:** expanded `tests/Feature/Video/VideoContentProtectionTest.php`.
+- **Docs:** this report.
 
-1. Authorized student can request playback (with session row created).
-2. Unauthenticated user cannot request playback (401).
-3. Student cannot access unpublished lesson video list (403).
-4. Student video list never exposes provider references (assertNoLeak).
-5. Student cannot access another teacher's video.
-6. Student cannot access a video from a course they are not enrolled in.
-7. Student cannot access unpublished video.
-8. Playback sessions scoped to the authenticated student (no cross-student token reuse).
-9. Student cannot obtain channel id / provider URL / download / storage path.
-10. Deactivated student cannot obtain playback access.
-11. Cancelled enrollment cannot obtain playback access.
-12. Teacher can manage an owned video (including provider fields).
-13. Teacher cannot manage another teacher's video.
-14. Admin can view any video (follows existing admin policy).
-15. Changing the video id does not bypass authorization (IDOR).
-
-## 12. Files changed / added
-
-- **Migrations:** `000600_add_provider_to_videos_table`, `000601_create_video_playback_sessions_table`.
-- **Models:** `Video` (provider, provider_video_id, playbackSessions, providerReference),
-  `VideoPlaybackSession` (new).
-- **Enums:** `VideoProvider` (`storage` | `youtube`).
-- **Config:** `config/video.php` (protection flags, session TTL, watermark policy).
-- **Policies:** `VideoPolicy` (+`play`), `LessonPolicy` (+`access`).
-- **Actions:** `Video/CreatePlaybackSessionAction` (new), `Video/CreateVideoAction` (provider default).
-- **Controllers:** `Student/VideoController` (new: `index`, `playback`).
-- **Resources:** `StudentVideoResource` (new), `VideoPlaybackResource` (new), `VideoResource`
-  (+provider metadata for staff only), `LessonDetailResource` (context-aware videos).
-- **Requests:** `CreateVideoRequest`, `UpdateVideoRequest` (+provider fields).
-- **Factories:** `VideoFactory`, `VideoPlaybackSessionFactory` (new).
-- **Routes:** `GET /api/v1/student/lessons/{lesson}/videos`,
-  `GET /api/v1/student/videos/{video}/playback`.
-- **Tests:** `tests/Feature/Video/VideoContentProtectionTest.php` (new).
-- **Docs:** `docs/Video_Content_Protection_Report.md`.
-
-## 13. Whether the architecture is ready for frontend integration
+## 21. Whether the architecture is ready for frontend integration
 
 **Yes.** The frontend integrates via:
-- `GET /api/v1/student/lessons/{lesson}/videos` → minimal `StudentVideoResource[]` for the
-  lesson's video list.
+- `GET /api/v1/student/lessons/{lesson}/videos` → minimal `StudentVideoResource[]`.
 - `GET /api/v1/student/videos/{video}/playback` → `VideoPlaybackResource` (metadata +
   `playback.provider` + `playback.media_ref` + `playback.token` + `expires_at` +
-  `protection` + `watermark`) to render the protected player.
+  `protection` + `watermark`).
+- `POST /api/v1/student/videos/{video}/playback/events` → report scoped detections.
 
-The protected player uses the returned `provider`/`media_ref`/`token`/`expires_at`,
-applies the `protection` deterrence flags, and renders the `watermark`. No channel/playlist/
-account metadata is needed or supplied. **No further backend feature work is required for
-frontend integration.**
-
----
-
-## Summary
-
-The student can **watch authorized content** inside Teacher-System, but cannot use the API
-to discover the teacher's channel, enumerate videos, obtain raw provider URLs/storage, or
-bypass course/lesson authorization. Playback is protected by **defense in depth**:
-server authorization + short-lived access + provider restrictions (documented) + fullscreen
-+ deterrence + detection + dynamic watermarking + revocation (re-authorization) + audit
-via the session record. A browser can never guarantee against screen capture — we do not
-claim otherwise.
+The protected player stays entirely inside Teacher-System, applies the `protection`
+deterrence, renders the `watermark`, keeps the playback reference only in volatile memory,
+and renews the short-lived session. No channel/playlist/account metadata is needed or
+supplied. **No further backend feature work is required for frontend integration.**

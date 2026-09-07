@@ -14,6 +14,7 @@ use App\Exceptions\ExamNotPublishedException;
 use App\Exceptions\ExamNotReadyToPublishException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
+use App\Exceptions\InvalidVideoPlaybackSessionException;
 use App\Exceptions\LessonNotAccessibleException;
 use App\Http\Middleware\ForceJsonResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -214,6 +215,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 409);
+            }
+        });
+
+        $exceptions->render(function (InvalidVideoPlaybackSessionException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
             }
         });
 

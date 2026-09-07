@@ -61,6 +61,14 @@ class AppServiceProvider extends ServiceProvider
                 ->by($request->route('attempt')?->id ?: $request->user()?->id ?: $request->ip());
         });
 
+        // Dedicated rate limiter for the student video playback protection-event
+        // endpoint (deterrence detections). Keyed per-video so a single video's
+        // events are limited, while still protecting the endpoint from flooding.
+        RateLimiter::for('video-events', function (Request $request) {
+            return Limit::perMinute((int) config('video.event_rate_limit_per_minute', 60))
+                ->by($request->route('video')?->id ?: $request->user()?->id ?: $request->ip());
+        });
+
         // Admins are allowed every capability via a Gate "before" hook.
         Gate::before(function ($user, $ability) {
             if ($user) {

@@ -210,6 +210,10 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('lessons/{lesson}/videos', [StudentVideoController::class, 'index']);
     // Protected playback: only place a student receives a playable reference.
     Route::get('videos/{video}/playback', [StudentVideoController::class, 'playback']);
+    // Client-reported content-protection detections, scoped to the student's own
+    // active session, throttled to avoid flooding. No provider-id lookup.
+    Route::post('videos/{video}/playback/events', [StudentVideoController::class, 'recordEvent'])
+        ->middleware('throttle:video-events');
 
     // Exams: discovery, attempts, answering, submission
     Route::get('exams', [StudentExamController::class, 'index']);

@@ -333,4 +333,179 @@ class VideoContentProtectionTest extends ApiTestCase
             ->getJson("/api/v1/student/videos/{$videoB->id}/playback")
             ->assertStatus(403);
     }
+
+    // 16. Student cannot query a provider id / enumerate provider ids: there is no
+    // such endpoint, and the normal list contains none.
+    public function test_no_provider_id_query_or_enumeration_endpoint(): void
+    {
+        $teacher = $this->teacher();
+        [$course, $lesson, $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        // There is no endpoint to fetch a provider id by internal video id; the
+        // only video endpoints respond with minimal metadata or a protected
+        // payload tied to authorization. Assert a bogus provider-id query yields
+        // nothing usable (404 for unknown route on a made-up path).
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/youtube-id")
+            ->assertStatus(404);
+
+        // Pagination/filter metadata must never surface provider ids.
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/lessons/{$lesson->id}/videos")
+            ->assertStatus(200);
+        $this->assertStringNotContainsStringIgnoringCase('provider_video_id', json_encode($response->json('data')));
+        $this->assertStringNotContainsStringIgnoringCase('dQw4w9WgXcQ', json_encode($response->json('data')));
+    }
+
+    // 17. Client-detection events: a student can report a deterrence detection
+    // against their OWN active session for the route video.
+    public function test_student_can_report_detection_for_their_own_session(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        $token = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->json('data.playback.token');
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/videos/{$video->id}/playback/events", [
+                'session_token' => $token,
+                'event_type' => 'FULLSCREEN_EXIT',
+            ])
+            ->assertStatus(201)
+            ->assertJsonPath('data.recorded', true);
+
+        $this->assertDatabaseHas('video_playback_events', [
+            'video_id' => $video->id,
+            'student_id' => $student->id,
+            'event_type' => 'FULLSCREEN_EXIT',
+        ]);
+    }
+
+    // 18. A student cannot report a detection against ANOTHER student's session.
+    public function test_student_cannot_report_against_another_students_session(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $studentA = $this->createUserWithRole(UserRole::Student);
+        $studentB = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($studentA, $course->id);
+        $this->enrollStudent($studentB, $course->id);
+
+        // Student A obtains a session token.
+        $tokenA = $this->actingAs($studentA, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->json('data.playback.token');
+
+        // Student B cannot report an event against A's session.
+        $this->actingAs($studentB, 'sanctum')
+            ->postJson("/api/v1/student/videos/{$video->id}/playback/events", [
+                'session_token' => $tokenA,
+                'event_type' => 'TAB_SWITCH',
+            ])
+            ->assertStatus(422);
+    }
+
+    // 19. Server-authoritative event types cannot be reported by the client.
+    public function test_server_event_types_are_rejected_from_client(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        $token = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->json('data.playback.token');
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/videos/{$video->id}/playback/events", [
+                'session_token' => $token,
+                'event_type' => 'PLAYBACK_GRANTED',
+            ])
+            ->assertStatus(422);
+    }
+
+    // 20. Student cannot modify provider reference through ANY of their routes
+    // (no student route accepts video provider fields; teacher routes are 403).
+    public function test_student_cannot_modify_provider_reference(): void
+    {
+        $teacher = $this->teacher();
+        [, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+
+        $this->actingAs($student, 'sanctum')
+            ->putJson("/api/v1/teacher/videos/{$video->id}", [
+                'provider_video_id' => 'attacker-controlled-id',
+            ])
+            ->assertStatus(403);
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/teacher/lessons/{$video->lesson_id}/videos", [
+                'title' => 'Hack Video',
+                'provider_video_id' => 'attacker-controlled-id',
+            ])
+            ->assertStatus(403);
+    }
+
+    // 21. Playback is short-lived: the session token expires and a new grant is
+    // required (assert expires_at is in the future and ttl is bounded).
+    public function test_playback_session_is_short_lived(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->assertStatus(201);
+
+        $expiresAt = $response->json('data.playback.expires_at');
+        $this->assertNotNull($expiresAt);
+
+        $session = VideoPlaybackSession::where('token', $response->json('data.playback.token'))->firstOrFail();
+        $this->assertNotNull($session->expires_at);
+        $this->assertTrue($session->expires_at->isFuture());
+        // Bounded (<= 2 hours) so it cannot be a permanent grant.
+        $this->assertLessThanOrEqual(now()->addHours(2), $session->expires_at);
+    }
+
+    // 22. No provider id in URL parameters of the playback request (uses internal id).
+    public function test_provider_id_not_in_playback_url(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enrollStudent($student, $course->id);
+
+        // The route path uses the INTERNAL video id, never the provider id.
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->assertStatus(201);
+    }
+
+    // 23. A playback-denied event is recorded server-side when unauthorized.
+    public function test_denied_playback_records_audit_event(): void
+    {
+        $teacher = $this->teacher();
+        [$course, , $video] = $this->courseWithPublishedLessonVideo($teacher);
+        $student = $this->createUserWithRole(UserRole::Student);
+        // Not enrolled -> playback denied.
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/videos/{$video->id}/playback")
+            ->assertStatus(403);
+
+        $this->assertDatabaseHas('video_playback_events', [
+            'video_id' => $video->id,
+            'student_id' => $student->id,
+            'event_type' => 'PLAYBACK_DENIED',
+        ]);
+    }
 }
