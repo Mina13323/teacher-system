@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -10,6 +11,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import Alert from '@/components/ui/Alert.vue';
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
@@ -58,7 +60,7 @@ async function save() {
             phone: form.phone || null,
             bio: form.bio || null,
         });
-        toast.success('Profile updated.');
+        toast.success(t('profile.updated'));
     } catch (e) {
         Object.assign(errors, fieldErrors(e));
         errorMsg.value = e.isValidation ? '' : e.message;
@@ -78,7 +80,7 @@ async function savePassword() {
         pw.current_password = '';
         pw.password = '';
         pw.password_confirmation = '';
-        toast.success('Password changed.');
+        toast.success(t('profile.passwordChanged'));
     } catch (e) {
         Object.assign(passwordErrors, fieldErrors(e));
         errorMsg.value = e.isValidation ? '' : e.message;
@@ -93,8 +95,8 @@ onMounted(load);
 <template>
     <div class="mx-auto max-w-2xl space-y-6">
         <div>
-            <h1 class="text-2xl font-bold text-ink-900">Profile</h1>
-            <p class="text-sm text-ink-500">Manage your personal information and account security.</p>
+            <h1 class="text-2xl font-bold text-ink-900">{{ $t('profile.title') }}</h1>
+            <p class="text-sm text-ink-500">{{ $t('profile.subtitle') }}</p>
         </div>
 
         <Alert v-if="errorMsg" tone="danger" dismissible @dismiss="errorMsg = ''">{{ errorMsg }}</Alert>
@@ -102,27 +104,27 @@ onMounted(load);
         <LoadingSpinner v-if="loading" />
 
         <template v-else>
-            <AppCard title="Personal information">
+            <AppCard :title="$t('profile.personalInfo')">
                 <form class="space-y-4" @submit.prevent="save">
-                    <AppInput v-model="form.name" label="Full name" required id="profile-name" :error="errors.name" />
-                    <AppInput v-model="form.email" label="Email" :model-value="profile?.email" id="profile-email" readonly hint="Email can only be changed by a manager." />
-                    <AppInput v-model="form.phone" label="Phone" id="profile-phone" :error="errors.phone" />
-                    <AppInput v-model="form.avatar" label="Avatar URL" id="profile-avatar" :error="errors.avatar" placeholder="https://…" />
-                    <AppTextarea v-model="form.bio" label="Bio" id="profile-bio" :error="errors.bio" :rows="3" />
+                    <AppInput v-model="form.name" :label="$t('profile.fullName')" required id="profile-name" :error="errors.name" />
+                    <AppInput v-model="form.email" :label="$t('profile.email')" :model-value="profile?.email" id="profile-email" readonly :hint="$t('profile.emailHint')" />
+                    <AppInput v-model="form.phone" :label="$t('profile.phone')" id="profile-phone" :error="errors.phone" />
+                    <AppInput v-model="form.avatar" :label="$t('profile.avatar')" id="profile-avatar" :error="errors.avatar" placeholder="https://…" />
+                    <AppTextarea v-model="form.bio" :label="$t('profile.bio')" id="profile-bio" :error="errors.bio" :rows="3" />
                     <div class="flex justify-end">
-                        <AppButton type="submit" :loading="saving">Save changes</AppButton>
+                        <AppButton type="submit" :loading="saving">{{ $t('common.saveChanges') }}</AppButton>
                     </div>
                 </form>
             </AppCard>
 
-            <AppCard title="Security">
+            <AppCard :title="$t('profile.security')">
                 <form class="space-y-4" @submit.prevent="savePassword">
                     <Alert v-if="passwordErrors" tone="danger">{{ passwordErrors.password }}</Alert>
-                    <AppInput v-model="pw.current_password" label="Current password" type="password" id="pw-current" required :error="passwordErrors.current_password" autocomplete="current-password" />
-                    <AppInput v-model="pw.password" label="New password" type="password" id="pw-new" required :error="passwordErrors.password" autocomplete="new-password" hint="At least 8 characters." />
-                    <AppInput v-model="pw.password_confirmation" label="Confirm new password" type="password" id="pw-confirm" required :error="passwordErrors.password_confirmation" autocomplete="new-password" />
+                    <AppInput v-model="pw.current_password" :label="$t('profile.currentPassword')" type="password" id="pw-current" required :error="passwordErrors.current_password" autocomplete="current-password" />
+                    <AppInput v-model="pw.password" :label="$t('profile.newPassword')" type="password" id="pw-new" required :error="passwordErrors.password" autocomplete="new-password" :hint="$t('profile.passwordHint')" />
+                    <AppInput v-model="pw.password_confirmation" :label="$t('profile.confirmPassword')" type="password" id="pw-confirm" required :error="passwordErrors.password_confirmation" autocomplete="new-password" />
                     <div class="flex justify-end">
-                        <AppButton type="submit" :loading="passwordSaving">Change password</AppButton>
+                        <AppButton type="submit" :loading="passwordSaving">{{ $t('profile.changePassword') }}</AppButton>
                     </div>
                 </form>
             </AppCard>

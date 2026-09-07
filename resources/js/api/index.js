@@ -21,7 +21,6 @@ export function toList(res, extraMeta = {}) {
 export const auth = {
     me: () => api.get('/auth/me'),
     login: (payload) => api.post('/auth/login', payload),
-    register: (payload) => api.post('/auth/register', payload),
     logout: () => api.post('/auth/logout'),
     profile: () => api.get('/auth/profile'),
     updateProfile: (payload) => api.put('/auth/profile', payload),

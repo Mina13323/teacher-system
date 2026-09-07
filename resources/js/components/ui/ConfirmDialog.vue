@@ -17,7 +17,7 @@ const emit = defineEmits(['close', 'confirm']);
     <AppModal :open="open" :title="title" size="sm" @close="emit('close')">
         <p class="text-sm text-ink-600">{{ message }}</p>
         <template #footer>
-            <AppButton variant="outline" :disabled="loading" @click="emit('close')">Cancel</AppButton>
+            <AppButton variant="outline" :disabled="loading" @click="emit('close')">{{ $t('common.cancel') }}</AppButton>
             <AppButton :variant="tone" :loading="loading" @click="emit('confirm')">{{ confirmText }}</AppButton>
         </template>
     </AppModal>

@@ -1,6 +1,6 @@
 <script setup>
 defineProps({
-    title: { type: String, default: 'Nothing here yet' },
+    title: { type: String, default: '' },
     message: { type: String, default: '' },
     icon: { type: String, default: 'compass' },
 });
@@ -14,7 +14,7 @@ defineProps({
             <svg v-else-if="icon === 'clipboard'" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
             <svg v-else class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12Z"/></svg>
         </div>
-        <h3 class="mt-4 text-base font-semibold text-ink-800">{{ title }}</h3>
+        <h3 class="mt-4 text-base font-semibold text-ink-800">{{ title || $t('common.empty') }}</h3>
         <p v-if="message" class="mt-1 max-w-sm text-sm text-ink-500">{{ message }}</p>
         <div v-if="$slots.default" class="mt-4"><slot /></div>
     </div>

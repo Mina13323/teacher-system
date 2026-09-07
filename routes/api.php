@@ -46,8 +46,9 @@ use Illuminate\Support\Facades\Route;
 */
 
 // ---- Authentication -------------------------------------------------------
+// Self-registration is intentionally not exposed. Accounts are created only by
+// teachers/assistants (student ops) or admins through the management portals.
 Route::prefix('auth')->group(function () {
-    Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
 
     Route::middleware('auth:sanctum')->group(function () {

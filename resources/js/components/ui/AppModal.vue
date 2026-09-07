@@ -36,7 +36,7 @@ watch(() => props.open, (v) => {
             >
                 <div class="flex items-center justify-between border-b border-ink-100 px-5 py-4">
                     <h3 class="text-base font-semibold text-ink-900">{{ title }}</h3>
-                    <button type="button" class="rounded p-1 text-ink-500 hover:bg-ink-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" aria-label="Close" @click="emit('close')">
+                    <button type="button" class="rounded p-1 text-ink-500 hover:bg-ink-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" :aria-label="$t('app.close')" @click="emit('close')">
                         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
                     </button>
                 </div>

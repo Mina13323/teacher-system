@@ -30,7 +30,7 @@ function go(page) {
             :disabled="meta.current_page <= 1"
             @click="go(meta.current_page - 1)"
         >
-            Previous
+            {{ $t('common.previous') }}
         </button>
         <div class="flex items-center gap-1">
             <button
@@ -48,7 +48,7 @@ function go(page) {
             :disabled="meta.current_page >= (meta.last_page || 1)"
             @click="go(meta.current_page + 1)"
         >
-            Next
+            {{ $t('common.next') }}
         </button>
     </nav>
 </template>

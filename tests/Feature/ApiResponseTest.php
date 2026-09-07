@@ -9,7 +9,7 @@ class ApiResponseTest extends ApiTestCase
 {
     public function test_validation_failure_returns_standard_envelope(): void
     {
-        $this->postJson('/api/v1/auth/register', [
+        $this->postJson('/api/v1/auth/login', [
             'email' => 'not-an-email',
         ])
             ->assertStatus(422)
@@ -17,7 +17,7 @@ class ApiResponseTest extends ApiTestCase
                 'success' => false,
                 'message' => 'Validation failed.',
             ])
-            ->assertJsonStructure(['errors' => ['name', 'email', 'password']]);
+            ->assertJsonStructure(['errors' => ['email', 'password']]);
     }
 
     public function test_authentication_failure_returns_standard_envelope(): void

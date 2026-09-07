@@ -40,21 +40,21 @@ onMounted(() => store.fetch());
     <div class="mx-auto max-w-3xl">
         <div class="mb-6 flex items-center justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-ink-900">Notifications</h1>
-                <p class="text-sm text-ink-500">Stay updated on your courses, exams and competitions.</p>
+                <h1 class="text-2xl font-bold text-ink-900">{{ $t('notifications.title') }}</h1>
+                <p class="text-sm text-ink-500">{{ $t('notifications.subtitle') }}</p>
             </div>
-            <AppButton v-if="items.length" variant="outline" @click="readAll">Mark all read</AppButton>
+            <AppButton v-if="items.length" variant="outline" @click="readAll">{{ $t('notifications.markAllRead') }}</AppButton>
         </div>
 
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Could not load notifications.
+            {{ $t('notifications.loadError') }}
         </div>
         <EmptyState
             v-else-if="!items.length"
             icon="bell"
-            title="No notifications"
-            message="When something happens in your courses, it will show up here."
+            :title="$t('notifications.empty')"
+            :message="$t('notifications.emptyHint')"
         />
         <div v-else class="space-y-2">
             <div
@@ -68,14 +68,14 @@ onMounted(() => store.fetch());
                 </div>
                 <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
-                        <p class="font-semibold text-ink-900">{{ n.data?.title || 'Notification' }}</p>
-                        <AppBadge v-if="!n.read_at" tone="primary">New</AppBadge>
+                        <p class="font-semibold text-ink-900" dir="auto">{{ n.data?.title || $t('notifications.fallback') }}</p>
+                        <AppBadge v-if="!n.read_at" tone="primary">{{ $t('notifications.new') }}</AppBadge>
                     </div>
-                    <p class="mt-0.5 text-sm text-ink-600">{{ n.data?.message }}</p>
+                    <p class="mt-0.5 text-sm text-ink-600" dir="auto">{{ n.data?.message }}</p>
                     <p class="mt-1 text-xs text-ink-400">{{ new Date(n.created_at).toLocaleString() }}</p>
                 </div>
                 <button v-if="!n.read_at" type="button" class="shrink-0 self-center rounded-lg px-3 py-1.5 text-xs font-medium text-terracotta-600 hover:bg-terracotta-50" @click="read(n.id)">
-                    Mark read
+                    {{ $t('notifications.markRead') }}
                 </button>
             </div>
             <Pagination v-if="meta" :meta="meta" @change="loadPage" />

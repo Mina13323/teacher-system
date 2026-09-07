@@ -9,43 +9,18 @@ use Tests\Feature\ApiTestCase;
 
 class AuthenticationTest extends ApiTestCase
 {
-    public function test_user_can_register(): void
+    public function test_public_registration_is_disabled(): void
     {
-        $response = $this->postJson('/api/v1/auth/register', [
+        // Self-registration is intentionally not exposed. Accounts are created
+        // only by teachers/assistants or admins through the management portals.
+        $this->postJson('/api/v1/auth/register', [
             'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-        ]);
+        ])->assertNotFound();
 
-        $response->assertStatus(201)
-            ->assertJson([
-                'success' => true,
-                'message' => 'Registration successful.',
-            ])
-            ->assertJsonStructure([
-                'data' => [
-                    'token',
-                    'user' => ['id', 'name', 'email', 'roles'],
-                ],
-            ]);
-
-        $this->assertDatabaseHas('users', ['email' => 'test@example.com']);
-        $this->assertTrue(Hash::check('password123', User::where('email', 'test@example.com')->first()->password));
-        $this->assertTrue($response->json('data.user.roles') === ['student']);
-    }
-
-    public function test_registration_hashes_password_and_does_not_leak_it(): void
-    {
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(201);
-        $this->assertArrayNotHasKey('password', $response->json('data.user'));
+        $this->assertDatabaseMissing('users', ['email' => 'test@example.com']);
     }
 
     public function test_user_can_login(): void

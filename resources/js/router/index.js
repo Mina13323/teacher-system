@@ -6,7 +6,6 @@ const routes = [
     { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue') },
     { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue') },
     { path: '/login', name: 'login', component: () => import('@/views/Auth/Login.vue'), meta: { guest: true } },
-    { path: '/register', name: 'register', component: () => import('@/views/Auth/Register.vue'), meta: { guest: true } },
 
     // ---- Student -----------------------------------------------------------
     {

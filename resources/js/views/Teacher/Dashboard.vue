@@ -1,6 +1,7 @@
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, computed } from 'vue';
 import { useAsync } from '@/composables/useAsync';
+import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import StatCard from '@/components/ui/StatCard.vue';
@@ -9,6 +10,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+const { t } = useI18n();
 const { loading, error, data, run } = useAsync(async () => {
     const res = await teacher.dashboard();
     return {
@@ -18,20 +20,20 @@ const { loading, error, data, run } = useAsync(async () => {
 });
 onMounted(() => run());
 
-const shortcuts = [
-    { to: '/teacher/students/new', label: 'Add Student', icon: 'users' },
-    { to: '/teacher/assistants/new', label: 'Add Assistant', icon: 'user' },
-    { to: '/teacher/courses/new', label: 'New Course', icon: 'book' },
-    { to: '/teacher/competitions/new', label: 'New Competition', icon: 'trophy' },
-];
+const shortcuts = computed(() => [
+    { to: '/teacher/students/new', label: t('dashboard.addStudent'), icon: 'users' },
+    { to: '/teacher/assistants/new', label: t('dashboard.addAssistant'), icon: 'user' },
+    { to: '/teacher/courses/new', label: t('nav.newCourse'), icon: 'book' },
+    { to: '/teacher/competitions/new', label: t('nav.newCompetition'), icon: 'trophy' },
+]);
 </script>
 
 <template>
     <div class="space-y-6">
         <div class="flex items-center justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-ink-900">Teacher dashboard</h1>
-                <p class="text-sm text-ink-500">An overview of your educational operation.</p>
+                <h1 class="text-2xl font-bold text-ink-900">{{ $t('dashboard.teacherTitle') }}</h1>
+                <p class="text-sm text-ink-500">{{ $t('dashboard.teacherSubtitle') }}</p>
             </div>
         </div>
 
@@ -48,13 +50,13 @@ const shortcuts = [
 
         <template v-else>
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard label="Courses" :value="data.courses_count" icon="book" tone="terracotta" :hint="`${data.published_count} published`" />
-                <StatCard label="Enrollments" :value="data.total_enrollments" icon="users" tone="emerald" />
-                <StatCard label="Lessons" :value="data.total_lessons" icon="layers" tone="sky" :hint="`${data.total_units} units`" />
-                <StatCard label="Drafts" :value="data.draft_count" icon="clipboard" tone="amber" />
+                <StatCard :label="$t('dashboard.statCourses')" :value="data.courses_count" icon="book" tone="terracotta" :hint="`${data.published_count} ${$t('dashboard.published')}`" />
+                <StatCard :label="$t('dashboard.enrollments')" :value="data.total_enrollments" icon="users" tone="emerald" />
+                <StatCard :label="$t('dashboard.lessonsTeaching')" :value="data.total_lessons" icon="layers" tone="sky" :hint="`${data.total_units} ${$t('dashboard.units')}`" />
+                <StatCard :label="$t('dashboard.drafts')" :value="data.draft_count" icon="clipboard" tone="amber" />
             </div>
 
-            <AppCard title="Recent courses">
+            <AppCard :title="$t('dashboard.recentCourses')">
                 <template v-if="data.recent_courses.length">
                     <router-link
                         v-for="c in data.recent_courses"
@@ -64,13 +66,13 @@ const shortcuts = [
                     >
                         <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-ink-100 text-ink-600"><Icon name="book" :size="20" /></div>
                         <div class="min-w-0 flex-1">
-                            <p class="truncate font-medium text-ink-800">{{ c.title }}</p>
-                            <p class="text-xs text-ink-400">{{ c.enrollments_count }} enrollments · {{ c.lessons_count }} lessons</p>
+                            <p class="truncate font-medium text-ink-800" dir="auto">{{ c.title }}</p>
+                            <p class="text-xs text-ink-400">{{ c.enrollments_count }} {{ $t('dashboard.enrollments') }} · {{ c.lessons_count }} {{ $t('courses.lessons') }}</p>
                         </div>
-                        <AppBadge :tone="c.status === 'published' ? 'success' : 'neutral'">{{ c.status }}</AppBadge>
+                        <AppBadge :tone="c.status === 'published' ? 'success' : 'neutral'">{{ $t(`status.${c.status}`) }}</AppBadge>
                     </router-link>
                 </template>
-                <p v-else class="py-6 text-center text-sm text-ink-400">No courses yet. <router-link to="/teacher/courses/new" class="text-terracotta-600 hover:underline">Create your first course</router-link>.</p>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.noCoursesYetCreate') }} <router-link to="/teacher/courses/new" class="text-terracotta-600 hover:underline">{{ $t('dashboard.createFirstCourse') }}</router-link>.</p>
             </AppCard>
         </template>
     </div>
