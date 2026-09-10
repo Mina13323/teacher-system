@@ -85,7 +85,7 @@ function fmtDate(iso) {
                             <h3 class="font-semibold text-ink-900 group-hover:text-terracotta-700" dir="auto">{{ c.title }}</h3>
                             <p class="mt-1 line-clamp-2 text-sm text-ink-500" dir="auto">{{ c.description }}</p>
                             <div class="mt-3 flex items-center justify-between text-xs text-ink-400">
-                                <span>{{ c.units_count }} {{ $t('courses.units') }} · {{ c.lessons_count }} {{ $t('courses.lessons') }}</span>
+                                <span>{{ $t('courses.unitsCount', { n: c.units_count }) }} · {{ $t('courses.lessonsCount', { n: c.lessons_count }) }}</span>
                                 <span>{{ c.progress }}%</span>
                             </div>
                             <div class="mt-1 h-2 overflow-hidden rounded-full bg-ink-100">

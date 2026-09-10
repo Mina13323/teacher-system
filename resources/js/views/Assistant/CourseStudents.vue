@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher, publicCatalog, toList } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -12,6 +13,7 @@ import AppCard from '@/components/ui/AppCard.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -60,12 +62,12 @@ async function enroll() {
     enrollError.value = {};
     try {
         await teacher.enrollStudent(courseId, selectedStudent.value);
-        toast.success('Student enrolled.');
+        toast.success(t('students.enrolled'));
         selectedStudent.value = '';
         await loadEnrollments();
     } catch (e) {
         enrollError.value = fieldErrors(e);
-        toast.error(e.isValidation ? 'Please fix the highlighted fields.' : e.message);
+        toast.error(e.isValidation ? t('common.fixFields') : e.message);
     } finally {
         enrolling.value = false;
     }
@@ -75,7 +77,7 @@ async function remove() {
     removeBusy.value = true;
     try {
         await teacher.unenrollStudent(courseId, removeTarget.value.student_id);
-        toast.success('Student unenrolled.');
+        toast.success(t('students.unenrolled'));
         removeTarget.value = null;
         await loadEnrollments();
     } catch (e) {
@@ -91,39 +93,47 @@ onMounted(load);
 <template>
     <div class="mx-auto max-w-3xl space-y-6">
         <div>
-            <router-link to="/assistant/students" class="text-sm font-medium text-terracotta-600 hover:underline">← Back to students</router-link>
-            <h1 class="mt-2 text-2xl font-bold text-ink-900">{{ course?.title || `Course #${courseId}` }}</h1>
-            <p class="text-ink-500">Manage student enrollments for this course.</p>
+            <router-link to="/assistant/students" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.students') }}</router-link>
+            <h1 class="mt-2 text-2xl font-bold text-ink-900" dir="auto">{{ course?.title || $t('courses.courseHash', { id: courseId }) }}</h1>
+            <p class="text-ink-500">{{ $t('courses.manageEnrollments') }}</p>
         </div>
 
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</div>
 
         <template v-else>
-            <AppCard title="Enroll a student">
+            <AppCard :title="$t('courses.enrollStudent')">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <div class="flex-1"><AppSelect v-model="selectedStudent" label="Student" :options="students.map((s) => ({ value: s.id, label: s.name }))" id="enroll-student" placeholder="Select a student" :error="enrollError.student_id" /></div>
-                    <AppButton :loading="enrolling" :disabled="!selectedStudent" @click="enroll">Enroll</AppButton>
+                    <div class="flex-1"><AppSelect v-model="selectedStudent" :label="$t('common.student')" :options="students.map((s) => ({ value: s.id, label: s.name }))" id="enroll-student" :placeholder="$t('common.selectStudent')" :error="enrollError.student_id" /></div>
+                    <AppButton :loading="enrolling" :disabled="!selectedStudent" @click="enroll">{{ $t('students.enroll') }}</AppButton>
                 </div>
             </AppCard>
 
             <div class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
-                <div class="px-5 py-4"><h2 class="font-semibold text-ink-900">Enrolled students</h2></div>
-                <EmptyState v-if="!enrollments.length" icon="users" title="No enrollments yet" message="Enroll students to see them here." />
+                <div class="px-5 py-4"><h2 class="font-semibold text-ink-900">{{ $t('courses.enrolledStudents') }}</h2></div>
+                <EmptyState v-if="!enrollments.length" icon="users" :title="$t('courses.noEnrollmentsTitle')" :message="$t('courses.noEnrollmentsMessage')" />
                 <div v-else class="divide-y divide-ink-100">
                     <div v-for="e in enrollments" :key="e.id" class="flex items-center gap-3 px-5 py-3.5">
                         <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (e.student?.name || 'U').slice(0, 1) }}</div>
                         <div class="min-w-0 flex-1">
-                            <p class="truncate font-medium text-ink-800">{{ e.student?.name }}</p>
+                            <p class="truncate font-medium text-ink-800" dir="auto">{{ e.student?.name }}</p>
                             <p class="truncate text-xs text-ink-400">{{ e.student?.email }}</p>
                         </div>
-                        <AppBadge :tone="e.status === 'active' ? 'success' : 'neutral'">{{ e.status }}</AppBadge>
-                        <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="removeTarget = e">Remove</button>
+                        <AppBadge :tone="e.status === 'active' ? 'success' : 'neutral'">{{ $t(`status.${e.status}`, e.status) }}</AppBadge>
+                        <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="removeTarget = e">{{ $t('common.remove') }}</button>
                     </div>
                 </div>
             </div>
         </template>
 
-        <ConfirmDialog :open="Boolean(removeTarget)" title="Unenroll student?" :message="`Remove ${removeTarget?.student?.name} from this course?`" confirm-text="Unenroll" :loading="removeBusy" @close="removeTarget = null" @confirm="remove" />
+        <ConfirmDialog
+            :open="Boolean(removeTarget)"
+            :title="$t('courses.unenrollTitle')"
+            :message="$t('courses.unenrollMessage', { name: removeTarget?.student?.name })"
+            :confirm-text="$t('students.unenroll')"
+            :loading="removeBusy"
+            @close="removeTarget = null"
+            @confirm="remove"
+        />
     </div>
 </template>

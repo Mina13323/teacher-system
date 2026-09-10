@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -10,6 +11,7 @@ import AppInput from '@/components/ui/AppInput.vue';
 import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -44,15 +46,15 @@ async function submit() {
     try {
         if (isEdit) {
             await teacher.updateAssistant(id, { name: form.name, email: form.email, phone: form.phone || null, bio: form.bio || null });
-            toast.success('Assistant updated.');
+            toast.success(t('assistants.updated'));
         } else {
             await teacher.createAssistant({ name: form.name, email: form.email, password: form.password, phone: form.phone || null, bio: form.bio || null });
-            toast.success('Assistant created.');
+            toast.success(t('assistants.created'));
         }
         router.push('/teacher/assistants');
     } catch (e) {
         Object.assign(errors, fieldErrors(e));
-        toast.error(e.isValidation ? 'Please fix the highlighted fields.' : e.message);
+        toast.error(e.isValidation ? t('common.fixFields') : e.message);
     } finally {
         saving.value = false;
     }
@@ -63,27 +65,27 @@ onMounted(load);
 
 <template>
     <div class="mx-auto max-w-2xl space-y-6">
-        <router-link to="/teacher/assistants" class="text-sm font-medium text-terracotta-600 hover:underline">← Assistants</router-link>
-        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? 'Edit assistant' : 'Add assistant' }}</h1>
+        <router-link to="/teacher/assistants" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.assistants') }}</router-link>
+        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? $t('assistants.editAssistant') : $t('assistants.addAssistant') }}</h1>
 
         <LoadingSpinner v-if="loading" />
         <form v-else class="space-y-5" @submit.prevent="submit">
-            <AppCard title="Assistant account">
+            <AppCard :title="$t('assistants.accountCard')">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <AppInput v-model="form.name" label="Full name" required id="as-name" :error="errors.name" />
-                    <AppInput v-model="form.email" label="Email" type="email" required id="as-email" :error="errors.email" autocomplete="email" />
+                    <AppInput v-model="form.name" :label="$t('common.fullName')" required id="as-name" :error="errors.name" />
+                    <AppInput v-model="form.email" :label="$t('auth.email')" type="email" required id="as-email" :error="errors.email" autocomplete="email" />
                 </div>
-                <div class="mt-4"><AppInput v-model="form.phone" label="Phone" id="as-phone" :error="errors.phone" /></div>
-                <div class="mt-4"><AppTextarea v-model="form.bio" label="Bio" id="as-bio" :error="errors.bio" :rows="2" /></div>
+                <div class="mt-4"><AppInput v-model="form.phone" :label="$t('common.phone')" id="as-phone" :error="errors.phone" /></div>
+                <div class="mt-4"><AppTextarea v-model="form.bio" :label="$t('common.bio')" id="as-bio" :error="errors.bio" :rows="2" /></div>
             </AppCard>
 
-            <AppCard v-if="!isEdit" title="Credentials">
-                <AppInput v-model="form.password" label="Password" type="password" required id="as-password" :error="errors.password" autocomplete="new-password" hint="At least 8 characters." />
+            <AppCard v-if="!isEdit" :title="$t('common.credentials')">
+                <AppInput v-model="form.password" :label="$t('auth.password')" type="password" required id="as-password" :error="errors.password" autocomplete="new-password" :hint="$t('common.passwordMin')" />
             </AppCard>
 
             <div class="flex justify-end gap-2">
-                <router-link to="/teacher/assistants"><AppButton variant="outline">Cancel</AppButton></router-link>
-                <AppButton type="submit" :loading="saving">{{ isEdit ? 'Save changes' : 'Create assistant' }}</AppButton>
+                <router-link to="/teacher/assistants"><AppButton variant="outline">{{ $t('common.cancel') }}</AppButton></router-link>
+                <AppButton type="submit" :loading="saving">{{ isEdit ? $t('common.saveChanges') : $t('assistants.createAssistant') }}</AppButton>
             </div>
         </form>
     </div>

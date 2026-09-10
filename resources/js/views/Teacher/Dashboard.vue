@@ -67,7 +67,7 @@ const shortcuts = computed(() => [
                         <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-ink-100 text-ink-600"><Icon name="book" :size="20" /></div>
                         <div class="min-w-0 flex-1">
                             <p class="truncate font-medium text-ink-800" dir="auto">{{ c.title }}</p>
-                            <p class="text-xs text-ink-400">{{ c.enrollments_count }} {{ $t('dashboard.enrollments') }} · {{ c.lessons_count }} {{ $t('courses.lessons') }}</p>
+                            <p class="text-xs text-ink-400">{{ $t('dashboard.enrollmentsCount', { n: c.enrollments_count }) }} · {{ $t('courses.lessonsCount', { n: c.lessons_count }) }}</p>
                         </div>
                         <AppBadge :tone="c.status === 'published' ? 'success' : 'neutral'">{{ $t(`status.${c.status}`) }}</AppBadge>
                     </router-link>

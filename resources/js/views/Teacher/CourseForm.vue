@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -11,6 +12,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -24,11 +26,11 @@ const errors = reactive({});
 const loading = ref(isEdit);
 const saving = ref(false);
 
-const statusOptions = [
-    { value: 'draft', label: 'Draft' },
-    { value: 'published', label: 'Published' },
-    { value: 'archived', label: 'Archived' },
-];
+const statusOptions = computed(() => [
+    { value: 'draft', label: t('status.draft') },
+    { value: 'published', label: t('status.published') },
+    { value: 'archived', label: t('status.archived') },
+]);
 
 async function load() {
     if (!isEdit) return;
@@ -53,16 +55,16 @@ async function submit() {
     try {
         if (isEdit) {
             await teacher.updateCourse(id, payload);
-            toast.success('Course updated.');
+            toast.success(t('courses.updated'));
             router.push(`/teacher/courses/${id}`);
         } else {
             const created = await teacher.createCourse(payload);
-            toast.success('Course created.');
+            toast.success(t('courses.created'));
             router.push(`/teacher/courses/${created.id}`);
         }
     } catch (e) {
         Object.assign(errors, fieldErrors(e));
-        toast.error(e.isValidation ? 'Please fix the highlighted fields.' : e.message);
+        toast.error(e.isValidation ? t('common.fixFields') : e.message);
     } finally {
         saving.value = false;
     }
@@ -73,23 +75,23 @@ onMounted(load);
 
 <template>
     <div class="mx-auto max-w-2xl space-y-6">
-        <router-link :to="isEdit ? `/teacher/courses/${id}` : '/teacher/courses'" class="text-sm font-medium text-terracotta-600 hover:underline">← Courses</router-link>
-        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? 'Edit course' : 'New course' }}</h1>
+        <router-link :to="isEdit ? `/teacher/courses/${id}` : '/teacher/courses'" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.courses') }}</router-link>
+        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? $t('courses.editCourse') : $t('nav.newCourse') }}</h1>
 
         <LoadingSpinner v-if="loading" />
         <form v-else class="space-y-5" @submit.prevent="submit">
-            <AppCard title="Course details">
+            <AppCard :title="$t('courses.details')">
                 <div class="space-y-4">
-                    <AppInput v-model="form.title" label="Title" required id="course-title" :error="errors.title" />
-                    <AppInput v-model="form.slug" label="Slug" id="course-slug" :error="errors.slug" hint="Leave blank to auto-generate." />
-                    <AppTextarea v-model="form.description" label="Description" id="course-desc" :error="errors.description" :rows="3" />
-                    <AppInput v-model="form.thumbnail" label="Thumbnail URL" id="course-thumb" :error="errors.thumbnail" placeholder="https://…" />
-                    <AppSelect v-model="form.status" label="Status" :options="statusOptions" id="course-status" :error="errors.status" />
+                    <AppInput v-model="form.title" :label="$t('courses.titleField')" required id="course-title" :error="errors.title" />
+                    <AppInput v-model="form.slug" :label="$t('courses.slug')" id="course-slug" :error="errors.slug" :hint="$t('courses.slugHint')" />
+                    <AppTextarea v-model="form.description" :label="$t('courses.description')" id="course-desc" :error="errors.description" :rows="3" />
+                    <AppInput v-model="form.thumbnail" :label="$t('courses.thumbnailUrl')" id="course-thumb" :error="errors.thumbnail" placeholder="https://…" />
+                    <AppSelect v-model="form.status" :label="$t('courses.status')" :options="statusOptions" id="course-status" :error="errors.status" />
                 </div>
             </AppCard>
             <div class="flex justify-end gap-2">
-                <router-link :to="isEdit ? `/teacher/courses/${id}` : '/teacher/courses'"><AppButton variant="outline">Cancel</AppButton></router-link>
-                <AppButton type="submit" :loading="saving">{{ isEdit ? 'Save changes' : 'Create course' }}</AppButton>
+                <router-link :to="isEdit ? `/teacher/courses/${id}` : '/teacher/courses'"><AppButton variant="outline">{{ $t('common.cancel') }}</AppButton></router-link>
+                <AppButton type="submit" :loading="saving">{{ isEdit ? $t('common.saveChanges') : $t('courses.createCourse') }}</AppButton>
             </div>
         </form>
     </div>

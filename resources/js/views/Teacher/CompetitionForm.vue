@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -11,6 +12,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -26,6 +28,12 @@ const saving = ref(false);
 
 const courses = ref([]);
 const exams = ref([]);
+
+const scoringOptions = computed(() => [
+    { value: 'highest_score', label: t('status.highest_score') },
+    { value: 'best_attempt', label: t('status.best_attempt') },
+]);
+const rankingOptions = computed(() => [{ value: 'score_desc', label: t('status.score_desc') }]);
 
 async function loadCourses() {
     const res = toList(await teacher.courses({ per_page: 100 }));
@@ -74,7 +82,7 @@ async function submit() {
             if (form.ends_at) payload.ends_at = form.ends_at;
             if (form.max_participants) payload.max_participants = Number(form.max_participants);
             await teacher.updateCompetition(id, payload);
-            toast.success('Competition updated.');
+            toast.success(t('competitions.updated'));
         } else {
             const payload = {
                 title: form.title,
@@ -87,12 +95,12 @@ async function submit() {
             if (form.ends_at) payload.ends_at = form.ends_at;
             if (form.max_participants) payload.max_participants = Number(form.max_participants);
             await teacher.createCompetition(payload);
-            toast.success('Competition created.');
+            toast.success(t('competitions.created'));
         }
         router.push('/teacher/competitions');
     } catch (e) {
         Object.assign(errors, fieldErrors(e));
-        toast.error(e.isValidation ? 'Please fix the highlighted fields.' : e.message);
+        toast.error(e.isValidation ? t('common.fixFields') : e.message);
     } finally {
         saving.value = false;
     }
@@ -101,33 +109,33 @@ async function submit() {
 
 <template>
     <div class="mx-auto max-w-2xl space-y-6">
-        <router-link to="/teacher/competitions" class="text-sm font-medium text-terracotta-600 hover:underline">← Competitions</router-link>
-        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? 'Edit competition' : 'New competition' }}</h1>
+        <router-link to="/teacher/competitions" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.competitions') }}</router-link>
+        <h1 class="text-2xl font-bold text-ink-900">{{ isEdit ? $t('competitions.editCompetition') : $t('nav.newCompetition') }}</h1>
 
         <LoadingSpinner v-if="loading" />
         <form v-else class="space-y-5" @submit.prevent="submit">
-            <AppCard title="Competition details">
+            <AppCard :title="$t('competitions.details')">
                 <div class="space-y-4">
-                    <AppInput v-model="form.title" label="Title" required id="comp-title" :error="errors.title" />
-                    <AppTextarea v-model="form.description" label="Description" id="comp-desc" :error="errors.description" :rows="2" />
+                    <AppInput v-model="form.title" :label="$t('competitions.titleField')" required id="comp-title" :error="errors.title" />
+                    <AppTextarea v-model="form.description" :label="$t('competitions.description')" id="comp-desc" :error="errors.description" :rows="2" />
                     <div v-if="!isEdit" class="grid gap-4 sm:grid-cols-2">
-                        <AppSelect v-model="form.course_id" label="Course" :options="courses" id="comp-course" :error="errors.exam_id" placeholder="Select a course" />
-                        <AppSelect v-model="form.exam_id" label="Exam" :options="exams" id="comp-exam" :error="errors.exam_id" placeholder="Select an exam" />
+                        <AppSelect v-model="form.course_id" :label="$t('common.course')" :options="courses" id="comp-course" :error="errors.exam_id" :placeholder="$t('common.selectCourse')" />
+                        <AppSelect v-model="form.exam_id" :label="$t('common.exam')" :options="exams" id="comp-exam" :error="errors.exam_id" :placeholder="$t('common.selectExam')" />
                     </div>
                     <div class="grid gap-4 sm:grid-cols-2">
-                        <AppInput v-model="form.starts_at" label="Starts at" type="datetime-local" id="comp-start" :error="errors.starts_at" />
-                        <AppInput v-model="form.ends_at" label="Ends at" type="datetime-local" id="comp-end" :error="errors.ends_at" />
+                        <AppInput v-model="form.starts_at" :label="$t('competitions.startsAt')" type="datetime-local" id="comp-start" :error="errors.starts_at" />
+                        <AppInput v-model="form.ends_at" :label="$t('competitions.endsAt')" type="datetime-local" id="comp-end" :error="errors.ends_at" />
                     </div>
                     <div class="grid gap-4 sm:grid-cols-3">
-                        <AppInput v-model="form.max_participants" label="Max participants" type="number" id="comp-max" :error="errors.max_participants" />
-                        <AppSelect v-if="!isEdit" v-model="form.scoring_type" label="Scoring" :options="[{ value: 'highest_score', label: 'Highest %' }, { value: 'best_attempt', label: 'Best attempt' }]" id="comp-scoring" :error="errors.scoring_type" />
-                        <AppSelect v-if="!isEdit" v-model="form.ranking_type" label="Ranking" :options="[{ value: 'score_desc', label: 'Score (desc)' }]" id="comp-ranking" :error="errors.ranking_type" />
+                        <AppInput v-model="form.max_participants" :label="$t('competitions.maxParticipants')" type="number" id="comp-max" :error="errors.max_participants" />
+                        <AppSelect v-if="!isEdit" v-model="form.scoring_type" :label="$t('competitions.scoring')" :options="scoringOptions" id="comp-scoring" :error="errors.scoring_type" />
+                        <AppSelect v-if="!isEdit" v-model="form.ranking_type" :label="$t('competitions.ranking')" :options="rankingOptions" id="comp-ranking" :error="errors.ranking_type" />
                     </div>
                 </div>
             </AppCard>
             <div class="flex justify-end gap-2">
-                <router-link to="/teacher/competitions"><AppButton variant="outline">Cancel</AppButton></router-link>
-                <AppButton type="submit" :loading="saving">{{ isEdit ? 'Save changes' : 'Create competition' }}</AppButton>
+                <router-link to="/teacher/competitions"><AppButton variant="outline">{{ $t('common.cancel') }}</AppButton></router-link>
+                <AppButton type="submit" :loading="saving">{{ isEdit ? $t('common.saveChanges') : $t('competitions.createCompetition') }}</AppButton>
             </div>
         </form>
     </div>

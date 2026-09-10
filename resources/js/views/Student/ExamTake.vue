@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import { useToast } from '@/composables/toast';
@@ -10,6 +11,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -47,6 +49,7 @@ function normalizeAttempt(a) {
 const questions = computed(() => normalizeAttempt(attempt.value)?.questions || []);
 const currentQuestion = computed(() => questions.value[current.value]);
 const answeredCount = computed(() => questions.value.filter((q) => q.options.some((o) => o.selected)).length);
+const confirmMessage = computed(() => t('examTake.confirmMessage', { n: answeredCount.value, total: questions.value.length }));
 
 function startTimer() {
     const expires = attempt.value?.expires_at;
@@ -101,9 +104,9 @@ async function onTimeUp() {
     try {
         const res = await student.submit(attempt.value.id);
         result.value = res;
-        toast.info('Time is up. Your attempt was submitted.');
+        toast.info(t('examTake.timeUp'));
     } catch (e) {
-        toast.error('Time expired: ' + e.message);
+        toast.error(t('examTake.timeExpired', { message: e.message }));
     } finally {
         submittingBusy.value = false;
     }
@@ -128,17 +131,19 @@ onBeforeUnmount(() => clearInterval(timer));
                 <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full" :class="result?.passed === false || result?.status === 'expired' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'">
                     <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
                 </div>
-                <h1 class="mt-4 text-2xl font-bold text-ink-900">Exam {{ result ? 'submitted' : (attempt.status === 'expired' ? 'expired' : 'completed') }}</h1>
+                <h1 class="mt-4 text-2xl font-bold text-ink-900">
+                    {{ result ? $t('examTake.submitted') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
+                </h1>
                 <p v-if="result?.percentage !== null && result?.percentage !== undefined" class="mt-2 text-ink-600">
-                    You scored <span class="font-bold text-ink-900">{{ result.percentage }}%</span>
+                    {{ $t('examTake.youScored') }} <span class="font-bold text-ink-900">{{ result.percentage }}%</span>
                 </p>
                 <p v-else-if="attempt?.percentage !== null && attempt?.percentage !== undefined" class="mt-2 text-ink-600">
-                    You scored <span class="font-bold text-ink-900">{{ attempt.percentage }}%</span>
+                    {{ $t('examTake.youScored') }} <span class="font-bold text-ink-900">{{ attempt.percentage }}%</span>
                 </p>
                 <AppBadge v-if="result?.passed !== null && result?.passed !== undefined" :tone="result.passed ? 'success' : 'danger'" class="mt-3">
-                    {{ result.passed ? 'Passed' : 'Not passed' }}
+                    {{ result.passed ? $t('status.passed') : $t('status.failed') }}
                 </AppBadge>
-                <div class="mt-6"><AppButton @click="finish">Back to exams</AppButton></div>
+                <div class="mt-6"><AppButton @click="finish">{{ $t('examTake.backToExams') }}</AppButton></div>
             </div>
         </div>
 
@@ -146,42 +151,42 @@ onBeforeUnmount(() => clearInterval(timer));
         <template v-else-if="attempt">
             <div class="flex items-center justify-between rounded-xl border border-ink-100 bg-white px-5 py-4 shadow-sm">
                 <div>
-                    <h1 class="text-lg font-semibold text-ink-900">{{ attempt.exam_title }}</h1>
-                    <p class="text-xs text-ink-400">Attempt {{ attempt.attempt_number }}</p>
+                    <h1 class="text-lg font-semibold text-ink-900" dir="auto">{{ attempt.exam_title }}</h1>
+                    <p class="text-xs text-ink-400">{{ $t('common.attemptN', { n: attempt.attempt_number }) }}</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <AppBadge :tone="timeLeft < 60000 ? 'danger' : 'primary'">⏱ {{ fmt(timeLeft) }}</AppBadge>
-                    <span class="text-xs text-ink-400">Answered {{ answeredCount }}/{{ questions.length }}</span>
+                    <span class="text-xs text-ink-400">{{ $t('examTake.answered', { n: answeredCount, total: questions.length }) }}</span>
                 </div>
             </div>
 
             <!-- Question -->
             <div class="rounded-xl border border-ink-100 bg-white p-6 shadow-sm">
                 <div class="flex items-center justify-between text-sm text-ink-500">
-                    <span>Question {{ current + 1 }} of {{ questions.length }}</span>
-                    <span>{{ currentQuestion?.points }} pts</span>
+                    <span>{{ $t('examTake.questionOf', { n: current + 1, total: questions.length }) }}</span>
+                    <span>{{ currentQuestion?.points }} {{ $t('examTake.pts') }}</span>
                 </div>
-                <p class="mt-3 text-lg font-medium text-ink-900">{{ currentQuestion?.question_text }}</p>
+                <p class="mt-3 text-lg font-medium text-ink-900" dir="auto">{{ currentQuestion?.question_text }}</p>
                 <div class="mt-5 space-y-2">
                     <button
                         v-for="opt in currentQuestion?.options"
                         :key="opt.id"
                         type="button"
-                        class="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400"
+                        class="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-start transition focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400"
                         :class="opt.selected ? 'border-terracotta-500 bg-terracotta-50' : 'border-ink-200 hover:border-ink-300 hover:bg-ink-50'"
                         @click="answer(opt.id)"
                     >
                         <span class="flex h-5 w-5 items-center justify-center rounded-full border" :class="opt.selected ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-ink-300'">
                             <svg v-if="opt.selected" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
                         </span>
-                        <span class="text-ink-800">{{ opt.option_text }}</span>
+                        <span class="text-ink-800" dir="auto">{{ opt.option_text }}</span>
                     </button>
                 </div>
             </div>
 
             <!-- Navigation -->
             <div class="flex items-center justify-between gap-3">
-                <AppButton variant="outline" :disabled="current === 0" @click="current--">Previous</AppButton>
+                <AppButton variant="outline" :disabled="current === 0" @click="current--">{{ $t('common.previous') }}</AppButton>
                 <div class="flex flex-wrap justify-center gap-1.5">
                     <button
                         v-for="(q, i) in questions"
@@ -194,19 +199,19 @@ onBeforeUnmount(() => clearInterval(timer));
                         {{ i + 1 }}
                     </button>
                 </div>
-                <AppButton variant="outline" :disabled="current >= questions.length - 1" @click="current++">Next</AppButton>
+                <AppButton variant="outline" :disabled="current >= questions.length - 1" @click="current++">{{ $t('common.next') }}</AppButton>
             </div>
 
             <div class="flex justify-end">
-                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy" @click="confirmOpen = true">Submit exam</AppButton>
+                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy" @click="confirmOpen = true">{{ $t('examTake.submitExam') }}</AppButton>
             </div>
         </template>
 
         <ConfirmDialog
             :open="confirmOpen"
-            title="Submit exam?"
-            :message="`You've answered ${answeredCount} of ${questions.length} questions. Once submitted, you cannot change your answers.`"
-            confirm-text="Submit now"
+            :title="$t('examTake.confirmTitle')"
+            :message="confirmMessage"
+            :confirm-text="$t('examTake.submitNow')"
             :loading="submitting"
             @close="confirmOpen = false"
             @confirm="submit"

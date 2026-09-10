@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { student, toList } from '@/api';
 import { useToast } from '@/composables/toast';
@@ -12,6 +13,7 @@ import AppBadge from '@/components/ui/AppBadge.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const toast = useToast();
 const lessonId = route.params.id;
@@ -35,7 +37,7 @@ const { loading, error, run } = useAsync(async () => {
 async function markComplete() {
     try {
         await student.saveLessonProgress(lessonId, { progress_percentage: 100, last_position_seconds: 0, completed: true });
-        toast.success('Lesson marked complete.');
+        toast.success(t('lesson.markedComplete'));
         if (progress.value) {
             progress.value.completed = true;
             progress.value.progress_percentage = 100;
@@ -57,12 +59,12 @@ onMounted(() => run());
 <template>
     <div class="space-y-6">
         <div>
-            <router-link :to="route.query.course ? `/student/courses/${route.query.course}` : '/student/courses'" class="text-sm font-medium text-terracotta-600 hover:underline">← Back to course</router-link>
+            <router-link :to="route.query.course ? `/student/courses/${route.query.course}` : '/student/courses'" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('lesson.backToCourse') }}</router-link>
             <div class="mt-2 flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl font-bold text-ink-900">{{ progress?.lesson?.title || 'Lesson' }}</h1>
-                <AppBadge :tone="progress?.completed ? 'success' : 'warning'">{{ progress?.completed ? 'Completed' : 'In progress' }}</AppBadge>
+                <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ progress?.lesson?.title || $t('nav.lesson') }}</h1>
+                <AppBadge :tone="progress?.completed ? 'success' : 'warning'">{{ progress?.completed ? $t('status.completed') : $t('status.in_progress') }}</AppBadge>
             </div>
-            <p v-if="progress?.lesson?.description" class="mt-1 text-ink-600">{{ progress.lesson.description }}</p>
+            <p v-if="progress?.lesson?.description" class="mt-1 text-ink-600" dir="auto">{{ progress.lesson.description }}</p>
         </div>
 
         <LoadingSpinner v-if="loading" />
@@ -70,39 +72,39 @@ onMounted(() => run());
 
         <template v-else>
             <div v-if="!videos.length" class="space-y-6">
-                <EmptyState icon="play" title="No videos yet" message="There are no published videos in this lesson yet." />
+                <EmptyState icon="play" :title="$t('lesson.noVideosTitle')" :message="$t('lesson.noVideosMessage')" />
             </div>
             <div v-else class="grid gap-6 lg:grid-cols-3">
                 <!-- Video list -->
                 <div class="space-y-2 lg:col-span-1">
-                    <h2 class="mb-3 text-sm font-semibold text-ink-700">Videos in this lesson</h2>
+                    <h2 class="mb-3 text-sm font-semibold text-ink-700">{{ $t('lesson.videosInLesson') }}</h2>
                     <button
-                        v-for="(v, i) in videos"
+                        v-for="v in videos"
                         :key="v.id"
-                        class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition"
+                        class="flex w-full items-center gap-3 rounded-xl border p-3 text-start transition"
                         :class="activeVideo?.id === v.id ? 'border-terracotta-300 bg-terracotta-50' : 'border-ink-100 bg-white hover:border-ink-200 hover:bg-ink-50'"
                         @click="selectVideo(v)"
                     >
                         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-ink-600"><Icon name="play" :size="18" /></div>
                         <div class="min-w-0 flex-1">
-                            <p class="truncate text-sm font-medium text-ink-800">{{ v.title }}</p>
-                            <p class="text-xs text-ink-400">{{ v.duration ? `${v.duration}s` : 'Video' }}</p>
+                            <p class="truncate text-sm font-medium text-ink-800" dir="auto">{{ v.title }}</p>
+                            <p class="text-xs text-ink-400">{{ v.duration ? `${v.duration}${$t('common.minutesShort')}` : $t('common.video') }}</p>
                         </div>
                     </button>
                     <div class="pt-2">
                         <AppButton variant="outline" :disabled="progress?.completed" @click="markComplete">
-                            {{ progress?.completed ? 'Completed' : 'Mark complete' }}
+                            {{ progress?.completed ? $t('lesson.completedLabel') : $t('lesson.markComplete') }}
                         </AppButton>
                     </div>
                 </div>
 
                 <!-- Player -->
                 <div class="lg:col-span-2">
-                    <AppCard :title="activeVideo?.title || 'Video'" :padded="false" class="overflow-hidden">
+                    <AppCard :title="activeVideo?.title || $t('common.video')" :padded="false" class="overflow-hidden">
                         <ProtectedPlayer v-if="activeVideo" :video-id="activeVideo.id" :watermark-text="progress?.lesson?.title || ''" />
                         <div v-else class="flex h-72 flex-col items-center justify-center rounded-b-xl bg-ink-50 text-ink-400">
                             <Icon name="play" :size="36" />
-                            <p class="mt-2 text-sm">Select a video to watch.</p>
+                            <p class="mt-2 text-sm">{{ $t('lesson.selectVideo') }}</p>
                         </div>
                     </AppCard>
                 </div>

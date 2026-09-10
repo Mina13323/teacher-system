@@ -74,7 +74,7 @@ const steps = [
                     <div class="absolute inset-6 rounded-full border border-ink-200" />
                     <div class="absolute inset-12 rounded-full bg-gradient-to-br from-terracotta-100 to-amber-50 flex items-center justify-center text-6xl">🧭</div>
                     <div class="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 text-base">📍</div>
-                    <div class="absolute right-0 top-1/2 -translate-y-1/2 text-base">🌍</div>
+                    <div class="absolute end-0 top-1/2 -translate-y-1/2 text-base">🌍</div>
                     <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 text-base">🗺️</div>
                 </div>
             </div>
@@ -144,9 +144,9 @@ const steps = [
                             <h3 class="font-semibold text-ink-900 group-hover:text-terracotta-700" dir="auto">{{ c.title }}</h3>
                             <p class="mt-1 line-clamp-2 text-sm text-ink-500" dir="auto">{{ c.description }}</p>
                             <div class="mt-3 flex items-center gap-3 text-xs text-ink-400">
-                                <span>{{ $t('courses.lessons') }} {{ c.lessons_count || 0 }}</span>
+                                <span>{{ $t('courses.lessonsCount', { n: c.lessons_count || 0 }) }}</span>
                                 <span class="h-1 w-1 rounded-full bg-ink-300" />
-                                <span>{{ $t('courses.units') }} {{ c.units_count || 0 }}</span>
+                                <span>{{ $t('courses.unitsCount', { n: c.units_count || 0 }) }}</span>
                             </div>
                         </div>
                     </div>

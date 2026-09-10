@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -8,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const { loading, error, data, run } = useAsync(() => student.course(route.params.id));
 onMounted(() => run());
@@ -16,18 +18,18 @@ function badgeTone(status) {
     return { completed: 'success', in_progress: 'warning', available: 'info', locked: 'neutral', not_started: 'neutral' }[status] || 'neutral';
 }
 function statusLabel(status) {
-    return { completed: 'Completed', in_progress: 'In progress', available: 'Available', locked: 'Locked', not_started: 'Not started' }[status] || status;
+    return status ? t(`status.${status}`, status) : '';
 }
 </script>
 
 <template>
     <div class="space-y-6">
         <div>
-            <router-link to="/student/courses" class="text-sm font-medium text-terracotta-600 hover:underline">← My courses</router-link>
-            <h1 class="mt-2 text-2xl font-bold text-ink-900">{{ data?.title || 'Course' }}</h1>
-            <p v-if="data?.description" class="mt-1 text-ink-600">{{ data.description }}</p>
+            <router-link to="/student/courses" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('dashboard.myCourses') }}</router-link>
+            <h1 class="mt-2 text-2xl font-bold text-ink-900" dir="auto">{{ data?.title || $t('common.course') }}</h1>
+            <p v-if="data?.description" class="mt-1 text-ink-600" dir="auto">{{ data.description }}</p>
             <div class="mt-4 flex items-center gap-3 text-sm text-ink-500">
-                <span>Overall progress</span>
+                <span>{{ $t('courses.overallProgress') }}</span>
                 <span class="font-semibold text-ink-800">{{ data?.progress ?? 0 }}%</span>
             </div>
             <div class="mt-1 h-2 w-64 overflow-hidden rounded-full bg-ink-100">
@@ -39,12 +41,12 @@ function statusLabel(status) {
         <div v-else-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
         <template v-else>
-            <EmptyState v-if="!data?.units?.length" icon="layers" title="No units yet" message="This course has no content published yet." />
+            <EmptyState v-if="!data?.units?.length" icon="layers" :title="$t('courses.noUnitsTitle')" :message="$t('courses.noUnitsMessage')" />
             <div v-else class="space-y-5">
                 <div v-for="unit in data.units" :key="unit.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm">
                     <div class="flex items-center justify-between">
-                        <h2 class="text-base font-semibold text-ink-900">{{ unit.title }}</h2>
-                        <span class="text-xs text-ink-400">Unit {{ unit.position }}</span>
+                        <h2 class="text-base font-semibold text-ink-900" dir="auto">{{ unit.title }}</h2>
+                        <span class="text-xs text-ink-400">{{ $t('common.unitN', { n: unit.position }) }}</span>
                     </div>
                     <div class="mt-3 space-y-2">
                         <router-link
@@ -63,7 +65,7 @@ function statusLabel(status) {
                                 <span v-else class="text-xs font-bold">{{ unit.lessons.findIndex((l) => l.id === lesson.id) + 1 }}</span>
                             </div>
                             <div class="min-w-0 flex-1">
-                                <p class="font-medium text-ink-800">{{ lesson.title }}</p>
+                                <p class="font-medium text-ink-800" dir="auto">{{ lesson.title }}</p>
                             </div>
                             <AppBadge :tone="badgeTone(lesson.status)">{{ statusLabel(lesson.status) }}</AppBadge>
                         </router-link>

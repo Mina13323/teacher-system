@@ -230,7 +230,7 @@ function badgeTone(eventType) {
                 allow="autoplay; encrypted-media; picture-in-picture"
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
-                title="Video player"
+                :title="$t('common.videoPlayer')"
             />
             <video
                 v-else
@@ -258,7 +258,7 @@ function badgeTone(eventType) {
             </div>
 
             <!-- Detection chips -->
-            <div class="absolute bottom-3 left-3 flex flex-wrap gap-2">
+            <div class="absolute bottom-3 start-3 flex flex-wrap gap-2">
                 <span
                     v-for="d in detected"
                     :key="d"

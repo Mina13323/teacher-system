@@ -1,16 +1,17 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
-import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
-import EmptyState from '@/components/ui/EmptyState.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
+import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const toast = useToast();
 const id = route.params.id;
@@ -37,7 +38,7 @@ async function enroll() {
     enrolling.value = true;
     try {
         await teacher.enrollStudent(selectedCourse.value, id);
-        toast.success('Student enrolled.');
+        toast.success(t('students.enrolled'));
         selectedCourse.value = '';
     } catch (e) {
         toast.error(e.message);
@@ -61,8 +62,8 @@ onMounted(async () => {
 <template>
     <div class="space-y-6">
         <div>
-            <router-link to="/teacher/students" class="text-sm font-medium text-terracotta-600 hover:underline">← Students</router-link>
-            <h1 class="mt-2 text-2xl font-bold text-ink-900">{{ student?.name || 'Student' }}</h1>
+            <router-link to="/teacher/students" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.students') }}</router-link>
+            <h1 class="mt-2 text-2xl font-bold text-ink-900" dir="auto">{{ student?.name || $t('common.student') }}</h1>
             <p class="text-ink-500">{{ student?.email }}</p>
         </div>
 
@@ -74,31 +75,31 @@ onMounted(async () => {
                 <AppCard>
                     <div class="flex items-center gap-3">
                         <Icon name="user" :size="20" class="text-terracotta-500" />
-                        <p class="font-medium text-ink-800">{{ student.name }}</p>
+                        <p class="font-medium text-ink-800" dir="auto">{{ student.name }}</p>
                     </div>
-                    <AppBadge :tone="student.is_active ? 'success' : 'neutral'" class="mt-3">{{ student.is_active ? 'Active' : 'Inactive' }}</AppBadge>
+                    <AppBadge :tone="student.is_active ? 'success' : 'neutral'" class="mt-3">{{ student.is_active ? $t('status.active') : $t('status.inactive') }}</AppBadge>
                 </AppCard>
                 <AppCard>
-                    <p class="text-sm text-ink-500">Profile</p>
-                    <AppBadge :tone="student.profile_completed ? 'primary' : 'warning'" class="mt-2">{{ student.profile_completed ? 'Complete' : 'Incomplete' }}</AppBadge>
+                    <p class="text-sm text-ink-500">{{ $t('students.profileLabel') }}</p>
+                    <AppBadge :tone="student.profile_completed ? 'primary' : 'warning'" class="mt-2">{{ student.profile_completed ? $t('status.complete') : $t('status.incomplete') }}</AppBadge>
                 </AppCard>
                 <AppCard>
-                    <p class="text-sm text-ink-500">Joined</p>
+                    <p class="text-sm text-ink-500">{{ $t('students.joined') }}</p>
                     <p class="mt-1 text-sm font-medium text-ink-800">{{ student.created_at ? new Date(student.created_at).toLocaleDateString() : '—' }}</p>
                 </AppCard>
             </div>
 
-            <AppCard title="Enroll into a course">
+            <AppCard :title="$t('students.enrollIntoCourse')">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <AppSelect v-model="selectedCourse" label="Course" :options="courses" id="enroll-course" placeholder="Select a course" class="flex-1" />
-                    <AppButton :loading="enrolling" :disabled="!selectedCourse" @click="enroll">Enroll</AppButton>
+                    <AppSelect v-model="selectedCourse" :label="$t('common.course')" :options="courses" id="enroll-course" :placeholder="$t('common.selectCourse')" class="flex-1" />
+                    <AppButton :loading="enrolling" :disabled="!selectedCourse" @click="enroll">{{ $t('students.enroll') }}</AppButton>
                 </div>
-                <p v-if="!courses.length" class="mt-3 text-sm text-ink-400">No courses available to enroll into.</p>
+                <p v-if="!courses.length" class="mt-3 text-sm text-ink-400">{{ $t('students.noCoursesToEnroll') }}</p>
             </AppCard>
 
             <div class="flex gap-3">
-                <router-link :to="`/teacher/students/${student.id}/edit`"><AppButton variant="outline">Edit</AppButton></router-link>
-                <router-link :to="`/teacher/analytics/students/${student.id}`"><AppButton variant="secondary">View analytics</AppButton></router-link>
+                <router-link :to="`/teacher/students/${student.id}/edit`"><AppButton variant="outline">{{ $t('common.edit') }}</AppButton></router-link>
+                <router-link :to="`/teacher/analytics/students/${student.id}`"><AppButton variant="secondary">{{ $t('students.viewAnalytics') }}</AppButton></router-link>
             </div>
         </template>
     </div>

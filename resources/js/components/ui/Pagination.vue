@@ -24,7 +24,7 @@ function go(page) {
 </script>
 
 <template>
-    <nav v-if="meta && (meta.last_page || 0) > 1" class="flex items-center justify-between gap-2 pt-4" aria-label="Pagination">
+    <nav v-if="meta && (meta.last_page || 0) > 1" class="flex items-center justify-between gap-2 pt-4" :aria-label="$t('common.pagination')">
         <button
             class="rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400"
             :disabled="meta.current_page <= 1"

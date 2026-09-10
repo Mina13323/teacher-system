@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -14,6 +15,7 @@ import AppSelect from '@/components/ui/AppSelect.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
@@ -29,9 +31,9 @@ const review = ref({ decision: '', note: '' });
 const reviewErrors = ref({});
 const reviewBusy = ref(false);
 
-const decisionOptions = [
-    { value: 'CLEARED', label: 'Cleared' },
-    { value: 'FLAGGED', label: 'Flagged' },
+const decisionOptions = () => [
+    { value: 'CLEARED', label: t('integrity.cleared') },
+    { value: 'FLAGGED', label: t('integrity.flagged') },
 ];
 
 function severityTone(s) {
@@ -74,12 +76,12 @@ async function submitReview() {
             decision: review.value.decision,
             note: review.value.note || null,
         });
-        toast.success('Review recorded.');
+        toast.success(t('integrity.reviewRecorded'));
         review.value = { decision: '', note: '' };
         await load();
     } catch (e) {
         reviewErrors.value = fieldErrors(e);
-        toast.error(e.isValidation ? 'Please select a decision.' : e.message);
+        toast.error(e.isValidation ? t('integrity.selectDecision') : e.message);
     } finally {
         reviewBusy.value = false;
     }
@@ -91,9 +93,9 @@ onMounted(load);
 <template>
     <div class="space-y-6">
         <div>
-            <button class="text-sm font-medium text-terracotta-600 hover:underline" @click="router.push('/teacher/integrity')">← Back to integrity</button>
-            <h1 class="mt-2 text-2xl font-bold text-ink-900">Attempt #{{ detail?.id || route.params.id }}</h1>
-            <p class="text-ink-500">{{ detail?.exam_title }} · {{ detail?.student?.name }}</p>
+            <button class="text-sm font-medium text-terracotta-600 hover:underline" @click="router.push('/teacher/integrity')">← {{ $t('integrity.backToIntegrity') }}</button>
+            <h1 class="mt-2 text-2xl font-bold text-ink-900">{{ $t('integrity.attemptHash', { id: detail?.id || route.params.id }) }}</h1>
+            <p class="text-ink-500" dir="auto">{{ detail?.exam_title }} · {{ detail?.student?.name }}</p>
         </div>
 
         <LoadingSpinner v-if="loading" />
@@ -101,30 +103,30 @@ onMounted(load);
 
         <template v-else>
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard label="Score" :value="detail?.percentage !== null && detail?.percentage !== undefined ? detail.percentage + '%' : '—'" icon="clipboard" tone="terracotta" />
-                <StatCard label="Pass" :value="detail?.passed === true ? 'Passed' : detail?.passed === false ? 'Not passed' : '—'" icon="check" :tone="detail?.passed ? 'emerald' : 'danger'" />
-                <StatCard label="Integrity status" :value="detail?.integrity_status || '—'" icon="shield" :tone="statusTone(detail?.integrity_status) === 'danger' ? 'danger' : statusTone(detail?.integrity_status) === 'warning' ? 'amber' : 'ink'" />
-                <StatCard label="Risk score" :value="detail?.risk_score ?? '—'" icon="shield" tone="amber" />
+                <StatCard :label="$t('integrity.score')" :value="detail?.percentage !== null && detail?.percentage !== undefined ? detail.percentage + '%' : '—'" icon="clipboard" tone="terracotta" />
+                <StatCard :label="$t('integrity.pass')" :value="detail?.passed === true ? $t('status.passed') : detail?.passed === false ? $t('status.failed') : '—'" icon="check" :tone="detail?.passed ? 'emerald' : 'danger'" />
+                <StatCard :label="$t('integrity.integrityStatus')" :value="detail?.integrity_status ? $t(`status.${detail.integrity_status}`, detail.integrity_status) : '—'" icon="shield" :tone="statusTone(detail?.integrity_status) === 'danger' ? 'danger' : statusTone(detail?.integrity_status) === 'warning' ? 'amber' : 'ink'" />
+                <StatCard :label="$t('integrity.riskScore')" :value="detail?.risk_score ?? '—'" icon="shield" tone="amber" />
             </div>
 
-            <AppCard title="Frozen integrity settings">
+            <AppCard :title="$t('integrity.frozenSettings')">
                 <div v-if="integrity?.frozen_settings" class="flex flex-wrap gap-3 text-sm">
-                    <AppBadge :tone="integrity.frozen_settings.fullscreen_required ? 'success' : 'neutral'">Fullscreen required</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.prevent_copy ? 'success' : 'neutral'">Prevent copy</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.prevent_paste ? 'success' : 'neutral'">Prevent paste</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.prevent_context_menu ? 'success' : 'neutral'">Prevent context menu</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.detect_tab_switch ? 'success' : 'neutral'">Detect tab switch</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.detect_window_blur ? 'success' : 'neutral'">Detect window blur</AppBadge>
-                    <AppBadge :tone="integrity.frozen_settings.detect_keyboard_shortcuts ? 'success' : 'neutral'">Detect shortcuts</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.fullscreen_required ? 'success' : 'neutral'">{{ $t('exams.fullscreenRequired') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.prevent_copy ? 'success' : 'neutral'">{{ $t('integrity.preventCopy') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.prevent_paste ? 'success' : 'neutral'">{{ $t('integrity.preventPaste') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.prevent_context_menu ? 'success' : 'neutral'">{{ $t('integrity.preventContext') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.detect_tab_switch ? 'success' : 'neutral'">{{ $t('integrity.detectTab') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.detect_window_blur ? 'success' : 'neutral'">{{ $t('integrity.detectBlur') }}</AppBadge>
+                    <AppBadge :tone="integrity.frozen_settings.detect_keyboard_shortcuts ? 'success' : 'neutral'">{{ $t('integrity.detectShortcuts') }}</AppBadge>
                 </div>
-                <p v-else class="text-sm text-ink-400">No frozen settings recorded for this attempt.</p>
+                <p v-else class="text-sm text-ink-400">{{ $t('integrity.noFrozen') }}</p>
             </AppCard>
 
-            <AppCard title="Recorded integrity events">
+            <AppCard :title="$t('integrity.recordedEvents')">
                 <div v-if="integrity?.multiple_suspicious_events" class="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-                    <Icon name="shield" :size="16" /> Multiple suspicious events detected on this attempt.
+                    <Icon name="shield" :size="16" /> {{ $t('integrity.multipleSuspicious') }}
                 </div>
-                <EmptyState v-if="!events.length" icon="shield" title="No integrity events" message="No risk-bearing events were recorded for this attempt." />
+                <EmptyState v-if="!events.length" icon="shield" :title="$t('integrity.noEventsTitle')" :message="$t('integrity.noEventsMessage')" />
                 <div v-else class="divide-y divide-ink-100">
                     <div v-for="e in events" :key="e.id" class="flex items-start gap-3 py-3">
                         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-ink-600"><Icon name="shield" :size="18" /></div>
@@ -133,31 +135,31 @@ onMounted(load);
                                 <span class="font-medium text-ink-800">{{ e.event_type }}</span>
                                 <AppBadge :tone="severityTone(e.severity)">{{ e.severity }}</AppBadge>
                             </div>
-                            <p class="text-xs text-ink-400">{{ dateOf(e.occurred_at) }} · +{{ e.risk_points }} risk points</p>
+                            <p class="text-xs text-ink-400">{{ dateOf(e.occurred_at) }} · {{ $t('integrity.riskPoints', { n: e.risk_points }) }}</p>
                         </div>
                     </div>
                 </div>
             </AppCard>
 
-            <AppCard title="Review trail">
-                <EmptyState v-if="!integrity?.reviews?.length" icon="clipboard" title="No reviews yet" message="Record a decision to build the audit trail." />
+            <AppCard :title="$t('integrity.reviewTrail')">
+                <EmptyState v-if="!integrity?.reviews?.length" icon="clipboard" :title="$t('integrity.noReviewsTitle')" :message="$t('integrity.noReviewsMessage')" />
                 <div v-else class="space-y-3">
                     <div v-for="r in integrity.reviews" :key="r.id" class="rounded-lg bg-ink-50 px-4 py-3 text-sm">
                         <div class="flex items-center gap-2">
-                            <AppBadge :tone="r.decision === 'CLEARED' ? 'success' : 'danger'">{{ r.decision }}</AppBadge>
-                            <span class="text-ink-400">{{ r.reviewer?.name }} · {{ dateOf(r.reviewed_at) }}</span>
+                            <AppBadge :tone="r.decision === 'CLEARED' ? 'success' : 'danger'">{{ r.decision === 'CLEARED' ? $t('integrity.cleared') : $t('integrity.flagged') }}</AppBadge>
+                            <span class="text-ink-400" dir="auto">{{ r.reviewer?.name }} · {{ dateOf(r.reviewed_at) }}</span>
                         </div>
-                        <p v-if="r.note" class="mt-1 text-ink-600">{{ r.note }}</p>
+                        <p v-if="r.note" class="mt-1 text-ink-600" dir="auto">{{ r.note }}</p>
                     </div>
                 </div>
             </AppCard>
 
-            <AppCard title="Record a decision">
+            <AppCard :title="$t('integrity.recordDecision')">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <AppSelect v-model="review.decision" label="Decision" :options="decisionOptions" id="integrity-decision" :error="reviewErrors.decision" placeholder="Select a decision" />
-                    <div class="sm:col-span-2"><AppTextarea v-model="review.note" label="Note" id="integrity-note" :error="reviewErrors.note" :rows="2" placeholder="Optional context for this decision" /></div>
+                    <AppSelect v-model="review.decision" :label="$t('integrity.decision')" :options="decisionOptions()" id="integrity-decision" :error="reviewErrors.decision" :placeholder="$t('integrity.selectDecision')" />
+                    <div class="sm:col-span-2"><AppTextarea v-model="review.note" :label="$t('integrity.note')" id="integrity-note" :error="reviewErrors.note" :rows="2" :placeholder="$t('integrity.notePlaceholder')" /></div>
                 </div>
-                <div class="mt-4 flex justify-end"><AppButton :loading="reviewBusy" :disabled="!review.decision" @click="submitReview">Save review</AppButton></div>
+                <div class="mt-4 flex justify-end"><AppButton :loading="reviewBusy" :disabled="!review.decision" @click="submitReview">{{ $t('integrity.saveReview') }}</AppButton></div>
             </AppCard>
         </template>
     </div>

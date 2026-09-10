@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -13,6 +14,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import Pagination from '@/components/ui/Pagination.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
@@ -62,7 +64,7 @@ async function setActive(s, active) {
     try {
         await (active ? teacher.activateStudent : teacher.deactivateStudent)(s.id);
         s.is_active = active;
-        toast.success(active ? 'Student activated.' : 'Student deactivated.');
+        toast.success(active ? t('students.activated') : t('students.deactivated'));
     } catch (e) {
         toast.error(e.message);
     }
@@ -78,7 +80,7 @@ async function submitReset() {
     resetErrors.value = {};
     try {
         await teacher.resetStudentPassword(resetTarget.value.id, resetForm.value);
-        toast.success('Password reset.');
+        toast.success(t('students.passwordReset'));
         resetTarget.value = null;
     } catch (e) {
         resetErrors.value = fieldErrors(e);
@@ -98,7 +100,7 @@ async function submitNotify() {
     notifyErrors.value = {};
     try {
         await teacher.notifyStudent(notifyTarget.value.id, notifyForm.value);
-        toast.success('Message sent.');
+        toast.success(t('students.messageSent'));
         notifyTarget.value = null;
     } catch (e) {
         notifyErrors.value = fieldErrors(e);
@@ -115,40 +117,40 @@ onMounted(() => load(1));
     <div class="space-y-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-ink-900">Students</h1>
-                <p class="text-sm text-ink-500">Manage the students under your course.</p>
+                <h1 class="text-2xl font-bold text-ink-900">{{ $t('nav.students') }}</h1>
+                <p class="text-sm text-ink-500">{{ $t('students.subtitle') }}</p>
             </div>
-            <router-link :to="`/${authRole}/students/new`"><AppButton>Add student</AppButton></router-link>
+            <router-link :to="`/${authRole}/students/new`"><AppButton>{{ $t('students.addStudent') }}</AppButton></router-link>
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="w-full max-w-xs">
-                <AppInput v-model="search" placeholder="Filter current page…" id="student-search" label="Search" />
+                <AppInput v-model="search" :placeholder="$t('common.filter')" id="student-search" :label="$t('common.search')" />
             </div>
-            <span class="text-sm text-ink-400">{{ meta?.total ?? 0 }} students</span>
+            <span class="text-sm text-ink-400">{{ $t('students.count', { n: meta?.total ?? 0 }) }}</span>
         </div>
 
         <div class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
             <LoadingSpinner v-if="loading" />
             <div v-else-if="error" class="px-4 py-3 text-sm text-rose-700">{{ error }}</div>
-            <EmptyState v-else-if="!filtered.length" icon="users" title="No students found" message="Add a student or adjust your filter.">
-                <router-link :to="`/${authRole}/students/new`"><AppButton>Add student</AppButton></router-link>
+            <EmptyState v-else-if="!filtered.length" icon="users" :title="$t('students.emptyTitle')" :message="$t('students.emptyMessage')">
+                <router-link :to="`/${authRole}/students/new`"><AppButton>{{ $t('students.addStudent') }}</AppButton></router-link>
             </EmptyState>
             <div v-else class="divide-y divide-ink-100">
                 <div v-for="s in filtered" :key="s.id" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
                     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (s.name || 'U').slice(0, 1) }}</div>
                     <div class="min-w-0 flex-1">
-                        <p class="font-semibold text-ink-900">{{ s.name }}</p>
+                        <p class="font-semibold text-ink-900" dir="auto">{{ s.name }}</p>
                         <p class="text-sm text-ink-400">{{ s.email }}</p>
                     </div>
-                    <AppBadge :tone="s.is_active ? 'success' : 'neutral'">{{ s.is_active ? 'Active' : 'Inactive' }}</AppBadge>
+                    <AppBadge :tone="s.is_active ? 'success' : 'neutral'">{{ s.is_active ? $t('status.active') : $t('status.inactive') }}</AppBadge>
                     <div class="flex flex-wrap items-center gap-2">
-                        <router-link :to="`/${authRole}/students/${s.id}`"><AppButton variant="outline" size="sm">View</AppButton></router-link>
-                        <router-link :to="`/${authRole}/students/${s.id}/edit`"><AppButton variant="ghost" size="sm">Edit</AppButton></router-link>
-                        <AppButton variant="outline" size="sm" @click="openReset(s)">Reset password</AppButton>
-                        <AppButton variant="ghost" size="sm" @click="openNotify(s)">Notify</AppButton>
-                        <AppButton v-if="s.is_active" variant="outline" size="sm" @click="setActive(s, false)">Deactivate</AppButton>
-                        <AppButton v-else variant="success" size="sm" @click="setActive(s, true)">Activate</AppButton>
+                        <router-link :to="`/${authRole}/students/${s.id}`"><AppButton variant="outline" size="sm">{{ $t('common.view') }}</AppButton></router-link>
+                        <router-link :to="`/${authRole}/students/${s.id}/edit`"><AppButton variant="ghost" size="sm">{{ $t('common.edit') }}</AppButton></router-link>
+                        <AppButton variant="outline" size="sm" @click="openReset(s)">{{ $t('students.resetPassword') }}</AppButton>
+                        <AppButton variant="ghost" size="sm" @click="openNotify(s)">{{ $t('students.notify') }}</AppButton>
+                        <AppButton v-if="s.is_active" variant="outline" size="sm" @click="setActive(s, false)">{{ $t('students.deactivate') }}</AppButton>
+                        <AppButton v-else variant="success" size="sm" @click="setActive(s, true)">{{ $t('students.activate') }}</AppButton>
                     </div>
                 </div>
             </div>
@@ -157,20 +159,20 @@ onMounted(() => load(1));
             </div>
         </div>
 
-        <AppModal :open="Boolean(resetTarget)" :title="`Reset ${resetTarget?.name}'s password`" size="sm" @close="resetTarget = null">
-            <AppInput v-model="resetForm.password" label="New password" type="password" required id="reset-password" :error="resetErrors.password" autocomplete="new-password" hint="At least 8 characters." />
-            <AppInput v-model="resetForm.password_confirmation" label="Confirm password" type="password" required id="reset-password-confirm" :error="resetErrors.password_confirmation" autocomplete="new-password" />
+        <AppModal :open="Boolean(resetTarget)" :title="$t('students.resetFor', { name: resetTarget?.name })" size="sm" @close="resetTarget = null">
+            <AppInput v-model="resetForm.password" :label="$t('common.newPassword')" type="password" required id="reset-password" :error="resetErrors.password" autocomplete="new-password" :hint="$t('common.passwordMin')" />
+            <AppInput v-model="resetForm.password_confirmation" :label="$t('common.confirmPassword')" type="password" required id="reset-password-confirm" :error="resetErrors.password_confirmation" autocomplete="new-password" />
             <template #footer>
-                <AppButton variant="outline" :disabled="resetBusy" @click="resetTarget = null">Cancel</AppButton>
-                <AppButton :loading="resetBusy" @click="submitReset">Reset</AppButton>
+                <AppButton variant="outline" :disabled="resetBusy" @click="resetTarget = null">{{ $t('common.cancel') }}</AppButton>
+                <AppButton :loading="resetBusy" @click="submitReset">{{ $t('common.reset') }}</AppButton>
             </template>
         </AppModal>
 
-        <AppModal :open="Boolean(notifyTarget)" :title="`Message ${notifyTarget?.name}`" size="sm" @close="notifyTarget = null">
-            <AppTextarea v-model="notifyForm.message" label="Message" required id="notify-message" :error="notifyErrors.message" :rows="3" placeholder="Write a short message…" />
+        <AppModal :open="Boolean(notifyTarget)" :title="$t('students.messageStudent', { name: notifyTarget?.name })" size="sm" @close="notifyTarget = null">
+            <AppTextarea v-model="notifyForm.message" :label="$t('students.message')" required id="notify-message" :error="notifyErrors.message" :rows="3" :placeholder="$t('students.messagePlaceholder')" />
             <template #footer>
-                <AppButton variant="outline" :disabled="notifyBusy" @click="notifyTarget = null">Cancel</AppButton>
-                <AppButton :loading="notifyBusy" @click="submitNotify">Send</AppButton>
+                <AppButton variant="outline" :disabled="notifyBusy" @click="notifyTarget = null">{{ $t('common.cancel') }}</AppButton>
+                <AppButton :loading="notifyBusy" @click="submitNotify">{{ $t('common.send') }}</AppButton>
             </template>
         </AppModal>
     </div>
