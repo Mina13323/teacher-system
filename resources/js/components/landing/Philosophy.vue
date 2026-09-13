@@ -56,10 +56,10 @@ import Icon from '@/components/ui/Icon.vue';
 
                             <div class="mt-6 flex items-center gap-3 border-t border-ink-800 pt-4">
                                 <div class="h-9 w-9 rounded-full bg-terracotta-700 flex items-center justify-center text-xs font-bold text-white">
-                                    AT
+                                    EM
                                 </div>
                                 <div>
-                                    <h4 class="text-sm font-bold text-white">Atlas Academic Standard</h4>
+                                    <h4 class="text-sm font-bold text-white">El Masry Academic Standard</h4>
                                     <p class="text-xs text-ink-400">Geography & History Specialist</p>
                                 </div>
                             </div>

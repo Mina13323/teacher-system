@@ -238,9 +238,19 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (NotFoundHttpException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                $previous = $e->getPrevious();
+                $message = 'Resource not found.';
+
+                if (! ($previous instanceof ModelNotFoundException) && ! str_contains($e->getMessage(), 'No query results for model')) {
+                    $rawMsg = $e->getMessage();
+                    if ($rawMsg && ! str_starts_with($rawMsg, 'The route') && ! str_contains($rawMsg, 'App\\')) {
+                        $message = $rawMsg;
+                    }
+                }
+
                 return response()->json([
                     'success' => false,
-                    'message' => $e->getMessage() ?: 'Resource not found.',
+                    'message' => $message,
                 ], 404);
             }
         });

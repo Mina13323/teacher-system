@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue';
+import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
@@ -18,12 +18,15 @@ const router = useRouter();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
-const id = route.params.id;
-const isEdit = Boolean(id);
+const id = computed(() => {
+    const raw = route.params.id;
+    return raw && raw !== 'undefined' && raw !== 'new' ? String(raw) : null;
+});
+const isEdit = computed(() => Boolean(id.value && route.name !== 'teacher.courses.new'));
 
 const form = reactive({ title: '', slug: '', description: '', thumbnail: '', status: 'draft' });
 const errors = reactive({});
-const loading = ref(isEdit);
+const loading = ref(Boolean(id.value));
 const saving = ref(false);
 
 const statusOptions = computed(() => [
@@ -33,9 +36,13 @@ const statusOptions = computed(() => [
 ]);
 
 async function load() {
-    if (!isEdit) return;
+    if (!isEdit.value || !id.value) {
+        loading.value = false;
+        return;
+    }
+    loading.value = true;
     try {
-        const c = await teacher.course(id);
+        const c = await teacher.course(id.value);
         form.title = c.title;
         form.slug = c.slug || '';
         form.description = c.description || '';
@@ -53,10 +60,10 @@ async function submit() {
     Object.keys(errors).forEach((k) => delete errors[k]);
     const payload = { title: form.title, slug: form.slug || null, description: form.description || null, thumbnail: form.thumbnail || null, status: form.status };
     try {
-        if (isEdit) {
-            await teacher.updateCourse(id, payload);
+        if (isEdit.value && id.value) {
+            await teacher.updateCourse(id.value, payload);
             toast.success(t('courses.updated'));
-            router.push(`/teacher/courses/${id}`);
+            router.push(`/teacher/courses/${id.value}`);
         } else {
             const created = await teacher.createCourse(payload);
             toast.success(t('courses.created'));
@@ -69,6 +76,19 @@ async function submit() {
         saving.value = false;
     }
 }
+
+watch(() => route.params.id, () => {
+    if (!isEdit.value) {
+        form.title = '';
+        form.slug = '';
+        form.description = '';
+        form.thumbnail = '';
+        form.status = 'draft';
+        loading.value = false;
+    } else {
+        load();
+    }
+});
 
 onMounted(load);
 </script>

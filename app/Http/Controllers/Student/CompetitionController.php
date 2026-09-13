@@ -135,6 +135,10 @@ class CompetitionController extends Controller
             abort(404, 'Competition not found.');
         }
 
+        if ($request->user()->isStudent() && (! $request->user()->canJoinCompetitions() || ! $request->user()->hasActiveAccess())) {
+            throw new CompetitionNotAccessibleException('You do not have access to competitions.');
+        }
+
         if (! $this->enrollments->isEnrolled($request->user(), $competition->exam->course_id)) {
             throw new CompetitionNotAccessibleException('You must be enrolled in the course to participate.');
         }
@@ -150,6 +154,10 @@ class CompetitionController extends Controller
 
     private function assertParticipant(Request $request, Competition $competition): CompetitionParticipant
     {
+        if ($request->user()->isStudent() && (! $request->user()->canJoinCompetitions() || ! $request->user()->hasActiveAccess())) {
+            throw new CompetitionNotAccessibleException('You do not have access to competitions.');
+        }
+
         $competition->lazyFinalize();
 
         $participant = CompetitionParticipant::query()

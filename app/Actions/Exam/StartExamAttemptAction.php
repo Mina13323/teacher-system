@@ -54,6 +54,10 @@ class StartExamAttemptAction
             throw new ExamNotAccessibleException();
         }
 
+        if ($student->isStudent() && (! $student->canTakeExams() || ! $student->hasActiveAccess())) {
+            throw new ExamNotAccessibleException('You do not have access to exams.');
+        }
+
         try {
             return DB::transaction(function () use ($student, $exam) {
                 $studentId = $student->getKey();

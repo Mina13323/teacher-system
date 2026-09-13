@@ -56,6 +56,12 @@ class LessonPolicy
             return false;
         }
 
+        if ($user->hasRole('student')) {
+            if (! $user->canAccessLessons() || ! $user->hasActiveAccess()) {
+                return false;
+            }
+        }
+
         if (! $lesson->isPublished()) {
             return false;
         }

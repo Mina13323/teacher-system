@@ -29,6 +29,10 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'is_active' => true,
+            'academic_year' => \App\Enums\AcademicYear::Secondary1->value,
+            'can_access_lessons' => true,
+            'can_take_exams' => true,
+            'can_join_competitions' => true,
             'remember_token' => Str::random(10),
         ];
     }

@@ -2,9 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\AcademicYear;
+use App\Enums\StudentAccessStatus;
+use App\Enums\StudentCapabilityPreset;
 use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -27,7 +31,12 @@ class User extends Authenticatable
         'avatar',
         'phone',
         'bio',
+        'student_code',
+        'academic_year',
         'is_active',
+        'can_access_lessons',
+        'can_take_exams',
+        'can_join_competitions',
         'profile_completed_at',
         'created_by',
     ];
@@ -53,6 +62,10 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'can_access_lessons' => 'boolean',
+            'can_take_exams' => 'boolean',
+            'can_join_competitions' => 'boolean',
+            'academic_year' => AcademicYear::class,
             'profile_completed_at' => 'datetime',
         ];
     }
@@ -112,6 +125,16 @@ class User extends Authenticatable
         return $this->hasMany(LessonProgress::class, 'student_id');
     }
 
+    public function accessPeriods(): HasMany
+    {
+        return $this->hasMany(StudentAccessPeriod::class, 'student_id');
+    }
+
+    public function latestAccessPeriod(): HasOne
+    {
+        return $this->hasOne(StudentAccessPeriod::class, 'student_id')->latestOfMany('expires_at');
+    }
+
     public function isAdmin(): bool
     {
         return $this->hasRole(UserRole::Admin->value);
@@ -138,6 +161,71 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return (bool) $this->is_active;
+    }
+
+    public function canAccessLessons(): bool
+    {
+        return (bool) ($this->can_access_lessons ?? true);
+    }
+
+    public function canTakeExams(): bool
+    {
+        return (bool) ($this->can_take_exams ?? true);
+    }
+
+    public function canJoinCompetitions(): bool
+    {
+        return (bool) ($this->can_join_competitions ?? true);
+    }
+
+    public function capabilityPreset(): string
+    {
+        return StudentCapabilityPreset::fromCapabilities(
+            $this->canAccessLessons(),
+            $this->canTakeExams(),
+            $this->canJoinCompetitions()
+        )->value;
+    }
+
+    /**
+     * Whether the student currently holds active LMS access.
+     * Teachers, assistants, and admins always have active access.
+     */
+    public function hasActiveAccess(): bool
+    {
+        if (! $this->isStudent()) {
+            return true;
+        }
+
+        if (! $this->isActive()) {
+            return false;
+        }
+
+        $period = $this->latestAccessPeriod;
+        if (! $period) {
+            return true;
+        }
+
+        return $period->status === StudentAccessStatus::Active
+            && ($period->expires_at === null || $period->expires_at->isFuture());
+    }
+
+    public function accessStatus(): string
+    {
+        if (! $this->isActive()) {
+            return StudentAccessStatus::Suspended->value;
+        }
+
+        $period = $this->latestAccessPeriod;
+        if (! $period) {
+            return StudentAccessStatus::Active->value;
+        }
+
+        if ($period->status === StudentAccessStatus::Active && $period->expires_at !== null && $period->expires_at->isPast()) {
+            return StudentAccessStatus::Due->value;
+        }
+
+        return $period->status->value;
     }
 
     /**

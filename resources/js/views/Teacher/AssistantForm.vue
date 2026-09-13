@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue';
+import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
@@ -17,18 +17,25 @@ const router = useRouter();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
-const id = route.params.id;
-const isEdit = Boolean(id);
+const id = computed(() => {
+    const raw = route.params.id;
+    return raw && raw !== 'undefined' && raw !== 'new' ? String(raw) : null;
+});
+const isEdit = computed(() => Boolean(id.value && route.name !== 'teacher.assistants.new'));
 
 const form = reactive({ name: '', email: '', password: '', phone: '', bio: '' });
 const errors = reactive({});
-const loading = ref(isEdit);
+const loading = ref(Boolean(id.value));
 const saving = ref(false);
 
 async function load() {
-    if (!isEdit) return;
+    if (!isEdit.value || !id.value) {
+        loading.value = false;
+        return;
+    }
+    loading.value = true;
     try {
-        const a = await teacher.assistant(id);
+        const a = await teacher.assistant(id.value);
         form.name = a.name;
         form.email = a.email;
         form.phone = a.phone || '';
@@ -44,8 +51,8 @@ async function submit() {
     saving.value = true;
     Object.keys(errors).forEach((k) => delete errors[k]);
     try {
-        if (isEdit) {
-            await teacher.updateAssistant(id, { name: form.name, email: form.email, phone: form.phone || null, bio: form.bio || null });
+        if (isEdit.value && id.value) {
+            await teacher.updateAssistant(id.value, { name: form.name, email: form.email, phone: form.phone || null, bio: form.bio || null });
             toast.success(t('assistants.updated'));
         } else {
             await teacher.createAssistant({ name: form.name, email: form.email, password: form.password, phone: form.phone || null, bio: form.bio || null });
@@ -59,6 +66,19 @@ async function submit() {
         saving.value = false;
     }
 }
+
+watch(() => route.params.id, () => {
+    if (!isEdit.value) {
+        form.name = '';
+        form.email = '';
+        form.password = '';
+        form.phone = '';
+        form.bio = '';
+        loading.value = false;
+    } else {
+        load();
+    }
+});
 
 onMounted(load);
 </script>

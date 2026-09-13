@@ -8,7 +8,7 @@ import LanguageSwitcher from '@/components/ui/LanguageSwitcher.vue';
 
 const props = defineProps({
     nav: { type: Array, default: () => [] },
-    brand: { type: String, default: 'Atlas Academy' },
+    brand: { type: String, default: 'El Masry' },
     subtitle: { type: String, default: '' },
     roleLabel: { type: String, default: '' },
 });

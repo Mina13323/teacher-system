@@ -81,6 +81,8 @@ export const teacher = {
     activateStudent: (id) => api.patch(`/teacher/students/${id}/activate`),
     deactivateStudent: (id) => api.patch(`/teacher/students/${id}/deactivate`),
     resetStudentPassword: (id, payload) => api.post(`/teacher/students/${id}/reset-password`, payload),
+    resetStudentCredentials: (id) => api.post(`/teacher/students/${id}/reset-credentials`),
+    renewStudent: (id, payload) => api.post(`/teacher/students/${id}/renew`, payload),
     notifyStudent: (id, payload) => api.post(`/teacher/students/${id}/notify`, payload),
 
     assistants: (params) => api.get('/teacher/assistants', params),

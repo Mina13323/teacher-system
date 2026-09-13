@@ -18,8 +18,11 @@ const router = useRouter();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
-const id = route.params.id;
-const isEdit = Boolean(id);
+const id = computed(() => {
+    const raw = route.params.id;
+    return raw && raw !== 'undefined' && raw !== 'new' ? String(raw) : null;
+});
+const isEdit = computed(() => Boolean(id.value && route.name !== 'teacher.competitions.new'));
 
 const form = reactive({ title: '', description: '', course_id: '', exam_id: '', starts_at: '', ends_at: '', max_participants: '', scoring_type: 'highest_score', ranking_type: 'score_desc' });
 const errors = reactive({});
@@ -52,8 +55,8 @@ watch(() => form.course_id, (v) => { form.exam_id = ''; loadExams(v); });
 onMounted(async () => {
     try {
         await loadCourses();
-        if (isEdit) {
-            const c = await teacher.competition(id);
+        if (isEdit.value && id.value) {
+            const c = await teacher.competition(id.value);
             form.title = c.title;
             form.description = c.description || '';
             form.starts_at = c.starts_at ? c.starts_at.slice(0, 16) : '';
@@ -76,12 +79,12 @@ async function submit() {
     saving.value = true;
     Object.keys(errors).forEach((k) => delete errors[k]);
     try {
-        if (isEdit) {
+        if (isEdit.value && id.value) {
             const payload = { title: form.title, description: form.description || null };
             if (form.starts_at) payload.starts_at = form.starts_at;
             if (form.ends_at) payload.ends_at = form.ends_at;
             if (form.max_participants) payload.max_participants = Number(form.max_participants);
-            await teacher.updateCompetition(id, payload);
+            await teacher.updateCompetition(id.value, payload);
             toast.success(t('competitions.updated'));
         } else {
             const payload = {

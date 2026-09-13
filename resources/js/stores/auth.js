@@ -29,6 +29,14 @@ export const useAuthStore = defineStore('auth', {
         isStudent: (s) => s.user?.roles?.includes('student'),
         role: (s) => s.user?.roles?.[0] || null,
         displayName: (s) => s.user?.name || 'User',
+        canAccessLessons: (s) => Boolean(s.user?.can_access_lessons ?? true),
+        canTakeExams: (s) => Boolean(s.user?.can_take_exams ?? true),
+        canJoinCompetitions: (s) => Boolean(s.user?.can_join_competitions ?? true),
+        studentCode: (s) => s.user?.student_code || null,
+        academicYear: (s) => s.user?.academic_year || null,
+        accessStatus: (s) => s.user?.access_status || 'active',
+        isSuspended: (s) => s.user?.access_status === 'suspended' || s.user?.is_active === false,
+        isRenewalDue: (s) => s.user?.access_status === 'due',
     },
     actions: {
         applyAuth({ user, token }) {

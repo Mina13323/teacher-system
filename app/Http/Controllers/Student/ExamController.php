@@ -88,6 +88,14 @@ class ExamController extends Controller
             abort(404, 'Exam not found.');
         }
 
+        if ($request->user()->isStudent()) {
+            abort_unless(
+                $request->user()->canTakeExams() && $request->user()->hasActiveAccess(),
+                403,
+                'You do not have access to exams.'
+            );
+        }
+
         abort_unless(
             $this->enrollments->isEnrolled($request->user(), $exam->course_id),
             403,

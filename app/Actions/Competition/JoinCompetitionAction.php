@@ -77,6 +77,10 @@ class JoinCompetitionAction
             throw new CompetitionNotAccessibleException('This competition is not currently accepting participants.');
         }
 
+        if ($student->isStudent() && (! $student->canJoinCompetitions() || ! $student->hasActiveAccess())) {
+            throw new CompetitionNotAccessibleException('You do not have access to competitions.');
+        }
+
         if (! $this->enrollments->isEnrolled($student, $competition->exam->course_id)) {
             throw new CompetitionNotAccessibleException('You must be enrolled in the course to participate.');
         }

@@ -10,8 +10,8 @@ export default defineConfig({
             registerType: 'prompt',
             includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png'],
             manifest: {
-                name: 'Atlas Academy — Geography & History',
-                short_name: 'Atlas Academy',
+                name: 'El Masry — Geography & History',
+                short_name: 'El Masry',
                 description: 'A modern Geography and History learning platform.',
                 start_url: '/',
                 scope: '/',

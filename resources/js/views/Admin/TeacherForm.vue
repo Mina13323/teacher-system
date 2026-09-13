@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue';
+import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { admin } from '@/api';
@@ -17,17 +17,20 @@ const router = useRouter();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
-const id = route.params.id;
-const isEdit = Boolean(id);
+const id = computed(() => {
+    const raw = route.params.id;
+    return raw && raw !== 'undefined' && raw !== 'new' ? String(raw) : null;
+});
+const isEdit = computed(() => Boolean(id.value && route.name !== 'admin.teachers.new'));
 const form = reactive({ name: '', email: '', password: '', phone: '', bio: '' });
 const errors = reactive({});
-const loading = ref(isEdit);
+const loading = ref(Boolean(id.value));
 const saving = ref(false);
 
 async function load() {
-    if (isEdit) {
+    if (isEdit.value && id.value) {
         try {
-            const tc = await admin.teacher(id);
+            const tc = await admin.teacher(id.value);
             form.name = tc.name;
             form.email = tc.email;
             form.phone = tc.phone || '';
@@ -37,6 +40,8 @@ async function load() {
         } finally {
             loading.value = false;
         }
+    } else {
+        loading.value = false;
     }
 }
 
@@ -44,8 +49,8 @@ async function submit() {
     saving.value = true;
     Object.keys(errors).forEach((k) => delete errors[k]);
     try {
-        if (isEdit) {
-            await admin.updateTeacher(id, {
+        if (isEdit.value && id.value) {
+            await admin.updateTeacher(id.value, {
                 name: form.name,
                 email: form.email,
                 phone: form.phone || null,
@@ -69,6 +74,19 @@ async function submit() {
         saving.value = false;
     }
 }
+
+watch(() => route.params.id, () => {
+    if (!isEdit.value) {
+        form.name = '';
+        form.email = '';
+        form.password = '';
+        form.phone = '';
+        form.bio = '';
+        loading.value = false;
+    } else {
+        load();
+    }
+});
 
 onMounted(load);
 </script>

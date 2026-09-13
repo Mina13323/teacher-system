@@ -41,7 +41,7 @@ async function handleInstall() {
             <div class="flex-1">
                 <div class="flex items-center justify-between">
                     <h4 class="font-display text-sm font-bold text-ink-900">
-                        Install Atlas Academy
+                        Install El Masry
                     </h4>
                     <button
                         type="button"

@@ -2,13 +2,15 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\AcademicYear;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Enum;
 
 class UpdateStudentRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        if ($this->has('email')) {
+        if ($this->has('email') && $this->filled('email')) {
             $this->merge(['email' => mb_strtolower($this->string('email')->toString())]);
         }
     }
@@ -32,6 +34,11 @@ class UpdateStudentRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'bio' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'avatar' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'academic_year' => ['sometimes', 'nullable', new Enum(AcademicYear::class)],
+            'can_access_lessons' => ['sometimes', 'nullable', 'boolean'],
+            'can_take_exams' => ['sometimes', 'nullable', 'boolean'],
+            'can_join_competitions' => ['sometimes', 'nullable', 'boolean'],
+            'capability_preset' => ['sometimes', 'nullable', 'string', 'in:ALL,LESSONS_ONLY,EXAMS_ONLY,COMPETITIONS_ONLY,NONE,CUSTOM'],
         ];
     }
 }

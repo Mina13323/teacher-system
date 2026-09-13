@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Teacher;
 
 use App\Actions\Auth\CreateStudentAction;
+use App\Actions\Auth\RegenerateStudentCredentialsAction;
 use App\Actions\Auth\ResetUserPasswordAction;
 use App\Actions\Auth\SetAccountActiveStateAction;
 use App\Actions\Auth\UpdateAccountEmailAction;
 use App\Actions\Auth\UpdateUserAccountAction;
 use App\Actions\Enrollment\EnrollStudentToCourseAction;
+use App\Actions\Student\RenewStudentAccessAction;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateStudentRequest;
@@ -33,6 +35,8 @@ class StudentController extends Controller
         private readonly UpdateAccountEmailAction $updateEmail,
         private readonly SetAccountActiveStateAction $setActiveState,
         private readonly ResetUserPasswordAction $resetPassword,
+        private readonly RegenerateStudentCredentialsAction $regenerateCredentials,
+        private readonly RenewStudentAccessAction $renewAccess,
         private readonly EnrollStudentToCourseAction $enrollStudent,
     ) {
     }
@@ -43,7 +47,7 @@ class StudentController extends Controller
 
         $query = User::query()
             ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
-            ->with('roles');
+            ->with(['roles', 'latestAccessPeriod']);
 
         if (! $request->user()->isAdmin() && ! $request->user()->isAssistant()) {
             $teacherId = $request->user()->getKey();
@@ -53,6 +57,19 @@ class StudentController extends Controller
                 ->pluck('student_id');
             $query->where(fn ($q) => $q->where('created_by', $teacherId)
                 ->orWhereIn('id', $enrolledInOwnCourses));
+        }
+
+        if ($request->filled('academic_year')) {
+            $query->where('academic_year', $request->string('academic_year')->toString());
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->string('status')->toString();
+            if ($status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($status === 'inactive' || $status === 'suspended') {
+                $query->where('is_active', false);
+            }
         }
 
         $students = $query->latest()->paginate($this->perPage($request));
@@ -72,16 +89,26 @@ class StudentController extends Controller
             }
         }
 
-        $student->load('roles');
+        $student->load(['roles', 'latestAccessPeriod']);
 
-        return $this->success(new StudentResource($student), 'Student created.', 201);
+        $response = [
+            'success' => true,
+            'message' => 'Student created.',
+            'data' => new StudentResource($student),
+        ];
+
+        if (! empty($student->generated_credentials)) {
+            $response['credentials'] = $student->generated_credentials;
+        }
+
+        return response()->json($response, 201);
     }
 
     public function show(Request $request, User $student): JsonResponse
     {
         $this->authorize('view', $student);
 
-        $student->load(['roles', 'enrollments.course']);
+        $student->load(['roles', 'enrollments.course', 'latestAccessPeriod', 'accessPeriods']);
 
         return $this->success(new StudentResource($student), 'Student retrieved.');
     }
@@ -96,7 +123,7 @@ class StudentController extends Controller
 
         $account = $this->updateAccount->execute($student, $request->validated());
 
-        return $this->success(new StudentResource($account->load('roles')), 'Student updated.');
+        return $this->success(new StudentResource($account->load(['roles', 'latestAccessPeriod'])), 'Student updated.');
     }
 
     public function activate(Request $request, User $student): JsonResponse
@@ -105,7 +132,7 @@ class StudentController extends Controller
 
         $student = $this->setActiveState->execute($student, true);
 
-        return $this->success(new StudentResource($student->load('roles')), 'Student activated.');
+        return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student activated.');
     }
 
     public function deactivate(Request $request, User $student): JsonResponse
@@ -114,7 +141,7 @@ class StudentController extends Controller
 
         $student = $this->setActiveState->execute($student, false);
 
-        return $this->success(new StudentResource($student->load('roles')), 'Student deactivated.');
+        return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student deactivated.');
     }
 
     public function resetPassword(ResetPasswordRequest $request, User $student): JsonResponse
@@ -124,6 +151,54 @@ class StudentController extends Controller
         $this->resetPassword->execute($student, $request->string('password')->toString());
 
         return $this->success(null, 'Student password reset.');
+    }
+
+    /**
+     * Regenerate credentials (student code + secure random password) with one-time reveal.
+     */
+    public function resetCredentials(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('manage', $student);
+
+        $result = $this->regenerateCredentials->execute($student);
+
+        return $this->success([
+            'student' => new StudentResource($result['student']->load(['roles', 'latestAccessPeriod'])),
+            'credentials' => $result['credentials'],
+        ], 'Student credentials regenerated successfully.');
+    }
+
+    /**
+     * Staff renewal decision: Keep Active or Suspend Access.
+     */
+    public function renew(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('manage', $student);
+
+        $validated = $request->validate([
+            'decision' => ['required', 'string', 'in:keep_active,suspend'],
+            'months' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'amount' => ['nullable', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updatedStudent = $this->renewAccess->execute(
+            $request->user(),
+            $student,
+            $validated['decision'],
+            $validated['months'] ?? 1,
+            isset($validated['amount']) ? (float) $validated['amount'] : null,
+            $validated['notes'] ?? null,
+        );
+
+        $message = $validated['decision'] === 'keep_active'
+            ? 'Student access kept active.'
+            : 'Student access suspended.';
+
+        return $this->success(
+            new StudentResource($updatedStudent->load(['roles', 'latestAccessPeriod'])),
+            $message
+        );
     }
 
     private function perPage(Request $request): int

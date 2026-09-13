@@ -8,6 +8,10 @@ import AppButton from '@/components/ui/AppButton.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 
+import { useAuthStore } from '@/stores/auth';
+
+const auth = useAuthStore();
+
 const { loading, error, data, run } = useAsync(async () => {
     const res = await student.dashboard();
     return {
@@ -25,12 +29,22 @@ function fmtDate(iso) {
 
 <template>
     <div class="space-y-6">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-ink-900">{{ $t('dashboard.welcomeBack') }}</h1>
-                <p class="text-sm text-ink-500">{{ $t('dashboard.continueJourney') }}</p>
+                <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-bold text-ink-900">{{ $t('dashboard.welcomeBack') }}</h1>
+                    <span v-if="auth.studentCode" class="inline-flex items-center rounded-md bg-parchment-200 px-2.5 py-0.5 text-xs font-mono font-bold text-ink-800 tracking-wide">
+                        {{ auth.studentCode }}
+                    </span>
+                    <span v-if="auth.academicYear" class="inline-flex items-center rounded-md bg-terracotta-100 px-2.5 py-0.5 text-xs font-medium text-terracotta-800">
+                        {{ $t(`students.${auth.academicYear === 'secondary_1' ? 'secondary1' : auth.academicYear === 'secondary_2' ? 'secondary2' : 'secondary3'}`) }}
+                    </span>
+                </div>
+                <p class="text-sm text-ink-500 mt-1">{{ $t('dashboard.continueJourney') }}</p>
             </div>
-            <router-link to="/student/courses"><AppButton>{{ $t('dashboard.browseCourses') }}</AppButton></router-link>
+            <div v-if="auth.canAccessLessons">
+                <router-link to="/student/courses"><AppButton>{{ $t('dashboard.browseCourses') }}</AppButton></router-link>
+            </div>
         </div>
 
         <LoadingSpinner v-if="loading" />
