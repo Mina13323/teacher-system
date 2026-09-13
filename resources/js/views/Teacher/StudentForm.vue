@@ -18,7 +18,7 @@ const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
 const id = route.params.id;
-const isEdit = computed(() => Boolean(id));
+const isEdit = Boolean(id);
 const authRole = route.path.startsWith('/assistant') ? 'assistant' : 'teacher';
 
 const form = reactive({ name: '', email: '', password: '', phone: '', bio: '', avatar: '', course_ids: [] });

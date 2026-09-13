@@ -19,7 +19,7 @@ const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
 const id = route.params.id;
-const isEdit = computed(() => Boolean(id));
+const isEdit = Boolean(id);
 
 const form = reactive({ title: '', slug: '', description: '', thumbnail: '', status: 'draft' });
 const errors = reactive({});

@@ -19,7 +19,7 @@ const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 
 const id = route.params.id;
-const isEdit = computed(() => Boolean(id));
+const isEdit = Boolean(id);
 
 const form = reactive({ title: '', description: '', course_id: '', exam_id: '', starts_at: '', ends_at: '', max_participants: '', scoring_type: 'highest_score', ranking_type: 'score_desc' });
 const errors = reactive({});
