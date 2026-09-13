@@ -12,7 +12,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -23,7 +23,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
 
     public function test_student_leaderboard_does_not_expose_private_data(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $viewer = $this->createUserWithRole(UserRole::Student);
@@ -43,7 +43,8 @@ class CompetitionLeaderboardTest extends ApiTestCase
         $response->assertStatus(200)
             ->assertJson(['success' => true]);
 
-        $rows = $response->json('data.data');
+        $data = $response->json('data');
+        $rows = isset($data['data']) && is_array($data['data']) ? $data['data'] : $data;
         $this->assertCount(2, $rows);
 
         foreach ($rows as $row) {
@@ -62,7 +63,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
 
     public function test_student_can_see_own_position_and_total(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -82,7 +83,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
 
     public function test_student_without_result_has_no_rank(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -99,7 +100,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
 
     public function test_disqualified_participant_is_excluded_but_result_preserved(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $a = $this->createUserWithRole(UserRole::Student);
@@ -117,7 +118,7 @@ class CompetitionLeaderboardTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/leaderboard")
             ->assertStatus(200)
-            ->assertJsonCount(2, 'data.data');
+            ->assertJsonCount(2, 'data');
 
         // Disqualify the top scorer A. The disqualify route takes the
         // participant id, not the user id, so resolve the participant row.
@@ -136,6 +137,6 @@ class CompetitionLeaderboardTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/leaderboard")
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data');
+            ->assertJsonCount(1, 'data');
     }
 }

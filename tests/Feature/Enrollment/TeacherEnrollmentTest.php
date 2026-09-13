@@ -98,6 +98,6 @@ class TeacherEnrollmentTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/courses/{$course->id}/students")
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data');
+            ->assertJsonCount(1, 'data');
     }
 }

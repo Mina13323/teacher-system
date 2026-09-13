@@ -63,12 +63,12 @@ class ExamAttempt extends Model
 
     public function answers(): HasMany
     {
-        return $this->hasMany(ExamAnswer::class);
+        return $this->hasMany(ExamAnswer::class, 'attempt_id');
     }
 
     public function attemptQuestions(): HasMany
     {
-        return $this->hasMany(ExamAttemptQuestion::class)
+        return $this->hasMany(ExamAttemptQuestion::class, 'attempt_id')
             ->orderBy('position');
     }
 
@@ -79,12 +79,12 @@ class ExamAttempt extends Model
 
     public function integrityEvents(): HasMany
     {
-        return $this->hasMany(ExamIntegrityEvent::class);
+        return $this->hasMany(ExamIntegrityEvent::class, 'attempt_id');
     }
 
     public function integrityReviews(): HasMany
     {
-        return $this->hasMany(ExamIntegrityReview::class);
+        return $this->hasMany(ExamIntegrityReview::class, 'attempt_id');
     }
 
     public function isOwnedBy(User $user): bool

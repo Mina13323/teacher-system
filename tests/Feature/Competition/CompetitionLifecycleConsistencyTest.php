@@ -37,7 +37,7 @@ class CompetitionLifecycleConsistencyTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/competitions')
             ->assertStatus(200)
-            ->assertJsonPath('data.data.0.status', 'active');
+            ->assertJsonPath('data.0.status', 'active');
 
         // The persisted state now matches the resolved state.
         $this->assertSame(CompetitionStatus::Active->value, $competition->fresh()->status->value);
@@ -60,7 +60,7 @@ class CompetitionLifecycleConsistencyTest extends ApiTestCase
 
         $listStatus = $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/competitions')
-            ->json('data.data.0.status');
+            ->json('data.0.status');
 
         $showStatus = $this->actingAs($student, 'sanctum')
             ->getJson("/api/v1/student/competitions/{$competition->id}")
@@ -88,7 +88,7 @@ class CompetitionLifecycleConsistencyTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/competitions')
             ->assertStatus(200)
-            ->assertJsonPath('data.data.0.status', 'published');
+            ->assertJsonPath('data.0.status', 'published');
 
         $this->assertSame(CompetitionStatus::Published->value, $competition->fresh()->status->value);
     }

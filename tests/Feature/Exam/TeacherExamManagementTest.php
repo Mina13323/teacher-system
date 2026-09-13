@@ -59,7 +59,7 @@ class TeacherExamManagementTest extends ApiTestCase
             ->getJson("/api/v1/teacher/courses/{$course->id}/exams")
             ->assertStatus(200)
             ->assertJson(['success' => true])
-            ->assertJsonCount(2, 'data.data');
+            ->assertJsonCount(2, 'data');
     }
 
     public function test_teacher_can_update_exam(): void

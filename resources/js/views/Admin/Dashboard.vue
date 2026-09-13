@@ -18,7 +18,7 @@ onMounted(run);
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
-        <template v-else>
+        <template v-else-if="data">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard :label="$t('dashboard.teachers')" :value="data.teachers_count" icon="user" tone="terracotta" />
                 <StatCard :label="$t('dashboard.statStudents')" :value="data.students_count" icon="users" tone="emerald" />

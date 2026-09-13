@@ -24,9 +24,9 @@ class LeaderboardResource extends JsonResource
     {
         $data = [
             'rank' => $this->rank,
-            'student_display_name' => $this->whenLoaded(
-                'participant.student',
-                fn () => $this->participant->student->publicDisplayName()
+            'student_display_name' => $this->when(
+                $this->relationLoaded('participant') && $this->participant?->relationLoaded('student'),
+                fn () => $this->participant?->student?->publicDisplayName()
             ),
             'score' => $this->score,
             'percentage' => $this->percentage,

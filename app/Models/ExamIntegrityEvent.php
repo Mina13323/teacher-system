@@ -35,6 +35,6 @@ class ExamIntegrityEvent extends Model
 
     public function attempt(): BelongsTo
     {
-        return $this->belongsTo(ExamAttempt::class);
+        return $this->belongsTo(ExamAttempt::class, 'attempt_id');
     }
 }

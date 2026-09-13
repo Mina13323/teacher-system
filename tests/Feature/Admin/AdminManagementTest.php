@@ -36,17 +36,18 @@ class AdminManagementTest extends ApiTestCase
                 'password' => 'secret123',
             ])->assertStatus(403);
 
-        $this->assertDatabaseCount('users', 2); // only admin + teacher seeded.
+        $this->assertDatabaseCount('users', 1); // only teacher created.
     }
 
     public function test_admin_can_list_teachers(): void
     {
         $admin = $this->createUserWithRole(UserRole::Admin);
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
 
         $this->actingAs($admin, 'sanctum')
             ->getJson('/api/v1/admin/teachers')
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data');
+            ->assertJsonCount(1, 'data');
     }
 
     public function test_admin_can_deactivate_a_teacher(): void

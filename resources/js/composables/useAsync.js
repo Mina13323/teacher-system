@@ -5,7 +5,7 @@ import { ref } from 'vue';
  * handles ApiError and exposes the underlying error for page-level handlers.
  */
 export function useAsync(fn, { immediate = false } = {}) {
-    const loading = ref(false);
+    const loading = ref(true);
     const error = ref(null);
     const data = ref(null);
 

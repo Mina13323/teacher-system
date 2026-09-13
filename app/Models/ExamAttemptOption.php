@@ -29,7 +29,7 @@ class ExamAttemptOption extends Model
 
     public function attemptQuestion(): BelongsTo
     {
-        return $this->belongsTo(ExamAttemptQuestion::class);
+        return $this->belongsTo(ExamAttemptQuestion::class, 'attempt_question_id');
     }
 
     public function option(): BelongsTo

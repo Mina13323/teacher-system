@@ -30,7 +30,7 @@ class ExamAttemptQuestion extends Model
 
     public function attempt(): BelongsTo
     {
-        return $this->belongsTo(ExamAttempt::class);
+        return $this->belongsTo(ExamAttempt::class, 'attempt_id');
     }
 
     public function question(): BelongsTo
@@ -40,7 +40,7 @@ class ExamAttemptQuestion extends Model
 
     public function attemptOptions(): HasMany
     {
-        return $this->hasMany(ExamAttemptOption::class)
+        return $this->hasMany(ExamAttemptOption::class, 'attempt_question_id')
             ->orderBy('position');
     }
 }

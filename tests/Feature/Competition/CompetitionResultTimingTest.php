@@ -22,7 +22,7 @@ class CompetitionResultTimingTest extends ApiTestCase
 
     public function test_attempt_submitted_before_ends_at_counts(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $endsAt = now()->addDay();
         $competition = $this->makeActiveCompetition($teacher, $exam, ['ends_at' => $endsAt]);
 
@@ -51,7 +51,7 @@ class CompetitionResultTimingTest extends ApiTestCase
 
     public function test_attempt_submitted_after_ends_at_does_not_count(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         // The window is still open at join time (future ends_at) so the student
         // can join, but the attempt is completed AFTER the competition closed.
         $endsAt = now()->addDay();
@@ -81,7 +81,7 @@ class CompetitionResultTimingTest extends ApiTestCase
 
     public function test_attempt_without_ends_at_counts(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam, ['ends_at' => null]);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -98,7 +98,7 @@ class CompetitionResultTimingTest extends ApiTestCase
         ]);
     }
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);

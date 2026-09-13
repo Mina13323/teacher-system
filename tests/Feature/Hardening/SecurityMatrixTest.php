@@ -21,7 +21,7 @@ class SecurityMatrixTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -38,7 +38,7 @@ class SecurityMatrixTest extends ApiTestCase
 
     public function test_enrolled_but_not_joined_student_cannot_view_leaderboard(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         // Student A is enrolled but never joins; they must not see the
@@ -62,7 +62,7 @@ class SecurityMatrixTest extends ApiTestCase
 
     public function test_student_not_enrolled_in_the_course_cannot_view_competition(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $outsider = $this->createUserWithRole(UserRole::Student);
@@ -74,7 +74,7 @@ class SecurityMatrixTest extends ApiTestCase
 
     public function test_students_cannot_reach_teacher_competition_management_routes(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -90,7 +90,7 @@ class SecurityMatrixTest extends ApiTestCase
 
     public function test_student_not_enrolled_in_the_course_cannot_discover_the_competition_in_list(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $this->makeActiveCompetition($teacher, $exam);
 
         $outsider = $this->createUserWithRole(UserRole::Student);
@@ -98,12 +98,12 @@ class SecurityMatrixTest extends ApiTestCase
         $this->actingAs($outsider, 'sanctum')
             ->getJson('/api/v1/student/competitions')
             ->assertStatus(200)
-            ->assertJsonCount(0, 'data.data');
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_student_cannot_trigger_arbitrary_recalculation_with_payload(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
 

@@ -34,6 +34,7 @@ export const useAuthStore = defineStore('auth', {
         applyAuth({ user, token }) {
             this.user = user;
             this.token = token;
+            this.booted = true;
             setAuthToken(token);
             try {
                 localStorage.setItem(TOKEN_KEY, token);

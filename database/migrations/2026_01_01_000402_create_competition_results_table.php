@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('competition_id')->constrained()->cascadeOnDelete();
             $table->foreignId('participant_id')->constrained('competition_participants')->cascadeOnDelete();
             $table->foreignId('attempt_id')->constrained('exam_attempts')->cascadeOnDelete();
+
             // Server-derived values. The client never supplies score, percentage,
             // completion time, rank or qualification.
             $table->unsignedInteger('score');
@@ -28,7 +29,10 @@ return new class extends Migration
 
             // Indexes for the ranked leaderboard read model.
             $table->index(['competition_id', 'rank']);
-            $table->index(['competition_id', 'score', 'completion_time', 'completed_at', 'participant_id']);
+            $table->index(
+                ['competition_id', 'score', 'completion_time', 'completed_at', 'participant_id'],
+                'competition_results_ranking_index'
+            );
             $table->index('attempt_id');
         });
     }

@@ -12,7 +12,7 @@ class CompetitionAuthorizationTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -23,7 +23,7 @@ class CompetitionAuthorizationTest extends ApiTestCase
 
     public function test_student_cannot_modify_a_competition(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
 
@@ -42,7 +42,7 @@ class CompetitionAuthorizationTest extends ApiTestCase
 
     public function test_student_cannot_disqualify_anyone(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
@@ -55,7 +55,7 @@ class CompetitionAuthorizationTest extends ApiTestCase
 
     public function test_teacher_cannot_access_another_teachers_competition(): void
     {
-        [$owner, $course, $exam] = $this->setup();
+        [$owner, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($owner, $exam);
         $other = $this->createUserWithRole(UserRole::Teacher);
 
@@ -83,7 +83,7 @@ class CompetitionAuthorizationTest extends ApiTestCase
 
     public function test_flagged_attempt_is_recorded_and_reviewable_not_auto_disqualified(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -105,15 +105,15 @@ class CompetitionAuthorizationTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/leaderboard")
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data');
+            ->assertJsonCount(1, 'data');
 
         // Teacher views participants; the flagged attempt is exposed for review.
         $response = $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/participants")
             ->assertStatus(200);
 
-        $this->assertSame('flagged', $response->json('data.data.0.result.integrity_status'));
-        $this->assertSame('completed', $response->json('data.data.0.status'));
+        $this->assertSame('flagged', $response->json('data.0.result.integrity_status'));
+        $this->assertSame('completed', $response->json('data.0.status'));
 
         $this->assertDatabaseCount('competition_participants', 1);
         $this->assertDatabaseHas('competition_participants', [

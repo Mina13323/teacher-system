@@ -67,7 +67,7 @@ class CalculateCompetitionScoreAction
 
         /** @var ExamAttempt $best */
         $completionTime = $best->started_at && $best->submitted_at
-            ? max(0, $best->submitted_at->diffInSeconds($best->started_at))
+            ? (int) $best->started_at->diffInSeconds($best->submitted_at)
             : 0;
 
         return [

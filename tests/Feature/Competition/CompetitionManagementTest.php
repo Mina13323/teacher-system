@@ -78,7 +78,7 @@ class CompetitionManagementTest extends ApiTestCase
             ->getJson('/api/v1/teacher/competitions')
             ->assertStatus(200)
             ->assertJson(['success' => true])
-            ->assertJsonCount(2, 'data.data');
+            ->assertJsonCount(2, 'data');
     }
 
     public function test_teacher_can_update_own_competition(): void
@@ -118,7 +118,7 @@ class CompetitionManagementTest extends ApiTestCase
     public function test_teacher_cannot_delete_competition_with_participants(): void
     {
         [$teacher, $course, $exam] = $this->makeCourseAndExam();
-        $competition = $this->makeCompetition($teacher, $exam);
+        $competition = $this->makePublishedCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
 

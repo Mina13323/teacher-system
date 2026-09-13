@@ -57,16 +57,22 @@ class AppServiceProvider extends ServiceProvider
         // supports legitimate browser visibility/focus events while preventing a
         // malicious client from flooding the endpoint.
         RateLimiter::for('integrity-events', function (Request $request) {
+            $attempt = $request->route('attempt');
+            $attemptKey = is_object($attempt) ? $attempt->getKey() : $attempt;
+
             return Limit::perMinute((int) config('integrity.rate_limit.per_minute', 60))
-                ->by($request->route('attempt')?->id ?: $request->user()?->id ?: $request->ip());
+                ->by($attemptKey ?: $request->user()?->id ?: $request->ip());
         });
 
         // Dedicated rate limiter for the student video playback protection-event
         // endpoint (deterrence detections). Keyed per-video so a single video's
         // events are limited, while still protecting the endpoint from flooding.
         RateLimiter::for('video-events', function (Request $request) {
+            $video = $request->route('video');
+            $videoKey = is_object($video) ? $video->getKey() : $video;
+
             return Limit::perMinute((int) config('video.event_rate_limit_per_minute', 60))
-                ->by($request->route('video')?->id ?: $request->user()?->id ?: $request->ip());
+                ->by($videoKey ?: $request->user()?->id ?: $request->ip());
         });
 
         // Admins are allowed every capability via a Gate "before" hook.

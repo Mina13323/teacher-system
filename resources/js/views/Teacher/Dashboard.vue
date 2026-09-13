@@ -48,7 +48,7 @@ const shortcuts = computed(() => [
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
-        <template v-else>
+        <template v-else-if="data">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard :label="$t('dashboard.statCourses')" :value="data.courses_count" icon="book" tone="terracotta" :hint="`${data.published_count} ${$t('dashboard.published')}`" />
                 <StatCard :label="$t('dashboard.enrollments')" :value="data.total_enrollments" icon="users" tone="emerald" />

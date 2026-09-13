@@ -13,7 +13,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -24,7 +24,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_student_can_join_active_competition(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
@@ -43,7 +43,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_student_cannot_join_before_the_window_opens(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeCompetition($teacher, $exam, [
             'status' => CompetitionStatus::Published->value,
             'starts_at' => now()->addDay(),
@@ -57,7 +57,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_student_cannot_join_an_ended_competition(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeEndedCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
@@ -67,7 +67,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_student_must_be_enrolled_in_the_course_to_join(): void
     {
-        [$teacher, , $exam] = $this->setup();
+        [$teacher, , $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
 
@@ -76,7 +76,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_student_cannot_join_the_same_competition_twice(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
@@ -89,7 +89,7 @@ class CompetitionRegistrationTest extends ApiTestCase
 
     public function test_capacity_is_enforced_server_side(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam, ['max_participants' => 2]);
 
         $students = collect(range(1, 3))->map(fn () => $this->createUserWithRole(UserRole::Student));

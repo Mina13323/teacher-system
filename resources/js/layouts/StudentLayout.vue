@@ -18,6 +18,6 @@ const nav = computed(() => [
 
 <template>
     <PortalShell :brand="$t('app.brand')" :subtitle="$t('app.studentPortal')" :nav="nav" :role-label="$t('app.roleStudent')">
-        <slot />
+        <router-view />
     </PortalShell>
 </template>

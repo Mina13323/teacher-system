@@ -39,7 +39,7 @@ class CompetitionLifecycleTest extends ApiTestCase
     public function test_publish_requires_a_scheduling_window(): void
     {
         [$teacher, , $exam] = $this->makeCourseAndExam();
-        $competition = $this->makeCompetition($teacher, $exam); // no starts_at/ends_at
+        $competition = $this->makeCompetition($teacher, $exam, ['starts_at' => null, 'ends_at' => null]);
 
         $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/competitions/{$competition->id}/publish")

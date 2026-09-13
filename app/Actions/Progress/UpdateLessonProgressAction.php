@@ -35,7 +35,7 @@ class UpdateLessonProgressAction
             $progress->completed = (bool) $data['completed'];
         }
 
-        $this->applyStateRules($progress);
+        $this->applyStateRules($progress, $data);
 
         $progress->save();
 
@@ -45,11 +45,12 @@ class UpdateLessonProgressAction
     /**
      * Enforce the completed / completed_at invariant.
      */
-    private function applyStateRules(LessonProgress $progress): void
+    private function applyStateRules(LessonProgress $progress, array $data): void
     {
         $percentage = (int) $progress->progress_percentage;
+        $explicitCompleted = array_key_exists('completed', $data) ? (bool) $data['completed'] : null;
 
-        if ($percentage >= 100 || $progress->completed) {
+        if ($percentage >= 100 || $explicitCompleted === true) {
             $progress->completed = true;
             $progress->progress_percentage = 100;
             $progress->completed_at = $progress->completed_at ?? now();

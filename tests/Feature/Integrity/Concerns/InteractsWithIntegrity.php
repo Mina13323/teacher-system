@@ -8,11 +8,14 @@ use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\User;
 
+use Tests\Feature\Exam\Concerns\InteractsWithExams;
+
 /**
  * Shared helpers for Phase 4 exam-integrity feature tests.
  */
 trait InteractsWithIntegrity
 {
+    use InteractsWithExams;
     /**
      * Configure an exam's integrity settings as the given teacher.
      */

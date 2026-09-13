@@ -82,11 +82,5 @@ class AuthorizationTest extends ApiTestCase
             ->assertJson(['success' => false]);
     }
 
-    private function createUserWithRole(UserRole $role): User
-    {
-        $user = User::factory()->create();
-        $user->assignRole($role->value);
 
-        return $user;
-    }
 }

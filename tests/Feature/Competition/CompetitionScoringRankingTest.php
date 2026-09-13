@@ -15,7 +15,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -26,7 +26,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
     public function test_high_score_scoring_picks_best_by_percentage(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam, [
             'scoring_type' => CompetitionScoringType::HighestScore->value,
         ]);
@@ -48,7 +48,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
     public function test_best_attempt_scoring_picks_best_by_raw_score(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam, [
             'scoring_type' => CompetitionScoringType::BestAttempt->value,
         ]);
@@ -69,7 +69,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
     public function test_result_is_derived_server_side_not_from_client(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -99,7 +99,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
     public function test_ranking_higher_score_first_with_standard_tie_handling(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $a = $this->createUserWithRole(UserRole::Student);
@@ -120,6 +120,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
         $results = CompetitionResult::where('competition_id', $competition->id)
             ->orderBy('rank')
+            ->orderBy('completion_time')
             ->get();
 
         $ranks = $results->pluck('rank')->all();
@@ -135,7 +136,7 @@ class CompetitionScoringRankingTest extends ApiTestCase
 
     public function test_recalculated_rankings_are_identical(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         foreach (range(1, 3) as $i) {

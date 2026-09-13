@@ -23,7 +23,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -34,7 +34,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_duplicate_competition_participant_is_rejected_by_unique_constraint(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -55,7 +55,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_duplicate_competition_result_is_rejected_by_unique_constraint(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -66,6 +66,17 @@ class DatabaseIntegrityTest extends ApiTestCase
         $participant = CompetitionParticipant::where('competition_id', $competition->id)
             ->where('student_id', $student->id)
             ->firstOrFail();
+
+        \App\Models\CompetitionResult::create([
+            'competition_id' => $competition->id,
+            'participant_id' => $participant->id,
+            'attempt_id' => $attempt->id,
+            'score' => 90,
+            'percentage' => 90,
+            'completion_time' => 0,
+            'completed_at' => now(),
+            'qualified' => true,
+        ]);
 
         $this->expectException(\Illuminate\Database\QueryException::class);
 
@@ -83,7 +94,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_duplicate_active_attempt_is_rejected_by_active_key(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
 
@@ -110,7 +121,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_exam_referenced_by_competition_cannot_be_deleted(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $this->makeActiveCompetition($teacher, $exam);
 
         $student = $this->createUserWithRole(UserRole::Student);
@@ -123,7 +134,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_exam_with_recorded_attempts_cannot_be_deleted(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
 
         $student = $this->createUserWithRole(UserRole::Student);
         $this->makeSubmittedAttempt($student, $exam, 80, 80);
@@ -140,7 +151,7 @@ class DatabaseIntegrityTest extends ApiTestCase
 
     public function test_course_with_an_exam_that_has_attempts_cannot_be_deleted(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
 
         $student = $this->createUserWithRole(UserRole::Student);
         $this->makeSubmittedAttempt($student, $exam, 80, 80);

@@ -193,8 +193,8 @@ class StudentLifecycleTest extends ApiTestCase
         $this->actingAs($teacherA, 'sanctum')
             ->getJson('/api/v1/teacher/students')
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data')
-            ->assertJsonPath('data.data.0.email', 'a@example.com');
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.email', 'a@example.com');
     }
 
     public function test_teacher_can_deactivate_a_student_they_created(): void

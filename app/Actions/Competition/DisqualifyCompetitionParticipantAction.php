@@ -25,6 +25,11 @@ class DisqualifyCompetitionParticipantAction
     public function execute(CompetitionParticipant $participant): CompetitionParticipant
     {
         DB::transaction(function () use ($participant) {
+            $competition = $participant->competition;
+
+            // Materialize current results before disqualification so historical score is preserved.
+            $this->recalculateLeaderboard->execute($competition);
+
             $participant->status = CompetitionParticipantStatus::Disqualified->value;
             $participant->save();
 
@@ -34,9 +39,7 @@ class DisqualifyCompetitionParticipantAction
                 'rank' => null,
             ]);
 
-            // Re-rank the remaining valid participants so the leaderboard has no
-            // gaps. This is an explicit, idempotent recalculation.
-            $competition = $participant->competition;
+            // Re-rank remaining valid participants so leaderboard has no gaps.
             $this->recalculateLeaderboard->execute($competition->fresh());
         });
 

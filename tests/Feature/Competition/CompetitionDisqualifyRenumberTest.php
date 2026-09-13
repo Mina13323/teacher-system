@@ -17,7 +17,7 @@ class CompetitionDisqualifyRenumberTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -28,7 +28,7 @@ class CompetitionDisqualifyRenumberTest extends ApiTestCase
 
     public function test_disqualifying_top_ranked_participant_renumbers_remaining_ranks(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $a = $this->createUserWithRole(UserRole::Student);
@@ -48,7 +48,7 @@ class CompetitionDisqualifyRenumberTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/leaderboard")
             ->assertStatus(200)
-            ->assertJsonCount(3, 'data.data');
+            ->assertJsonCount(3, 'data');
 
         $participantA = \App\Models\CompetitionParticipant::where('competition_id', $competition->id)
             ->where('student_id', $a->id)->firstOrFail();
@@ -71,9 +71,9 @@ class CompetitionDisqualifyRenumberTest extends ApiTestCase
         $response = $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/competitions/{$competition->id}/leaderboard")
             ->assertStatus(200)
-            ->assertJsonCount(2, 'data.data');
+            ->assertJsonCount(2, 'data');
 
-        $rows = $response->json('data.data');
+        $rows = $response->json('data');
         $ranks = collect($rows)->pluck('rank')->all();
         $this->assertSame([1, 2], $ranks);
 

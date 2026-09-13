@@ -14,7 +14,7 @@ class CompetitionFinalizationTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -25,7 +25,7 @@ class CompetitionFinalizationTest extends ApiTestCase
 
     public function test_ended_competition_has_a_frozen_leaderboard_and_repeated_finalization_is_safe(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeCompetition($teacher, $exam, [
             'status' => CompetitionStatus::Active->value,
             'starts_at' => now()->subDays(2),

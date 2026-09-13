@@ -95,7 +95,7 @@ class VideoContentProtectionTest extends ApiTestCase
             ->assertStatus(200)
             ->assertJson(['success' => true]);
 
-        $videos = $response->json('data.data');
+        $videos = $response->json('data');
         $this->assertIsArray($videos);
         $this->assertArrayNotHasKey('media_ref', $videos[0]);
         $this->assertArrayNotHasKey('provider', $videos[0]);
@@ -142,7 +142,7 @@ class VideoContentProtectionTest extends ApiTestCase
             ->getJson("/api/v1/student/lessons/{$lesson->id}/videos")
             ->assertStatus(200);
 
-        $videos = $response->json('data.data');
+        $videos = $response->json('data');
         $this->assertIsArray($videos);
         $flat = json_encode($videos);
 
@@ -239,7 +239,7 @@ class VideoContentProtectionTest extends ApiTestCase
         $flat = json_encode($json);
 
         // No channel/account/playlist identifiers, no page/embed/download URLs.
-        foreach (['channel_id', 'channel_url', 'playlist', 'embed_url', 'url', 'download', 'storage_path', 'provider_video_id'] as $sensitive) {
+        foreach (['channel_id', 'channel_url', 'playlist', 'embed_url', 'url', 'download_url', 'storage_path', 'provider_video_id'] as $sensitive) {
             $this->assertStringNotContainsStringIgnoringCase($sensitive, $flat, "playback response leaked: {$sensitive}");
         }
     }

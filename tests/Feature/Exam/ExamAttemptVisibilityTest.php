@@ -35,9 +35,9 @@ class ExamAttemptVisibilityTest extends ApiTestCase
         $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts")
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data')
-            ->assertJsonPath('data.data.0.student.name', $student->name)
-            ->assertJsonPath('data.data.0.status', ExamAttemptStatus::Submitted->value);
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.student.name', $student->name)
+            ->assertJsonPath('data.0.status', ExamAttemptStatus::Submitted->value);
     }
 
     public function test_teacher_can_view_attempt_detail(): void

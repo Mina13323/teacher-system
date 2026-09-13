@@ -22,8 +22,7 @@ class CoursePolicy
     public function viewAny(User $user): bool
     {
         return $user->hasRole('teacher')
-            || $user->hasRole('admin')
-            || $user->hasRole('assistant');
+            || $user->hasRole('admin');
     }
 
     /**

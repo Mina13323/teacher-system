@@ -36,7 +36,7 @@ function fmtDate(iso) {
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
-        <template v-else>
+        <template v-else-if="data">
             <div class="grid gap-4 sm:grid-cols-3">
                 <StatCard :label="$t('dashboard.enrolledCourses')" :value="data.enrolled_courses_count" icon="book" tone="terracotta" />
                 <StatCard :label="$t('dashboard.completedLessons')" :value="data.completed_lessons_count" icon="check" tone="emerald" />

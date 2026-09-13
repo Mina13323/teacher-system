@@ -2,9 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 
 const routes = [
-    { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue') },
-    { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue') },
-    { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue') },
+    { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue'), meta: { public: true } },
+    { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
+    { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
     { path: '/login', name: 'login', component: () => import('@/views/Auth/Login.vue'), meta: { guest: true } },
 
     // ---- Student -----------------------------------------------------------
@@ -125,6 +125,10 @@ router.beforeEach(async (to) => {
         } catch {
             /* handled below */
         }
+    }
+
+    if (to.meta.public) {
+        return true;
     }
 
     if (to.meta.guest) {

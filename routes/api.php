@@ -60,9 +60,11 @@ Route::prefix('auth')->group(function () {
     });
 });
 
-// ---- Public course browsing (published only) -------------------------------
-Route::get('courses', [CourseController::class, 'index']);
-Route::get('courses/{course}', [CourseController::class, 'show']);
+// ---- Course catalog (authenticated users only) -----------------------------
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('courses', [CourseController::class, 'index']);
+    Route::get('courses/{course}', [CourseController::class, 'show']);
+});
 
 // ---- Teacher / Admin: course management + content nesting -------------------
 Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {

@@ -23,7 +23,7 @@ class CompetitionTransactionTest extends ApiTestCase
 {
     use InteractsWithCompetitions;
 
-    private function setup()
+    private function createTestContext()
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -44,7 +44,7 @@ class CompetitionTransactionTest extends ApiTestCase
 
     public function test_disqualified_participant_never_remains_ranked_and_history_preserved(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $a = $this->enrolledStudent($course, $competition, $exam);
@@ -92,7 +92,7 @@ class CompetitionTransactionTest extends ApiTestCase
 
     public function test_disqualification_does_not_delete_attempt_or_integrity_evidence(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeActiveCompetition($teacher, $exam);
 
         $a = $this->createUserWithRole(UserRole::Student);
@@ -128,7 +128,7 @@ class CompetitionTransactionTest extends ApiTestCase
 
     public function test_finalization_is_idempotent_and_keeps_frozen_ranks(): void
     {
-        [$teacher, $course, $exam] = $this->setup();
+        [$teacher, $course, $exam] = $this->createTestContext();
         $competition = $this->makeCompetition($teacher, $exam, [
             'status' => \App\Enums\CompetitionStatus::Active->value,
             'starts_at' => now()->subDays(2),

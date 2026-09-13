@@ -14,8 +14,11 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
             PermissionSeeder::class,
-            DeveloperUserSeeder::class,
             TeacherAccountSeeder::class,
         ]);
+
+        if (filter_var(env('DEMO_CONTENT_ENABLED', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->call(DemoContentSeeder::class);
+        }
     }
 }

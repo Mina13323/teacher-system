@@ -36,8 +36,8 @@ class StudentExamAccessTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/exams')
             ->assertStatus(200)
-            ->assertJsonCount(1, 'data.data')
-            ->assertJsonPath('data.data.0.id', $exam->id);
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $exam->id);
     }
 
     public function test_student_can_view_enrolled_published_exam(): void

@@ -197,7 +197,7 @@ class ExamAttemptTest extends ApiTestCase
             ->postJson("/api/v1/student/attempts/{$attempt->id}/submit")
             ->assertStatus(200)
             ->assertJsonPath('data.attempt_id', $attempt->id)
-            ->assertJsonMissing('data.score');
+            ->assertJsonMissingPath('data.score');
     }
 
     public function test_attempt_get_never_leaks_answer_key(): void
