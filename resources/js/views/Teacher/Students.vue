@@ -103,12 +103,37 @@ async function load(p = 1) {
 
 async function setActive(s, active) {
     try {
-        await (active ? teacher.activateStudent : teacher.deactivateStudent)(s.id);
-        s.is_active = active;
-        s.access_status = active ? 'active' : 'suspended';
-        toast.success(active ? t('students.activated') : t('students.deactivated'));
+        const res = await (active ? teacher.activateStudent : teacher.deactivateStudent)(s.id);
+        const data = res.data || res;
+        s.is_active = data.is_active !== undefined ? data.is_active : active;
+        s.access_status = data.access_status || (active ? 'active' : 'suspended');
+        toast.success(active ? t('students.unsuspendSuccess') : t('students.deactivated'));
+        load(page.value);
     } catch (e) {
         toast.error(e.message);
+    }
+}
+
+// DELETE STUDENT
+const deleteTarget = ref(null);
+const deleteBusy = ref(false);
+
+function openDelete(s) {
+    deleteTarget.value = s;
+}
+
+async function submitDelete() {
+    if (!deleteTarget.value) return;
+    deleteBusy.value = true;
+    try {
+        await teacher.deleteStudent(deleteTarget.value.id);
+        toast.success(t('students.deleted'));
+        deleteTarget.value = null;
+        load(page.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        deleteBusy.value = false;
     }
 }
 
@@ -274,6 +299,15 @@ onMounted(() => load(1));
                         <router-link :to="`/${authRole}/students/${s.id}/edit`">
                             <AppButton variant="ghost" size="sm">{{ $t('common.edit') }}</AppButton>
                         </router-link>
+                        <AppButton
+                            v-if="s.access_status === 'suspended' || !s.is_active"
+                            variant="outline"
+                            size="sm"
+                            class="text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                            @click="setActive(s, true)"
+                        >
+                            ✅ {{ $t('students.unsuspend') }}
+                        </AppButton>
                         <AppButton variant="outline" size="sm" @click="openRenew(s)">
                             🔄 {{ $t('students.renewAccess') }}
                         </AppButton>
@@ -282,6 +316,14 @@ onMounted(() => load(1));
                         </AppButton>
                         <AppButton variant="ghost" size="sm" @click="openNotify(s)">
                             💬 {{ $t('students.notify') }}
+                        </AppButton>
+                        <AppButton
+                            variant="ghost"
+                            size="sm"
+                            class="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                            @click="openDelete(s)"
+                        >
+                            🗑️ {{ $t('common.delete') }}
                         </AppButton>
                     </div>
                 </div>
@@ -386,6 +428,19 @@ onMounted(() => load(1));
                 <AppButton variant="outline" :disabled="notifyBusy" @click="notifyTarget = null">{{ $t('common.cancel') }}</AppButton>
                 <AppButton :loading="notifyBusy" @click="submitNotify">{{ $t('common.send') }}</AppButton>
             </template>
+        </AppModal>
+
+        <!-- Delete Student Modal -->
+        <AppModal :open="Boolean(deleteTarget)" :title="$t('students.deleteStudent')" size="sm" @close="deleteTarget = null">
+            <div class="space-y-4">
+                <p class="text-sm text-ink-700" dir="auto">
+                    {{ $t('students.deleteStudentConfirm', { name: deleteTarget?.name || '' }) }}
+                </p>
+                <div class="flex justify-end gap-2 pt-2">
+                    <AppButton variant="outline" :disabled="deleteBusy" @click="deleteTarget = null">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton variant="danger" :loading="deleteBusy" @click="submitDelete">{{ $t('common.delete') }}</AppButton>
+                </div>
+            </div>
         </AppModal>
     </div>
 </template>

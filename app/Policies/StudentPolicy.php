@@ -67,9 +67,8 @@ class StudentPolicy
 
     public function delete(User $user, User $student): bool
     {
-        // Hard deletion of an account is admin-only. Everything else should use
-        // deactivation to preserve historical data.
-        return $user->hasRole('admin');
+        return $user->hasRole('admin')
+            || (($user->hasRole('teacher') || $user->hasRole('assistant')) && $this->managesStudent($user, $student));
     }
 
     /**
@@ -90,6 +89,16 @@ class StudentPolicy
         }
 
         if ((int) $student->created_by === (int) $user->getKey()) {
+            return true;
+        }
+
+        $assistantIds = User::query()
+            ->where('created_by', $user->getKey())
+            ->orWhereHas('roles', fn ($q) => $q->where('name', \App\Enums\UserRole::Assistant->value))
+            ->pluck('id')
+            ->all();
+
+        if (in_array((int) $student->created_by, $assistantIds, true)) {
             return true;
         }
 

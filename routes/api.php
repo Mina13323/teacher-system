@@ -159,6 +159,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::post('students/{student}/reset-password', [TeacherStudentController::class, 'resetPassword']);
     Route::post('students/{student}/reset-credentials', [TeacherStudentController::class, 'resetCredentials']);
     Route::post('students/{student}/renew', [TeacherStudentController::class, 'renew']);
+    Route::delete('students/{student}', [TeacherStudentController::class, 'destroy']);
     Route::post('students/{student}/notify', [NotificationController::class, 'sendMessage']);
 
     // Assistant account management (teacher/admin). Assistants are operational
@@ -196,6 +197,7 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::get('students', [AdminStudentController::class, 'index']);
     Route::get('students/{student}', [AdminStudentController::class, 'show']);
     Route::put('students/{student}', [AdminStudentController::class, 'update']);
+    Route::delete('students/{student}', [AdminStudentController::class, 'destroy']);
     Route::patch('students/{student}/activate', [AdminStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [AdminStudentController::class, 'deactivate']);
     Route::post('students/{student}/reset-password', [AdminStudentController::class, 'resetPassword']);

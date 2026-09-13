@@ -167,7 +167,7 @@ async function submit() {
             if (res && res.credentials) {
                 revealCredentials.value = res.credentials;
             } else {
-                router.push(`/${authRole}/students`);
+                router.push(`/${authRole.value}/students`);
             }
         }
     } catch (e) {
@@ -190,7 +190,7 @@ function copyAllCredentials() {
 
 function finishReveal() {
     revealCredentials.value = null;
-    router.push(`/${authRole}/students`);
+    router.push(`/${authRole.value}/students`);
 }
 
 watch(() => route.params.id, () => {

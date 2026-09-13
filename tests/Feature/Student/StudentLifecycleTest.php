@@ -272,4 +272,127 @@ class StudentLifecycleTest extends ApiTestCase
             ->getJson("/api/v1/teacher/students/{$studentB->id}")
             ->assertStatus(403);
     }
+
+    public function test_teacher_can_delete_student_they_manage(): void
+    {
+        $teacher = $this->makeTeacher();
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson('/api/v1/teacher/students', [
+                'name' => 'To Delete',
+                'email' => 'todelete@example.com',
+                'password' => 'secret123',
+            ])->assertStatus(201);
+
+        $student = User::where('email', 'todelete@example.com')->firstOrFail();
+
+        $this->actingAs($teacher, 'sanctum')
+            ->deleteJson("/api/v1/teacher/students/{$student->id}")
+            ->assertStatus(200);
+
+        $this->assertDatabaseMissing('users', ['id' => $student->id]);
+    }
+
+    public function test_teacher_cannot_delete_another_teachers_student(): void
+    {
+        $teacherA = $this->makeTeacher();
+        $teacherB = $this->makeTeacher();
+
+        $this->actingAs($teacherA, 'sanctum')
+            ->postJson('/api/v1/teacher/students', [
+                'name' => 'Student A',
+                'email' => 'studenta@example.com',
+                'password' => 'secret123',
+            ])->assertStatus(201);
+
+        $student = User::where('email', 'studenta@example.com')->firstOrFail();
+
+        $this->actingAs($teacherB, 'sanctum')
+            ->deleteJson("/api/v1/teacher/students/{$student->id}")
+            ->assertStatus(403);
+
+        $this->assertDatabaseHas('users', ['id' => $student->id]);
+    }
+
+    public function test_student_created_by_assistant_is_visible_to_teacher(): void
+    {
+        $teacher = $this->makeTeacher();
+        $assistant = $this->createUserWithRole(UserRole::Assistant);
+        $assistant->created_by = $teacher->id;
+        $assistant->save();
+
+        $this->actingAs($assistant, 'sanctum')
+            ->postJson('/api/v1/teacher/students', [
+                'name' => 'Assistant Student',
+                'email' => 'asststudent@example.com',
+                'password' => 'secret123',
+            ])->assertStatus(201);
+
+        $student = User::where('email', 'asststudent@example.com')->firstOrFail();
+
+        // Teacher can see this student in list
+        $response = $this->actingAs($teacher, 'sanctum')
+            ->getJson('/api/v1/teacher/students')
+            ->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->all();
+        $this->assertContains($student->id, $ids);
+
+        // Teacher can manage/view this student
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/students/{$student->id}")
+            ->assertStatus(200);
+    }
+
+    public function test_suspended_student_can_be_returned_to_active(): void
+    {
+        $teacher = $this->makeTeacher();
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson('/api/v1/teacher/students', [
+                'name' => 'Suspended Student',
+                'email' => 'suspended@example.com',
+                'password' => 'secret123',
+            ])->assertStatus(201);
+
+        $student = User::where('email', 'suspended@example.com')->firstOrFail();
+
+        // Suspend the student via renew endpoint
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/students/{$student->id}/renew", [
+                'decision' => 'suspend',
+            ])->assertStatus(200)
+            ->assertJsonPath('data.access_status', 'suspended')
+            ->assertJsonPath('data.is_active', false);
+
+        $this->assertFalse($student->fresh()->isActive());
+        $this->assertEquals('suspended', $student->fresh()->accessStatus());
+
+        // Return the student back to active via renew endpoint (keep_active)
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/students/{$student->id}/renew", [
+                'decision' => 'keep_active',
+                'months' => 1,
+            ])->assertStatus(200)
+            ->assertJsonPath('data.access_status', 'active')
+            ->assertJsonPath('data.is_active', true);
+
+        $this->assertTrue($student->fresh()->isActive());
+        $this->assertEquals('active', $student->fresh()->accessStatus());
+
+        // Suspend again via deactivate
+        $this->actingAs($teacher, 'sanctum')
+            ->patchJson("/api/v1/teacher/students/{$student->id}/deactivate")
+            ->assertStatus(200)
+            ->assertJsonPath('data.access_status', 'suspended')
+            ->assertJsonPath('data.is_active', false);
+
+        // Reactivate via activate endpoint
+        $this->actingAs($teacher, 'sanctum')
+            ->patchJson("/api/v1/teacher/students/{$student->id}/activate")
+            ->assertStatus(200)
+            ->assertJsonPath('data.access_status', 'active')
+            ->assertJsonPath('data.is_active', true);
+
+        $this->assertTrue($student->fresh()->isActive());
+        $this->assertEquals('active', $student->fresh()->accessStatus());
+    }
 }

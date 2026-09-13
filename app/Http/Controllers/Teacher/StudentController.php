@@ -49,13 +49,24 @@ class StudentController extends Controller
             ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
             ->with(['roles', 'latestAccessPeriod']);
 
-        if (! $request->user()->isAdmin() && ! $request->user()->isAssistant()) {
-            $teacherId = $request->user()->getKey();
+        if (! $request->user()->isAdmin()) {
+            $user = $request->user();
+            $teacherId = $user->isTeacher()
+                ? $user->getKey()
+                : ($user->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $user->getKey()));
+
+            $assistantIds = User::query()
+                ->where('created_by', $teacherId)
+                ->orWhereHas('roles', fn ($q) => $q->where('name', UserRole::Assistant->value))
+                ->pluck('id');
+
             $enrolledInOwnCourses = Enrollment::query()
                 ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))
                 ->where('status', \App\Enums\EnrollmentStatus::Active->value)
                 ->pluck('student_id');
+
             $query->where(fn ($q) => $q->where('created_by', $teacherId)
+                ->orWhereIn('created_by', $assistantIds)
                 ->orWhereIn('id', $enrolledInOwnCourses));
         }
 
@@ -81,10 +92,10 @@ class StudentController extends Controller
     {
         $student = $this->createStudent->execute($request->user(), $request->validated());
 
-        // Optionally enroll into the courses the teacher selected.
+        // Optionally enroll into the courses selected.
         foreach ($request->validated('course_ids', []) as $courseId) {
             $course = Course::find($courseId);
-            if ($course && $request->user()->can('update', $course)) {
+            if ($course && ($request->user()->can('manageEnrollments', $course) || $request->user()->can('update', $course))) {
                 $this->enrollStudent->execute($student, $course);
             }
         }
@@ -199,6 +210,20 @@ class StudentController extends Controller
             new StudentResource($updatedStudent->load(['roles', 'latestAccessPeriod'])),
             $message
         );
+    }
+
+    public function destroy(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('delete', $student);
+
+        $student->tokens()->delete();
+        $student->accessPeriods()->delete();
+        $student->enrollments()->delete();
+        $student->examAttempts()->delete();
+        $student->lessonProgress()->delete();
+        $student->delete();
+
+        return $this->success(null, 'Student deleted successfully.');
     }
 
     private function perPage(Request $request): int

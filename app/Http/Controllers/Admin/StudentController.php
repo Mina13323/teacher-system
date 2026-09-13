@@ -99,6 +99,20 @@ class StudentController extends Controller
         return $this->success($this->buildAnalytics->execute($student), 'Student analytics retrieved.');
     }
 
+    public function destroy(Request $request, User $student): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $student->tokens()->delete();
+        $student->accessPeriods()->delete();
+        $student->enrollments()->delete();
+        $student->examAttempts()->delete();
+        $student->lessonProgress()->delete();
+        $student->delete();
+
+        return $this->success(null, 'Student deleted successfully.');
+    }
+
     private function authorizeAdmin(Request $request): void
     {
         abort_unless($request->user()->isAdmin(), 403, 'Admin access required.');

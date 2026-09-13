@@ -132,7 +132,7 @@ class User extends Authenticatable
 
     public function latestAccessPeriod(): HasOne
     {
-        return $this->hasOne(StudentAccessPeriod::class, 'student_id')->latestOfMany('expires_at');
+        return $this->hasOne(StudentAccessPeriod::class, 'student_id')->latestOfMany('id');
     }
 
     public function isAdmin(): bool

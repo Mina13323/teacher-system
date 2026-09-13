@@ -50,28 +50,19 @@ class RenewStudentAccessAction
             $student->is_active = true;
             $student->save();
         } elseif ($decision === 'suspend') {
-            $latest = $student->latestAccessPeriod;
+            $student->is_active = false;
+            $student->save();
 
-            if ($latest) {
-                $latest->status = StudentAccessStatus::Suspended;
-                $latest->approved_by = $staffUser->getKey();
-                $latest->approved_at = now();
-                if ($notes) {
-                    $latest->notes = $latest->notes ? $latest->notes."\n".$notes : $notes;
-                }
-                $latest->save();
-            } else {
-                StudentAccessPeriod::create([
-                    'student_id' => $student->getKey(),
-                    'status' => StudentAccessStatus::Suspended->value,
-                    'starts_at' => now(),
-                    'expires_at' => now(),
-                    'amount' => null,
-                    'notes' => $notes ?: 'Access suspended by '.$staffUser->name,
-                    'approved_by' => $staffUser->getKey(),
-                    'approved_at' => now(),
-                ]);
-            }
+            StudentAccessPeriod::create([
+                'student_id' => $student->getKey(),
+                'status' => StudentAccessStatus::Suspended->value,
+                'starts_at' => now(),
+                'expires_at' => now(),
+                'amount' => null,
+                'notes' => $notes ?: 'Access suspended by '.$staffUser->name,
+                'approved_by' => $staffUser->getKey(),
+                'approved_at' => now(),
+            ]);
 
             // Immediately invalidate all active student tokens/sessions
             $student->tokens()->delete();

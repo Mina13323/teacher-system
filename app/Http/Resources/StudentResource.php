@@ -57,6 +57,7 @@ class StudentResource extends JsonResource
             'profile_completed' => $this->isProfileComplete(),
             'profile_completed_at' => $this->profile_completed_at?->toISOString(),
             'roles' => $this->whenLoaded('roles', fn () => $this->roles->pluck('name')->values()),
+            'enrollments' => EnrollmentResource::collection($this->whenLoaded('enrollments')),
             'created_by' => $this->created_by,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),

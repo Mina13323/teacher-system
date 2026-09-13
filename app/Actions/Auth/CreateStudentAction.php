@@ -97,7 +97,9 @@ class CreateStudentAction
             'can_take_exams' => $canExams,
             'can_join_competitions' => $canCompetitions,
             'is_active' => true,
-            'created_by' => $creator->getKey(),
+            'created_by' => $creator->isAssistant()
+                ? ($creator->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $creator->getKey()))
+                : $creator->getKey(),
             'profile_completed_at' => ($data['phone'] ?? null) !== null ? now() : null,
         ]);
 

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
@@ -16,11 +16,13 @@ import Icon from '@/components/ui/Icon.vue';
 
 const { t } = useI18n();
 const route = useRoute();
+const router = useRouter();
 const toast = useToast();
 const id = computed(() => {
     const raw = route.params.id;
     return raw && raw !== 'undefined' ? String(raw) : null;
 });
+const authRole = computed(() => route.path.startsWith('/assistant') ? 'assistant' : 'teacher');
 
 const student = ref(null);
 const loading = ref(true);
@@ -59,6 +61,52 @@ async function loadStudent() {
         return;
     }
     student.value = await teacher.student(id.value);
+}
+
+// Delete modal state
+const showDeleteConfirm = ref(false);
+const deleteBusy = ref(false);
+
+async function submitDelete() {
+    if (!id.value) return;
+    deleteBusy.value = true;
+    try {
+        await teacher.deleteStudent(id.value);
+        toast.success(t('students.deleted'));
+        router.push(`/${authRole.value}/students`);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        deleteBusy.value = false;
+    }
+}
+
+// Quick Active State Toggle (Unsuspend / Suspend)
+const toggleActiveBusy = ref(false);
+
+async function toggleActive(active) {
+    if (!id.value) return;
+    toggleActiveBusy.value = true;
+    try {
+        await (active ? teacher.activateStudent : teacher.deactivateStudent)(id.value);
+        toast.success(active ? t('students.unsuspendSuccess') : t('students.deactivated'));
+        await loadStudent();
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        toggleActiveBusy.value = false;
+    }
+}
+
+async function unenroll(courseId) {
+    if (!courseId || !id.value) return;
+    try {
+        await teacher.unenrollStudent(courseId, id.value);
+        toast.success(t('students.unenrolled'));
+        await loadStudent();
+    } catch (e) {
+        toast.error(e.message);
+    }
 }
 
 async function enroll() {
@@ -138,7 +186,7 @@ onMounted(async () => {
 <template>
     <div class="space-y-6">
         <div>
-            <router-link to="/teacher/students" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.students') }}</router-link>
+            <router-link :to="`/${authRole}/students`" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('nav.students') }}</router-link>
             <div class="mt-2 flex flex-wrap items-center gap-3">
                 <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ student?.name || $t('common.student') }}</h1>
                 <span v-if="student?.student_code" class="inline-flex items-center rounded-lg bg-ink-100 px-3 py-1 font-mono text-sm font-bold text-ink-800">
@@ -198,23 +246,63 @@ onMounted(async () => {
             <!-- Quick Management Actions -->
             <AppCard title="إجراءات الحساب والاشتراك">
                 <div class="flex flex-wrap gap-3">
+                    <AppButton
+                        v-if="student.access_status === 'suspended' || !student.is_active"
+                        variant="primary"
+                        :loading="toggleActiveBusy"
+                        @click="toggleActive(true)"
+                    >
+                        ✅ {{ $t('students.unsuspend') }}
+                    </AppButton>
+                    <AppButton
+                        v-else
+                        variant="outline"
+                        class="text-amber-700 hover:bg-amber-50"
+                        :loading="toggleActiveBusy"
+                        @click="toggleActive(false)"
+                    >
+                        🚫 {{ $t('students.suspend') }}
+                    </AppButton>
                     <AppButton variant="outline" @click="showRenewModal = true">
                         🔄 {{ $t('students.renewAccess') }}
                     </AppButton>
                     <AppButton variant="outline" @click="showResetConfirm = true">
                         🔑 {{ $t('students.resetCredentials') }}
                     </AppButton>
-                    <router-link :to="`/teacher/students/${student.id}/edit`">
+                    <router-link :to="`/${authRole}/students/${student.id}/edit`">
                         <AppButton variant="ghost">{{ $t('common.edit') }}</AppButton>
                     </router-link>
-                    <router-link :to="`/teacher/analytics/students/${student.id}`">
+                    <router-link v-if="authRole === 'teacher'" :to="`/teacher/analytics/students/${student.id}`">
                         <AppButton variant="secondary">{{ $t('students.viewAnalytics') }}</AppButton>
                     </router-link>
+                    <AppButton
+                        variant="ghost"
+                        class="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        @click="showDeleteConfirm = true"
+                    >
+                        🗑️ {{ $t('common.delete') }}
+                    </AppButton>
                 </div>
             </AppCard>
 
             <!-- Course Enrollments -->
             <AppCard :title="$t('students.enrollIntoCourse')">
+                <!-- Current Enrollments List -->
+                <div v-if="student.enrollments && student.enrollments.length" class="mb-4 space-y-2">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-ink-500">{{ $t('students.courses') }}</label>
+                    <div class="divide-y divide-ink-100 rounded-lg border border-ink-200 bg-ink-50/30">
+                        <div v-for="e in student.enrollments" :key="e.id" class="flex items-center justify-between p-3">
+                            <div>
+                                <p class="text-sm font-medium text-ink-900" dir="auto">{{ e.course?.title || e.course_title || '—' }}</p>
+                                <p class="text-xs text-ink-500">{{ $t('students.enrolledAt') }}: {{ e.enrolled_at ? new Date(e.enrolled_at).toLocaleDateString() : '—' }}</p>
+                            </div>
+                            <AppButton variant="ghost" size="sm" class="text-rose-600 hover:bg-rose-50" @click="unenroll(e.course_id || e.course?.id)">
+                                {{ $t('students.unenroll') }}
+                            </AppButton>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <AppSelect v-model="selectedCourse" :label="$t('common.course')" :options="courses" id="enroll-course" :placeholder="$t('common.selectCourse')" class="flex-1" />
                     <AppButton :loading="enrolling" :disabled="!selectedCourse" @click="enroll">{{ $t('students.enroll') }}</AppButton>
@@ -307,6 +395,19 @@ onMounted(async () => {
                         <span v-else>📋 {{ $t('students.copyCredentials') }}</span>
                     </AppButton>
                     <AppButton @click="revealCredentials = null">{{ $t('common.confirm') }}</AppButton>
+                </div>
+            </div>
+        </AppModal>
+
+        <!-- Delete Student Modal -->
+        <AppModal :open="showDeleteConfirm" :title="$t('students.deleteStudent')" size="sm" @close="showDeleteConfirm = false">
+            <div class="space-y-4">
+                <p class="text-sm text-ink-700" dir="auto">
+                    {{ $t('students.deleteStudentConfirm', { name: student?.name || '' }) }}
+                </p>
+                <div class="flex justify-end gap-2 pt-2">
+                    <AppButton variant="outline" :disabled="deleteBusy" @click="showDeleteConfirm = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton variant="danger" :loading="deleteBusy" @click="submitDelete">{{ $t('common.delete') }}</AppButton>
                 </div>
             </div>
         </AppModal>
