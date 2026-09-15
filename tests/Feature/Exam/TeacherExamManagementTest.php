@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Exam;
 
+use App\Enums\QuestionType;
 use App\Enums\UserRole;
 use App\Models\Exam;
+use App\Models\Option;
+use App\Models\Question;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Exam\Concerns\InteractsWithExams;
 
@@ -106,6 +109,98 @@ class TeacherExamManagementTest extends ApiTestCase
 
         \App\Models\Question::factory()->create([
             'exam_id' => $exam->id,
+            'position' => 1,
+        ]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/exams/{$exam->id}/publish")
+            ->assertStatus(422)
+            ->assertJson(['success' => false]);
+    }
+
+    /**
+     * Regression: an essay question is free-text and has no options by design,
+     * so the MCQ shape checks must not be applied to it. This used to reject
+     * every exam containing an essay with "must have at least two options".
+     */
+    public function test_publish_allows_an_exam_containing_only_an_essay(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makeExam($teacher, $course);
+
+        Question::factory()->create([
+            'exam_id' => $exam->id,
+            'type' => QuestionType::Essay->value,
+            'points' => 20,
+            'position' => 1,
+        ]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/exams/{$exam->id}/publish")
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'published');
+    }
+
+    public function test_publish_allows_a_mix_of_choice_and_essay_questions(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makeExam($teacher, $course);
+
+        $this->addSingleChoiceQuestion($exam);
+
+        Question::factory()->create([
+            'exam_id' => $exam->id,
+            'type' => QuestionType::Essay->value,
+            'points' => 20,
+            'position' => 2,
+        ]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/exams/{$exam->id}/publish")
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'published');
+    }
+
+    public function test_publish_rejects_an_essay_worth_zero_points(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makeExam($teacher, $course);
+
+        Question::factory()->create([
+            'exam_id' => $exam->id,
+            'type' => QuestionType::Essay->value,
+            'points' => 0,
+            'position' => 1,
+        ]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/exams/{$exam->id}/publish")
+            ->assertStatus(422)
+            ->assertJson(['success' => false]);
+    }
+
+    /**
+     * Guards the fix from being too broad: exempting essays must not weaken
+     * the rule that a choice question needs at least two options.
+     */
+    public function test_publish_still_rejects_a_choice_question_with_one_option(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makeExam($teacher, $course);
+
+        $question = Question::factory()->create([
+            'exam_id' => $exam->id,
+            'position' => 1,
+        ]);
+
+        Option::factory()->create([
+            'question_id' => $question->id,
+            'option_text' => 'The only option',
+            'is_correct' => true,
             'position' => 1,
         ]);
 

@@ -15,8 +15,10 @@ use App\Notifications\ExamPublishedNotification;
  * An exam is publishable only when:
  *  - it belongs to a course,
  *  - it has at least one question,
- *  - every question has at least two options,
+ *  - every choice question has at least two options,
  *  - every single_choice question has exactly one correct option,
+ *  - every essay question is worth more than zero points (essays carry no
+ *    options and no answer key — they are graded manually),
  *  - duration_minutes > 0, 0 <= pass_percentage <= 100, max_attempts >= 1.
  */
 class PublishExamAction
@@ -70,6 +72,19 @@ class PublishExamAction
         }
 
         foreach ($questions as $question) {
+            // An essay question is free-text: it has no options and no answer
+            // key, so the MCQ shape checks must not apply to it. All that
+            // matters is that it carries a mark a grader can award against.
+            if ($question->isEssay()) {
+                if ($question->points <= 0) {
+                    throw new ExamNotReadyToPublishException(
+                        'Essay question '.$question->id.' must be worth more than zero points.'
+                    );
+                }
+
+                continue;
+            }
+
             if ($question->options->count() < 2) {
                 throw new ExamNotReadyToPublishException(
                     'Question '.$question->id.' must have at least two options.'
