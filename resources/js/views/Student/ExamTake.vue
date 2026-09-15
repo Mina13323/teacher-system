@@ -112,7 +112,7 @@ async function saveEssay(qId) {
         const text = essayAnswers.value[qId] || '';
         const updated = await student.answer(attempt.value.id, { question_id: qId, answer_text: text });
         attempt.value = normalizeAttempt(updated);
-        toast.success('تم حفظ الإجابة المقالية');
+        toast.success(t('examTake.essaySaved'));
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -182,8 +182,8 @@ onBeforeUnmount(() => clearInterval(timer));
 
                 <!-- Unreleased grade message -->
                 <div v-else class="rounded-xl border border-amber-200 bg-amber-50 p-4 max-w-md mx-auto text-sm text-amber-900">
-                    <p class="font-bold text-base mb-1">⏳ جاري مراجعة وتصحيح الامتحان</p>
-                    <p class="text-xs text-amber-800">تم تسجيل إجاباتك بنجاح. سيتم إعلان وتجهيز النتيجة النهائية فور انتهاء المعلم أو المساعدين من رصد وتصحيح الأسئلة.</p>
+                    <p class="font-bold text-base mb-1">⏳ {{ $t('examTake.gradingTitle') }}</p>
+                    <p class="text-xs text-amber-800">{{ $t('examTake.gradingBody') }}</p>
                 </div>
 
                 <div class="pt-2"><AppButton @click="finish">{{ $t('examTake.backToExams') || 'العودة لصفحة الامتحانات' }}</AppButton></div>
@@ -215,15 +215,15 @@ onBeforeUnmount(() => clearInterval(timer));
                 <div v-if="currentQuestion?.question_type === 'essay'" class="space-y-3 pt-2">
                     <AppTextarea
                         v-model="essayAnswers[currentQuestion.id]"
-                        label="اكتب إجابتك المقالية هنا:"
+                        :label="$t('examTake.essayLabel')"
                         id="essay-input"
                         :rows="6"
-                        placeholder="اكتب إجابتك بالتفصيل هنا..."
+                        :placeholder="$t('examTake.essayPlaceholder')"
                         dir="auto"
                     />
                     <div class="flex justify-end">
                         <AppButton size="sm" variant="outline" :loading="savingAnswer" @click="saveEssay(currentQuestion.id)">
-                            💾 حفظ الإجابة المقالية
+                            💾 {{ $t('examTake.saveEssay') }}
                         </AppButton>
                     </div>
                 </div>

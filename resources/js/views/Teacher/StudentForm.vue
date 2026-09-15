@@ -58,9 +58,9 @@ const academicYearOptions = computed(() => [
 ]);
 
 const subjectOptions = computed(() => [
-    { value: 'history', label: 'History (التاريخ)' },
-    { value: 'geography', label: 'Geography (الجغرافيا)' },
-    { value: 'both', label: 'Both (التاريخ والجغرافيا)' },
+    { value: 'history', label: t('subject.history') },
+    { value: 'geography', label: t('subject.geography') },
+    { value: 'both', label: t('subject.both') },
 ]);
 
 const presetOptions = computed(() => [
@@ -189,7 +189,11 @@ async function submit() {
 function copyAllCredentials() {
     if (!revealCredentials.value) return;
     const creds = revealCredentials.value;
-    const text = `منصة المصري - بيانات تسجيل الدخول:\nكود الطالب: ${creds.student_code}\nاسم المستخدم: ${creds.login || creds.email}\nكلمة المرور: ${creds.temporary_password}`;
+    const text = t('students.credentialsCreateText', {
+        code: creds.student_code,
+        login: creds.login || creds.email,
+        password: creds.temporary_password,
+    });
     navigator.clipboard.writeText(text);
     copied.value = true;
     toast.success(t('students.copied') || 'تم النسخ');
@@ -231,13 +235,13 @@ function toggleCourse(courseId) {
 
         <LoadingSpinner v-if="loading" />
         <form v-else class="space-y-5" @submit.prevent="submit">
-            <AppCard title="البيانات الأكاديمية والشخصية">
+            <AppCard :title="$t('students.academicAndPersonal')">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <AppInput v-model="form.name" label="اسم الطالب بالكامل" required id="student-name" :error="errors.name" />
-                    <AppInput v-model="form.phone" label="رقم الهاتف" id="student-phone" :error="errors.phone" />
+                    <AppInput v-model="form.name" :label="$t('students.fullName')" required id="student-name" :error="errors.name" />
+                    <AppInput v-model="form.phone" :label="$t('students.phoneNumber')" id="student-phone" :error="errors.phone" />
                     <AppSelect
                         v-model="form.academic_year"
-                        label="الصف الدراسي"
+                        :label="$t('students.gradeLabel')"
                         :options="academicYearOptions"
                         id="student-academic-year"
                         :error="errors.academic_year"
@@ -246,7 +250,7 @@ function toggleCourse(courseId) {
                     <AppSelect
                         v-if="form.academic_year === 'secondary_3'"
                         v-model="form.academic_subject"
-                        label="الشعبة / المادة الدراسية"
+                        :label="$t('students.trackLabel')"
                         :options="subjectOptions"
                         id="student-academic-subject"
                         :error="errors.academic_subject"
@@ -254,17 +258,17 @@ function toggleCourse(courseId) {
                     />
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2 mt-4">
-                    <AppInput v-model="form.avatar" label="رابط الصورة الشخصية (اختياري)" id="student-avatar" :error="errors.avatar" placeholder="https://…" />
+                    <AppInput v-model="form.avatar" :label="$t('students.avatarLabel')" id="student-avatar" :error="errors.avatar" placeholder="https://…" />
                 </div>
-                <div class="mt-4"><AppTextarea v-model="form.bio" label="نبذة / ملاحظات" id="student-bio" :error="errors.bio" :rows="2" /></div>
+                <div class="mt-4"><AppTextarea v-model="form.bio" :label="$t('students.bioLabel')" id="student-bio" :error="errors.bio" :rows="2" /></div>
             </AppCard>
 
-            <AppCard title="صلاحيات الوصول والخدمات">
+            <AppCard :title="$t('students.accessCapabilities')">
                 <div class="space-y-4">
                     <div>
                         <AppSelect
                             :model-value="form.capability_preset"
-                            label="نموذج الصلاحيات الجاهز"
+                            :label="$t('students.presetLabel')"
                             :options="presetOptions"
                             id="student-preset"
                             @update:model-value="onPresetChange"
@@ -278,7 +282,7 @@ function toggleCourse(courseId) {
                                 class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
                                 @change="onCapabilityToggle"
                             />
-                            <span class="text-ink-800 font-medium">الوصول للدروس والشرح</span>
+                            <span class="text-ink-800 font-medium">{{ $t('students.capLessonsTitle') }}</span>
                         </label>
                         <label class="flex items-center gap-2 rounded-lg border border-ink-200 p-3 text-sm hover:bg-ink-50 cursor-pointer">
                             <input
@@ -287,7 +291,7 @@ function toggleCourse(courseId) {
                                 class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
                                 @change="onCapabilityToggle"
                             />
-                            <span class="text-ink-800 font-medium">أداء الامتحانات</span>
+                            <span class="text-ink-800 font-medium">{{ $t('students.capExamsTitle') }}</span>
                         </label>
                         <label class="flex items-center gap-2 rounded-lg border border-ink-200 p-3 text-sm hover:bg-ink-50 cursor-pointer">
                             <input
@@ -296,24 +300,24 @@ function toggleCourse(courseId) {
                                 class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
                                 @change="onCapabilityToggle"
                             />
-                            <span class="text-ink-800 font-medium">المشاركة في المسابقات</span>
+                            <span class="text-ink-800 font-medium">{{ $t('students.capCompetitionsTitle') }}</span>
                         </label>
                     </div>
                 </div>
             </AppCard>
 
-            <AppCard title="بيانات تسجيل الدخول الرسمية">
+            <AppCard :title="$t('students.officialCredentials')">
                 <div class="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 mb-3">
-                    ℹ️ <strong>توليد تلقائي قياسي:</strong> عند ترك البريد أو كلمة المرور فارغين، سيتم توليد اسم المستخدم بنموذج <code>{code}@student.com</code> وكلمة المرور الرسمية الأولى بنموذج <code>{code}2026</code>.
+                    ℹ️ <strong>{{ $t('students.autoGenStrong') }}</strong> {{ $t('students.autoGenHintA') }} <code>ELM-1001@student.com</code> {{ $t('students.autoGenHintB') }} <code>ELM-10012026</code>.
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <AppInput v-model="form.email" label="البريد الإلكتروني / اسم المستخدم" type="email" id="student-email" :error="errors.email" autocomplete="email" placeholder="تلقائي: ELM-1001@student.com" />
-                    <AppInput v-if="!isEdit" v-model="form.password" label="كلمة المرور الأولية" type="password" id="student-password" :error="errors.password" autocomplete="new-password" placeholder="تلقائي: ELM-10012026" />
+                    <AppInput v-model="form.email" :label="$t('students.emailLabel')" type="email" id="student-email" :error="errors.email" autocomplete="email" :placeholder="$t('students.emailAutoPlaceholder')" />
+                    <AppInput v-if="!isEdit" v-model="form.password" :label="$t('students.initialPassword')" type="password" id="student-password" :error="errors.password" autocomplete="new-password" :placeholder="$t('students.passwordAutoPlaceholder')" />
                 </div>
             </AppCard>
 
-            <AppCard v-if="!isEdit && courses.length" title="التسجيل المباشر في الكورسات">
-                <p class="mb-3 text-sm text-ink-500">اختر الكورسات التي تريد تفعيل اشتراك الطالب بها مباشرة:</p>
+            <AppCard v-if="!isEdit && courses.length" :title="$t('students.directEnrollment')">
+                <p class="mb-3 text-sm text-ink-500">{{ $t('students.directEnrollmentHint') }}</p>
                 <div class="grid gap-2 sm:grid-cols-2">
                     <label v-for="c in courses" :key="c.value" class="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2.5 text-sm hover:bg-ink-50">
                         <input type="checkbox" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" :checked="form.course_ids.includes(c.value)" @change="toggleCourse(c.value)" />
@@ -329,34 +333,34 @@ function toggleCourse(courseId) {
         </form>
 
         <!-- One-Time Revealed Credentials Modal -->
-        <AppModal :open="Boolean(revealCredentials)" title="بيانات الدخول الرسمية للطالب" size="md" @close="finishReveal">
+        <AppModal :open="Boolean(revealCredentials)" :title="$t('students.credentialsModalTitle')" size="md" @close="finishReveal">
             <div v-if="revealCredentials" class="space-y-4">
                 <div class="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-900 flex items-start gap-2">
                     <span class="text-lg">⚠️</span>
-                    <p class="font-medium">احفظ هذه البيانات أو قم بطباعة كارت الطالب فوراً. لن تظهر كلمة المرور الأولية مرة أخرى.</p>
+                    <p class="font-medium">{{ $t('students.saveCredentialsHint') }}</p>
                 </div>
 
                 <div class="rounded-xl border border-ink-200 bg-ink-50/50 p-4 space-y-3">
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">كود الطالب (Student Code)</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('students.studentCodeLabel') }}</span>
                         <span class="text-lg font-mono font-bold text-terracotta-700 select-all">{{ revealCredentials.student_code }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">البريد الإلكتروني / اسم المستخدم</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('students.emailLabel') }}</span>
                         <span class="text-sm font-mono text-ink-900 select-all">{{ revealCredentials.login || revealCredentials.email }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">كلمة المرور الرسمية الأولى</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('students.firstPasswordLabel') }}</span>
                         <span class="text-base font-mono font-bold text-ink-900 bg-white border border-ink-200 px-3 py-1.5 rounded-lg inline-block select-all">{{ revealCredentials.temporary_password }}</span>
                     </div>
                 </div>
 
                 <div class="flex justify-between items-center pt-2">
                     <AppButton variant="outline" @click="copyAllCredentials">
-                        <span v-if="copied">✓ تم النسخ</span>
-                        <span v-else>📋 نسخ البيانات</span>
+                        <span v-if="copied">✓ {{ $t('students.copied') }}</span>
+                        <span v-else>📋 {{ $t('students.copyCredentials') }}</span>
                     </AppButton>
-                    <AppButton @click="finishReveal">تم والحفظ</AppButton>
+                    <AppButton @click="finishReveal">{{ $t('students.doneAndSave') }}</AppButton>
                 </div>
             </div>
         </AppModal>

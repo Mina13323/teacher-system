@@ -165,7 +165,11 @@ async function submitResetCredentials() {
 function copyAllCredentials() {
     if (!revealCredentials.value) return;
     const creds = revealCredentials.value;
-    const text = `منصة المصري - بيانات الدخول الجديدة:\nكود الطالب: ${creds.student_code}\nاسم المستخدم: ${creds.login || creds.email}\nكلمة المرور: ${creds.temporary_password}`;
+    const text = t('students.credentialsShareText', {
+        code: creds.student_code,
+        login: creds.login || creds.email,
+        password: creds.temporary_password,
+    });
     navigator.clipboard.writeText(text);
     copied.value = true;
     toast.success(t('students.copied'));
@@ -223,9 +227,9 @@ onMounted(async () => {
                 <AppCard>
                     <p class="text-xs font-medium text-ink-500 uppercase">{{ $t('students.capabilities') }}</p>
                     <div class="mt-2 flex flex-wrap gap-1">
-                        <span v-if="student.can_access_lessons" class="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">حصص</span>
-                        <span v-if="student.can_take_exams" class="rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">امتحانات</span>
-                        <span v-if="student.can_join_competitions" class="rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-700">مسابقات</span>
+                <span v-if="student.can_access_lessons" class="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">{{ $t('students.capBadgeLessons') }}</span>
+                <span v-if="student.can_take_exams" class="rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">{{ $t('students.capBadgeExams') }}</span>
+                <span v-if="student.can_join_competitions" class="rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-700">{{ $t('students.capBadgeCompetitions') }}</span>
                         <span v-if="!student.can_access_lessons && !student.can_take_exams && !student.can_join_competitions" class="text-xs text-ink-400">—</span>
                     </div>
                 </AppCard>
@@ -244,7 +248,7 @@ onMounted(async () => {
             </div>
 
             <!-- Quick Management Actions -->
-            <AppCard title="إجراءات الحساب والاشتراك">
+            <AppCard :title="$t('students.accountActions')">
                 <div class="flex flex-wrap gap-3">
                     <AppButton
                         v-if="student.access_status === 'suspended' || !student.is_active"
@@ -341,7 +345,7 @@ onMounted(async () => {
                     <AppInput v-model="renewAmount" type="number" min="0" step="0.5" :label="$t('students.renewalAmount')" id="detail-renew-amount" placeholder="e.g. 200" />
                 </div>
 
-                <AppTextarea v-model="renewNotes" :label="$t('students.renewalNotes')" id="detail-renew-notes" :rows="2" placeholder="ملاحظات الدفع أو سبب الإيقاف..." />
+                <AppTextarea v-model="renewNotes" :label="$t('students.renewalNotes')" id="detail-renew-notes" :rows="2" placeholder="$t('students.renewalNotesPlaceholder')" />
 
                 <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="renewBusy" @click="showRenewModal = false">{{ $t('common.cancel') }}</AppButton>
@@ -354,10 +358,10 @@ onMounted(async () => {
         <AppModal :open="showResetConfirm" :title="$t('students.resetCredentials')" size="sm" @close="showResetConfirm = false">
             <div class="space-y-4">
                 <p class="text-sm text-ink-700">
-                    هل أنت متأكد من إعادة توليد بيانات الدخول للطالب <strong>{{ student?.name }}</strong>؟
+                    {{ $t('students.regenConfirm') }} <strong>{{ student?.name }}</strong>؟
                 </p>
                 <p class="text-xs text-rose-600">
-                    سيتم إنشاء كلمة مرور مؤقتة جديدة وإنهاء أي جلسات نشطة حالية للطالب فوراً.
+                    {{ $t('students.regenConfirmBody') }}
                 </p>
                 <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="resetBusy" @click="showResetConfirm = false">{{ $t('common.cancel') }}</AppButton>
@@ -380,11 +384,11 @@ onMounted(async () => {
                         <span class="text-lg font-mono font-bold text-terracotta-700 select-all">{{ revealCredentials.student_code }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">{{ $t('auth.email') }} / اسم المستخدم</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('auth.email') }} / {{ $t('students.loginLabel') }}</span>
                         <span class="text-sm font-mono text-ink-900 select-all">{{ revealCredentials.login || revealCredentials.email }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">{{ $t('auth.password') }} (كلمة المرور المؤقتة الجديدة)</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('auth.password') }} ({{ $t('students.tempPasswordLabel') }})</span>
                         <span class="text-base font-mono font-bold text-ink-900 bg-white border border-ink-200 px-3 py-1.5 rounded-lg inline-block select-all">{{ revealCredentials.temporary_password }}</span>
                     </div>
                 </div>

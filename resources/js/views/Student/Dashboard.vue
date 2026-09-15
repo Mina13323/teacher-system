@@ -33,8 +33,8 @@ function fmtDate(iso) {
         <div v-if="auth.isSuspended" class="rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-900 flex items-start gap-3">
             <span class="text-2xl">🚫</span>
             <div>
-                <h3 class="font-bold text-base">حسابك المعلق مؤقتاً</h3>
-                <p class="text-xs text-rose-800 mt-0.5">تم تجميد وصولك لخدمات المنصة مؤقتاً. يرجى التواصل مع إدارة المنصة أو معلم المادة لإعادة التفعيل.</p>
+                <h3 class="font-bold text-base">{{ $t('dashboard.suspendedTitle') }}</h3>
+                <p class="text-xs text-rose-800 mt-0.5">{{ $t('dashboard.suspendedBody') }}</p>
             </div>
         </div>
 
@@ -42,8 +42,8 @@ function fmtDate(iso) {
         <div v-else-if="auth.isRenewalDue" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 flex items-start gap-3">
             <span class="text-2xl">⚠️</span>
             <div>
-                <h3 class="font-bold text-base">استحقاق التجديد الشهري</h3>
-                <p class="text-xs text-amber-800 mt-0.5">موعد التجديد الشهري لاشتراكك مستحق. يرجى سداد الاشتراك للمعلم لمنع إيقاف الوصول للخدمات.</p>
+                <h3 class="font-bold text-base">{{ $t('dashboard.renewalDueTitle') }}</h3>
+                <p class="text-xs text-amber-800 mt-0.5">{{ $t('dashboard.renewalDueBody') }}</p>
             </div>
         </div>
 
@@ -56,17 +56,17 @@ function fmtDate(iso) {
                         {{ auth.studentCode }}
                     </span>
                     <AppBadge tone="primary">
-                        {{ auth.academicYear === 'secondary_1' ? '1st Secondary (الصف الأول الثانوي)' : (auth.academicYear === 'secondary_2' ? '2nd Secondary (الصف الثاني الثانوي)' : '3rd Secondary (الصف الثالث الثانوي)') }}
+                        {{ auth.academicYear === 'secondary_1' ? $t('students.secondary1') : (auth.academicYear === 'secondary_2' ? $t('students.secondary2') : $t('students.secondary3')) }}
                     </AppBadge>
                     <AppBadge v-if="auth.academicYear === 'secondary_3'" tone="terracotta">
-                        {{ auth.academicSubjectLabel || (auth.academicSubject === 'history' ? 'التاريخ' : (auth.academicSubject === 'geography' ? 'الجغرافيا' : 'التاريخ والجغرافيا')) }}
+                        {{ auth.academicSubjectLabel || (auth.academicSubject === 'history' ? $t('subject.history') : (auth.academicSubject === 'geography' ? $t('subject.geography') : $t('subject.both'))) }}
                     </AppBadge>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-ink-500">
-                    <span>الصلاحيات المتاحة:</span>
-                    <span v-if="auth.canAccessLessons" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ شرح ودروس</span>
-                    <span v-if="auth.canTakeExams" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ امتحانات</span>
-                    <span v-if="auth.canJoinCompetitions" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ مسابقات</span>
+                    <span>{{ $t('dashboard.availableCapabilities') }}</span>
+                    <span v-if="auth.canAccessLessons" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ {{ $t('dashboard.capLessons') }}</span>
+                    <span v-if="auth.canTakeExams" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ {{ $t('dashboard.capExams') }}</span>
+                    <span v-if="auth.canJoinCompetitions" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ {{ $t('dashboard.capCompetitions') }}</span>
                 </div>
             </div>
             <div v-if="auth.canAccessLessons && !auth.isSuspended">
