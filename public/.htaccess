@@ -18,6 +18,12 @@
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
+    # Never rewrite missing static assets to index.php (prevents MIME type mismatch)
+    RewriteCond %{REQUEST_URI} \.(?:css|js|map|jpe?g|gif|png|webp|svg|woff2?|ttf|eot|ico)$ [NC,OR]
+    RewriteCond %{REQUEST_URI} ^/assets/ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ - [R=404,L]
+
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
