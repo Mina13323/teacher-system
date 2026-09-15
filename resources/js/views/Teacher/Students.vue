@@ -24,12 +24,37 @@ const { fieldErrors } = useFieldErrors();
 const authRole = route.path.startsWith('/assistant') ? 'assistant' : 'teacher';
 
 // WhatsApp contact modal. Opened from the list with no credential payload, so
-// the credentials template stays disabled here and the staff member is pointed
-// at the credential reset on the student detail screen instead.
+// the credentials template stays disabled there. The payload is only ever
+// supplied straight from a live one-time reveal.
 const whatsappStudent = ref(null);
+const whatsappCredentials = ref(null);
 
 function openWhatsAppFor(student) {
+    // Always clear any previously revealed password so it can never leak into
+    // a different student's message.
+    whatsappCredentials.value = null;
     whatsappStudent.value = student;
+}
+
+// Reuses the password already generated and revealed by the create/reset flow.
+// No request is made and no password is regenerated, so the value shown in the
+// preview is exactly the value the student will log in with.
+function openWhatsAppFromReveal() {
+    const creds = revealCredentials.value;
+    if (!creds) return;
+    const student = items.value.find((s) => s.student_code === creds.student_code) || {};
+    whatsappCredentials.value = creds;
+    whatsappStudent.value = {
+        ...student,
+        student_code: creds.student_code,
+        name: student.name || creds.student_code,
+    };
+    revealCredentials.value = null;
+}
+
+function closeWhatsApp() {
+    whatsappStudent.value = null;
+    whatsappCredentials.value = null;
 }
 
 const items = ref([]);
@@ -313,6 +338,10 @@ function copyAllCredentials() {
 }
 
 // PRINT CREDENTIALS
+// A password hash cannot be reversed, so a print sheet can only show a
+// password that is currently held in memory from a one-time reveal. Batch
+// printing has no such payload and therefore prints "unavailable" rather than
+// reconstructing anything.
 function openPrintSingle(s) {
     printStudents.value = [s];
 }
@@ -320,6 +349,22 @@ function openPrintSingle(s) {
 function openPrintSelected() {
     if (!selectedIds.value.length) return;
     printStudents.value = items.value.filter((s) => selectedIds.value.includes(s.id));
+}
+
+// Print straight from the credentials reveal, carrying the revealed plaintext
+// for this one render. The value lives only in this ref and is discarded when
+// the print sheet closes.
+function openPrintRevealed() {
+    const creds = revealCredentials.value;
+    if (!creds) return;
+    const student = items.value.find((s) => s.student_code === creds.student_code) || {};
+    printStudents.value = [{
+        ...student,
+        student_code: creds.student_code,
+        email: creds.login || creds.email || student.email,
+        revealed_password: creds.temporary_password,
+    }];
+    revealCredentials.value = null;
 }
 
 function triggerPrint() {
@@ -617,11 +662,24 @@ onMounted(() => load(1));
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center pt-2">
-                    <AppButton variant="outline" @click="copyAllCredentials">
-                        <span v-if="copied">✓ {{ $t('students.copied') }}</span>
-                        <span v-else>📋 {{ $t('students.copyCredentials') }}</span>
-                    </AppButton>
+                <div class="flex flex-wrap justify-between items-center gap-2 pt-2">
+                    <div class="flex flex-wrap gap-2">
+                        <AppButton variant="outline" @click="copyAllCredentials">
+                            <span v-if="copied">✓ {{ $t('students.copied') }}</span>
+                            <span v-else>📋 {{ $t('students.copyCredentials') }}</span>
+                        </AppButton>
+                        <AppButton variant="outline" @click="openPrintRevealed">
+                            🖨️ {{ $t('students.actionPrint') }}
+                        </AppButton>
+                        <AppButton
+                            variant="outline"
+                            class="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                            @click="openWhatsAppFromReveal"
+                        >
+                            <Icon name="whatsapp" :size="16" class="me-1 inline-block align-[-3px]" />
+                            {{ $t('whatsapp.sendCredentials') }}
+                        </AppButton>
+                    </div>
                     <AppButton @click="revealCredentials = null">{{ $t('common.confirm') }}</AppButton>
                 </div>
             </div>
@@ -663,7 +721,7 @@ onMounted(() => load(1));
                             <div class="flex justify-between border-b border-ink-100 py-1">
                                 <span class="text-ink-500">{{ $t('students.printPasswordLabel') }}</span>
                                 <span class="font-mono font-bold text-ink-900">
-                                    {{ st.student_code ? `${st.student_code}2026` : $t('students.printPasswordUnavailable') }}
+                                    {{ st.revealed_password || $t('students.printPasswordUnavailable') }}
                                 </span>
                             </div>
                             <div class="flex justify-between border-b border-ink-100 py-1">
@@ -701,8 +759,8 @@ onMounted(() => load(1));
         <WhatsAppContactModal
             :open="Boolean(whatsappStudent)"
             :student="whatsappStudent"
-            :credentials="null"
-            @close="whatsappStudent = null"
+            :credentials="whatsappCredentials"
+            @close="closeWhatsApp"
         />
     </div>
 </template>

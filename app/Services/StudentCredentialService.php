@@ -8,6 +8,24 @@ use Illuminate\Support\Str;
 class StudentCredentialService
 {
     /**
+     * Temporary onboarding password format: PREFIX + random digits.
+     *
+     * Exposed as constants so callers and tests derive the expected shape from
+     * one place instead of restating the literal.
+     */
+    public const TEMPORARY_PASSWORD_PREFIX = 'ELM@';
+
+    public const TEMPORARY_PASSWORD_DIGITS = 5;
+
+    /**
+     * Regular expression matching a valid temporary password. Kept as a plain
+     * literal so the shape is unambiguous; the generator derives its numeric
+     * bounds from TEMPORARY_PASSWORD_DIGITS, and
+     * TemporaryCredentialSecurityTest asserts the two stay in step.
+     */
+    public const TEMPORARY_PASSWORD_REGEX = '/^ELM@\d{5}$/';
+
+    /**
      * Generates a unique, deterministic student code (e.g. ELM-1001, ELM-1002).
      */
     public function generateStudentCode(): string
@@ -57,20 +75,44 @@ class StudentCredentialService
     }
 
     /**
-     * Generates an initial temporary password using the business template:
-     * {student_code}{academic_year}
+     * Generates a random temporary onboarding password.
      *
-     * Example: ELM-10012026
+     * Format: ELM@ + 5 random digits, e.g. ELM@48273.
+     *
+     * Deliberately simple and short: it is read off a printed card, typed on a
+     * phone, and sent over WhatsApp, and the student is required to change it
+     * on first login (must_change_password). It is an onboarding secret, not a
+     * long-term one.
+     *
+     * The value is drawn from random_int(), a cryptographically secure
+     * generator, and depends on NOTHING about the student: not the student
+     * code, name, academic year, phone, email, date or id. That is the whole
+     * point — the previous template ({student_code}{year}) was reconstructible
+     * from information already printed on the credential card, which made the
+     * password guessable by anyone who could read the card.
+     *
+     * No uniqueness constraint is applied: two students may coincidentally
+     * share a password because each account stores its own hash. Collisions
+     * are not a security property here, so they are neither prevented nor
+     * retried.
+     *
+     * This method is the single source of truth for temporary passwords.
+     * Student creation, staff credential reset and the WhatsApp message all
+     * flow through the value produced here — none of them generates its own.
      */
-    public function generateTemporaryPassword(string $studentCode, ?string $academicYearSuffix = '2026'): string
+    public function generateTemporaryPassword(): string
     {
-        $year = preg_match('/^\d{4}$/', (string) $academicYearSuffix) ? $academicYearSuffix : '2026';
+        $min = 10 ** (self::TEMPORARY_PASSWORD_DIGITS - 1);
+        $max = (10 ** self::TEMPORARY_PASSWORD_DIGITS) - 1;
 
-        return $studentCode.$year;
+        return self::TEMPORARY_PASSWORD_PREFIX.random_int($min, $max);
     }
 
     /**
      * Generates a complete set of credentials for a new student.
+     *
+     * The academic year still drives the student code/email conventions but no
+     * longer influences the password, which is fully random.
      *
      * @return array{student_code: string, email: string, temporary_password: string}
      */
@@ -78,7 +120,7 @@ class StudentCredentialService
     {
         $code = $this->generateStudentCode();
         $email = $this->generateEmail($name, $code);
-        $password = $this->generateTemporaryPassword($code, $academicYear);
+        $password = $this->generateTemporaryPassword();
 
         return [
             'student_code' => $code,

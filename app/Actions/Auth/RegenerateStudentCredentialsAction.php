@@ -16,7 +16,7 @@ class RegenerateStudentCredentialsAction
     /**
      * Regenerates credentials for an existing student:
      *  - Generates a student_code if not yet present
-     *  - Generates an initial temporary password ({student_code}2026)
+     *  - Generates a random temporary password (ELM@ + 5 random digits)
      *  - Updates the hashed password in the database
      *  - Sets must_change_password = true
      *  - Revokes all existing sessions/tokens
@@ -30,7 +30,9 @@ class RegenerateStudentCredentialsAction
             $student->student_code = $this->credentialsService->generateStudentCode();
         }
 
-        $temporaryPassword = $this->credentialsService->generateTemporaryPassword($student->student_code, '2026');
+        // Same canonical generator as creation — a reset must not fall back to
+        // a scheme derived from the student code.
+        $temporaryPassword = $this->credentialsService->generateTemporaryPassword();
         $student->password = Hash::make($temporaryPassword);
         $student->must_change_password = true;
         $student->save();

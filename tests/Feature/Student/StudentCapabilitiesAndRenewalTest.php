@@ -17,6 +17,7 @@ use App\Models\Lesson;
 use App\Models\StudentAccessPeriod;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\StudentCredentialService;
 use App\Notifications\StudentRenewalDueNotification;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Competition\Concerns\InteractsWithCompetitions;
@@ -227,7 +228,10 @@ class StudentCapabilitiesAndRenewalTest extends ApiTestCase
             ]);
 
         $newPassword = $resetResponse->json('data.credentials.temporary_password');
-        $this->assertEquals($student->student_code.'2026', $newPassword);
+        // Reset uses the same random generator as creation — never the old
+        // {student_code}{year} template, which this used to assert.
+        $this->assertMatchesRegularExpression(StudentCredentialService::TEMPORARY_PASSWORD_REGEX, $newPassword);
+        $this->assertNotSame($student->student_code.'2026', $newPassword);
 
         // New password authenticates
         $this->postJson('/api/v1/auth/login', [

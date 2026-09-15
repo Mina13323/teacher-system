@@ -58,11 +58,12 @@ class CreateStudentAction
             $academicSubject = AcademicSubject::General->value;
         }
 
-        // Determine password ({student_code}2026 template)
+        // Determine password: an explicit one from staff, otherwise a random
+        // temporary password from the single canonical generator.
         $isGeneratedPassword = empty($data['password']);
         $rawPassword = ! $isGeneratedPassword
             ? $data['password']
-            : $this->credentialsService->generateTemporaryPassword($studentCode, '2026');
+            : $this->credentialsService->generateTemporaryPassword();
 
         // Determine access capabilities
         $canLessons = true;

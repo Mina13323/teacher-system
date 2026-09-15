@@ -17,6 +17,7 @@ use App\Models\ExamAttempt;
 use App\Models\ExamAttemptQuestion;
 use App\Models\Question;
 use App\Models\User;
+use App\Services\StudentCredentialService;
 use Illuminate\Http\Request;
 use Tests\Feature\ApiTestCase;
 
@@ -53,10 +54,14 @@ class AcademicAndLifecycleEnhancementsTest extends ApiTestCase
 
         $studentCode = $response->json('data.student_code');
         $expectedEmail = strtolower($studentCode) . '@student.com';
-        $expectedPassword = $studentCode . '2026';
 
-        $response->assertJsonPath('credentials.login', $expectedEmail)
-            ->assertJsonPath('credentials.temporary_password', $expectedPassword);
+        $response->assertJsonPath('credentials.login', $expectedEmail);
+
+        // The temporary password is random, so assert its shape and that it is
+        // no longer derivable from the student code.
+        $temporaryPassword = $response->json('credentials.temporary_password');
+        $this->assertMatchesRegularExpression(StudentCredentialService::TEMPORARY_PASSWORD_REGEX, $temporaryPassword);
+        $this->assertNotSame($studentCode.'2026', $temporaryPassword);
 
         $student = User::where('student_code', $studentCode)->first();
         $this->assertNotNull($student);

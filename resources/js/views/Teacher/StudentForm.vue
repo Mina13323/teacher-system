@@ -308,7 +308,7 @@ function toggleCourse(courseId) {
 
             <AppCard :title="$t('students.officialCredentials')">
                 <div class="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 mb-3">
-                    ℹ️ <strong>{{ $t('students.autoGenStrong') }}</strong> {{ $t('students.autoGenHintA') }} <code>ELM-1001@student.com</code> {{ $t('students.autoGenHintB') }} <code>ELM-10012026</code>.
+                    ℹ️ <strong>{{ $t('students.autoGenStrong') }}</strong> {{ $t('students.autoGenHintA') }} <code>ELM-1001@student.com</code> {{ $t('students.autoGenHintB') }}
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <AppInput v-model="form.email" :label="$t('students.emailLabel')" type="email" id="student-email" :error="errors.email" autocomplete="email" :placeholder="$t('students.emailAutoPlaceholder')" />
