@@ -18,6 +18,15 @@ class ExamAnswer extends Model
         'is_correct',
         'points_earned',
         'answered_at',
+        // Essay answer body. Written through updateOrCreate() in
+        // SaveExamAnswerAction, so it must be mass assignable or the student's
+        // essay text is silently dropped and the teacher grades a blank.
+        'answer_text',
+        // Grading metadata. Only ever set server-side by GradeEssayAnswerAction
+        // from the authenticated staff user; never taken from request input.
+        'feedback',
+        'graded_by',
+        'graded_at',
     ];
 
     protected function casts(): array

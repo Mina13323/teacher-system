@@ -35,14 +35,21 @@ class StudentExamDetailResource extends JsonResource
             'my_attempts' => $this->whenLoaded('attempts', function () {
                 return $this->attempts
                     ->sortByDesc('attempt_number')
-                    ->map(fn ($attempt) => [
-                        'attempt_number' => $attempt->attempt_number,
-                        'status' => $attempt->status?->value,
-                        'score' => $attempt->score,
-                        'percentage' => $attempt->percentage,
-                        'started_at' => $attempt->started_at?->toISOString(),
-                        'submitted_at' => $attempt->submitted_at?->toISOString(),
-                    ])
+                    ->map(function ($attempt) {
+                        // Scores are withheld until staff publish them; see the
+                        // identical gate in ExamResultResource.
+                        $published = $attempt->grades_published_at !== null;
+
+                        return [
+                            'attempt_number' => $attempt->attempt_number,
+                            'status' => $attempt->status?->value,
+                            'grades_published' => $published,
+                            'score' => $published ? $attempt->score : null,
+                            'percentage' => $published ? $attempt->percentage : null,
+                            'started_at' => $attempt->started_at?->toISOString(),
+                            'submitted_at' => $attempt->submitted_at?->toISOString(),
+                        ];
+                    })
                     ->values();
             }),
             'course' => $this->whenLoaded('course', fn () => new CourseResource($this->course)),

@@ -6,6 +6,7 @@ use App\Enums\ExamAttemptStatus;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class GradeEssayAnswerAction
@@ -34,34 +35,42 @@ class GradeEssayAnswerAction
             throw new InvalidArgumentException("Awarded points must be between 0 and {$attemptQuestion->points}.");
         }
 
-        $answer = ExamAnswer::firstOrCreate(
-            [
-                'attempt_id' => $attempt->getKey(),
-                'question_id' => $questionId,
-            ],
-            [
-                'answered_at' => now(),
-            ]
-        );
+        DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
+            // Lock the attempt so two concurrent grading requests cannot both
+            // recompute the total from a stale set of answers.
+            ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
 
-        $answer->points_earned = $awardedPoints;
-        $answer->is_correct = $awardedPoints === $attemptQuestion->points;
-        $answer->feedback = $feedback;
-        $answer->graded_by = $staffUser->getKey();
-        $answer->graded_at = now();
-        $answer->save();
+            $answer = ExamAnswer::firstOrCreate(
+                [
+                    'attempt_id' => $attempt->getKey(),
+                    'question_id' => $questionId,
+                ],
+                [
+                    'answered_at' => now(),
+                ]
+            );
 
-        $result = $this->calculateResult->execute($attempt);
+            $answer->points_earned = $awardedPoints;
+            $answer->is_correct = $awardedPoints === $attemptQuestion->points;
+            $answer->feedback = $feedback;
+            $answer->graded_by = $staffUser->getKey();
+            $answer->graded_at = now();
+            $answer->save();
 
-        $attempt->score = $result['earned_points'];
-        $attempt->percentage = $result['percentage'];
-        $attempt->graded_by = $staffUser->getKey();
+            // Recompute from the freshly persisted answers.
+            $attempt->unsetRelation('answers');
+            $result = $this->calculateResult->execute($attempt);
 
-        if ($attempt->status->isSubmitted() && $result['requires_manual_grading']) {
-            $attempt->status = ExamAttemptStatus::Grading->value;
-        }
+            $attempt->score = $result['earned_points'];
+            $attempt->percentage = $result['percentage'];
+            $attempt->graded_by = $staffUser->getKey();
 
-        $attempt->save();
+            if ($attempt->status->isSubmitted() && $result['requires_manual_grading']) {
+                $attempt->status = ExamAttemptStatus::Grading->value;
+            }
+
+            $attempt->save();
+        });
 
         return $attempt->fresh(['answers', 'attemptQuestions']);
     }

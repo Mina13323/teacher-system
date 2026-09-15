@@ -34,6 +34,11 @@ class AttemptController extends Controller
 
     public function answer(SubmitExamAnswerRequest $request, ExamAttempt $attempt): JsonResponse
     {
+        // Defence in depth. Ownership is already enforced by
+        // SubmitExamAnswerRequest::authorize(), but this endpoint must not
+        // depend on a FormRequest being present to stay safe.
+        $this->authorize('update', $attempt);
+
         $attempt = $this->saveAnswer->execute(
             $attempt,
             $request->integer('question_id'),

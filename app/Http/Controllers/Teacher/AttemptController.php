@@ -20,7 +20,7 @@ class AttemptController extends Controller
 
     public function show(ExamAttempt $attempt): JsonResponse
     {
-        $this->authorize('view', $attempt);
+        $this->authorize('viewStaff', $attempt);
 
         $attempt->load(['exam', 'student', 'answers', 'attemptQuestions']);
 
@@ -29,7 +29,7 @@ class AttemptController extends Controller
 
     public function gradeEssay(Request $request, ExamAttempt $attempt): JsonResponse
     {
-        $this->authorize('view', $attempt);
+        $this->authorize('grade', $attempt);
 
         $validated = $request->validate([
             'question_id' => ['required', 'integer'],
@@ -53,7 +53,7 @@ class AttemptController extends Controller
 
     public function publishGrades(Request $request, ExamAttempt $attempt): JsonResponse
     {
-        $this->authorize('view', $attempt);
+        $this->authorize('publishGrades', $attempt);
 
         $publishedAttempt = $this->publishGradesAction->execute($request->user(), $attempt);
 

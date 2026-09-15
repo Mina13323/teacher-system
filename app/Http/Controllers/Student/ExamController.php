@@ -58,15 +58,24 @@ class ExamController extends Controller
             ->latest('attempt_number')
             ->get();
 
-        return $this->success($attempts->map(fn ($attempt) => [
-            'id' => $attempt->id,
-            'attempt_number' => $attempt->attempt_number,
-            'status' => $attempt->status?->value,
-            'score' => $attempt->score,
-            'percentage' => $attempt->percentage,
-            'started_at' => $attempt->started_at?->toISOString(),
-            'submitted_at' => $attempt->submitted_at?->toISOString(),
-        ]), 'Attempts retrieved.');
+        return $this->success($attempts->map(function ($attempt) {
+            // Scores stay hidden until staff explicitly publish them, matching
+            // the gate ExamResultResource applies. This endpoint previously
+            // hand-built its payload and leaked score/percentage regardless of
+            // grades_published_at.
+            $published = $attempt->grades_published_at !== null;
+
+            return [
+                'id' => $attempt->id,
+                'attempt_number' => $attempt->attempt_number,
+                'status' => $attempt->status?->value,
+                'grades_published' => $published,
+                'score' => $published ? $attempt->score : null,
+                'percentage' => $published ? $attempt->percentage : null,
+                'started_at' => $attempt->started_at?->toISOString(),
+                'submitted_at' => $attempt->submitted_at?->toISOString(),
+            ];
+        }), 'Attempts retrieved.');
     }
 
     public function start(StartExamAttemptRequest $request, Exam $exam): JsonResponse
