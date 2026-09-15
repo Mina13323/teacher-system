@@ -25,6 +25,13 @@ class ExamDetailResource extends JsonResource
             'duration_minutes' => $this->duration_minutes,
             'pass_percentage' => $this->pass_percentage,
             'max_attempts' => $this->max_attempts,
+            // Full scheduling window: this resource backs the staff exam detail
+            // screen, which needs to see and edit the window. Students are
+            // served a narrower resource that exposes only what the timer needs.
+            'starts_at' => $this->starts_at?->toISOString(),
+            'ends_at' => $this->ends_at?->toISOString(),
+            'is_windowed' => $this->isWindowed(),
+            'effective_deadline' => $this->effectiveDeadline()?->toISOString(),
             'status' => $this->status?->value,
             'shuffle_questions' => $this->shuffle_questions,
             'shuffle_options' => $this->shuffle_options,

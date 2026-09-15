@@ -7,7 +7,9 @@ use App\Enums\ExamStatus;
 use App\Enums\QuestionType;
 use App\Enums\UserRole;
 use App\Models\Exam;
+use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
+use App\Models\ExamAttemptQuestion;
 use App\Models\Question;
 use App\Models\User;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -284,7 +286,7 @@ class StaffParityMatrixTest extends ApiTestCase
     {
         $student = $this->createUserWithRole(UserRole::Student);
 
-        return ExamAttempt::factory()->create([
+        $attempt = ExamAttempt::factory()->create([
             'exam_id' => $this->ids['exam'],
             'student_id' => $student->id,
             'attempt_number' => 1,
@@ -294,6 +296,28 @@ class StaffParityMatrixTest extends ApiTestCase
             'expires_at' => now()->addMinutes(20),
             'submitted_at' => now(),
         ]);
+
+        // Essay grading reads the frozen snapshot, not the live Question, so an
+        // attempt built straight from the factory has nothing to grade until
+        // the snapshot row exists.
+        $question = Question::findOrFail($this->ids['question']);
+
+        ExamAttemptQuestion::create([
+            'attempt_id' => $attempt->id,
+            'question_id' => $question->id,
+            'question_text' => $question->question_text,
+            'question_type' => QuestionType::Essay->value,
+            'points' => 20,
+            'position' => 1,
+        ]);
+
+        ExamAnswer::create([
+            'attempt_id' => $attempt->id,
+            'question_id' => $question->id,
+            'answer_text' => 'The student essay response.',
+        ]);
+
+        return $attempt;
     }
 
     // ---------------------------------------------------------------------

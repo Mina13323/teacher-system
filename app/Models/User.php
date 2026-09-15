@@ -225,6 +225,14 @@ class User extends Authenticatable
             return false;
         }
 
+        // An assistant manages whatever they created themselves. Without this
+        // they could create a course or competition and then be locked out of
+        // it, because created_by would hold their own id rather than their
+        // employing teacher's.
+        if ((int) $this->getKey() === (int) $ownerId) {
+            return true;
+        }
+
         // The usual case: the Teacher created both the resource and this
         // assistant account, so both carry the same created_by.
         if ($this->created_by !== null && (int) $this->created_by === (int) $ownerId) {
@@ -271,7 +279,12 @@ class User extends Authenticatable
         }
 
         if ($this->created_by !== null) {
-            return [(int) $this->created_by];
+            // Their employing teacher's resources, plus anything the assistant
+            // created themselves — the latter carries created_by = their own id.
+            return array_values(array_unique([
+                (int) $this->created_by,
+                (int) $this->getKey(),
+            ]));
         }
 
         // No teacher link: the Assistant is staff of the LMS as a whole.

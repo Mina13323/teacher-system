@@ -102,7 +102,7 @@ class WhatsAppContactTest extends ApiTestCase
         $student = $this->studentOf($teacher);
 
         $this->actingAs($student, 'sanctum')
-            ->getJson('/api/v1/profile')
+            ->getJson('/api/v1/auth/profile')
             ->assertStatus(200)
             ->assertJsonPath('data.phone', '+201012345678')
             ->assertJsonPath('data.whatsapp_phone', '201012345678');

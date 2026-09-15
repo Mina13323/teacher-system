@@ -145,11 +145,14 @@ class TemporaryCredentialSecurityTest extends ApiTestCase
 
     public function test_explicit_reset_generates_a_new_hashed_password(): void
     {
-        [$response] = $this->createStudent($this->teacher());
+        // One teacher owns both the creation and the reset; a fresh teacher
+        // would not manage this student and would correctly get 403.
+        $teacher = $this->teacher();
+        [$response] = $this->createStudent($teacher);
         $student = User::where('student_code', $response->json('data.student_code'))->firstOrFail();
         $originalHash = $student->password;
 
-        $reset = $this->actingAs($this->teacher(), 'sanctum')
+        $reset = $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/students/{$student->id}/reset-credentials")
             ->assertStatus(200);
 
@@ -163,10 +166,11 @@ class TemporaryCredentialSecurityTest extends ApiTestCase
 
     public function test_reset_does_not_use_the_student_code_and_year_template(): void
     {
-        [$response] = $this->createStudent($this->teacher());
+        $teacher = $this->teacher();
+        [$response] = $this->createStudent($teacher);
         $student = User::where('student_code', $response->json('data.student_code'))->firstOrFail();
 
-        $reset = $this->actingAs($this->teacher(), 'sanctum')
+        $reset = $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/students/{$student->id}/reset-credentials")
             ->assertStatus(200);
 
@@ -183,8 +187,8 @@ class TemporaryCredentialSecurityTest extends ApiTestCase
      */
     public function test_password_unchanged_unless_credentials_are_explicitly_reset(): void
     {
-        [$response] = $this->createStudent($this->teacher());
         $teacher = $this->teacher();
+        [$response] = $this->createStudent($teacher);
         $student = User::where('student_code', $response->json('data.student_code'))->firstOrFail();
         $originalHash = $student->password;
 

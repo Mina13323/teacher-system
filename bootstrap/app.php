@@ -27,6 +27,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Exceptions\UnauthorizedException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -77,6 +78,20 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (AuthorizationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This action is unauthorized.',
+                ], 403);
+            }
+        });
+
+        // Spatie's role/permission middleware throws its own exception, which
+        // extends HttpException rather than AuthorizationException, so it fell
+        // through to the generic renderer and echoed "User does not have the
+        // right roles." Normalizing it keeps every 403 identical to a client
+        // and avoids disclosing that a role model exists.
+        $exceptions->render(function (UnauthorizedException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,
