@@ -15,20 +15,46 @@ const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 const starting = ref(false);
+const startNotice = ref('');
 
 const { loading, error, data, run } = useAsync(() => student.exam(route.params.id));
 onMounted(() => run());
 
+/**
+ * Display-only classification of the exam window. The server re-checks this on
+ * every start and is the only authority; this just picks the right message and
+ * never decides whether the student may actually begin.
+ */
+function windowState() {
+    const d = data.value;
+    if (!d?.starts_at || !d?.effective_deadline) return 'none';
+    const now = Date.now();
+    if (now < new Date(d.starts_at).getTime()) return 'not_open';
+    if (now >= new Date(d.effective_deadline).getTime()) return 'closed';
+    return 'open';
+}
+
 async function start() {
     starting.value = true;
+    startNotice.value = '';
     try {
         const attempt = await student.startExam(route.params.id);
         router.push(`/student/attempts/${attempt.id}`);
     } catch (e) {
-        toast.error(e.message);
+        const state = windowState();
+        if (e?.status === 422 && (state === 'not_open' || state === 'closed')) {
+            startNotice.value = t(state === 'not_open' ? 'exams.windowNotOpenNotice' : 'exams.windowClosedNotice');
+            await run();
+        } else {
+            toast.error(e?.message || '');
+        }
     } finally {
         starting.value = false;
     }
+}
+
+function fmtWhen(iso) {
+    return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 }
 
 function attemptTone(status) {
@@ -57,6 +83,19 @@ function statusLabel(status) {
                     <div><dt class="text-ink-400">{{ $t('exams.passMark') }}</dt><dd class="font-semibold text-ink-800">{{ data.pass_percentage }}%</dd></div>
                     <div><dt class="text-ink-400">{{ $t('exams.attempts') }}</dt><dd class="font-semibold text-ink-800">{{ data.max_attempts }}</dd></div>
                 </dl>
+                <!-- Official window, shown only when the exam is windowed -->
+                <div v-if="data.starts_at" class="mt-4 rounded-lg border border-ink-200 bg-ink-50/60 px-4 py-3 text-sm">
+                    <div class="flex flex-wrap gap-x-6 gap-y-1">
+                        <span class="text-ink-500">{{ $t('exams.opensAt') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.starts_at) }}</span></span>
+                        <span class="text-ink-500">{{ $t('exams.deadline') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.effective_deadline) }}</span></span>
+                    </div>
+                    <p class="mt-1 text-xs text-ink-500">{{ $t('exams.windowStudentHint') }}</p>
+                </div>
+
+                <div v-if="startNotice" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900" role="alert">
+                    {{ startNotice }}
+                </div>
+
                 <div class="mt-6">
                     <AppButton :loading="starting" size="lg" @click="start">{{ $t('exams.startExam') }}</AppButton>
                 </div>

@@ -23,6 +23,11 @@ class ExamResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'duration_minutes' => $this->duration_minutes,
+            // Staff see the full configured window.
+            'starts_at' => $this->starts_at?->toISOString(),
+            'ends_at' => $this->ends_at?->toISOString(),
+            'is_windowed' => $this->isWindowed(),
+            'effective_deadline' => $this->effectiveDeadline()?->toISOString(),
             'pass_percentage' => $this->pass_percentage,
             'max_attempts' => $this->max_attempts,
             'status' => $this->status?->value,

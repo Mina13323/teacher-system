@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Exam;
+use App\Support\ExamWindowRules;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateExamRequest extends FormRequest
@@ -29,6 +31,26 @@ class UpdateExamRequest extends FormRequest
             'shuffle_questions' => ['sometimes', 'boolean'],
             'shuffle_options' => ['sometimes', 'boolean'],
             'show_result_immediately' => ['sometimes', 'boolean'],
+            // Omitting a key keeps its stored value; sending null clears it.
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date'],
         ];
+    }
+
+    /**
+     * Validate the window against the *resulting* state, so a partial update
+     * that would leave one half of a window set is rejected.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            /** @var Exam $exam */
+            $exam = $this->route('exam');
+
+            ExamWindowRules::validate($this->all(), $validator, [
+                'starts_at' => $exam->starts_at?->toIso8601String(),
+                'ends_at' => $exam->ends_at?->toIso8601String(),
+            ]);
+        });
     }
 }

@@ -21,11 +21,15 @@ use Tests\Feature\ApiTestCase;
  * Regression coverage for the exam grading authorization boundary and the
  * publication gate.
  *
- * The teacher route group is guarded only by `auth:sanctum` (no role
- * middleware), and ExamAttemptPolicy::view() is satisfied by attempt
- * ownership. Together those allowed a student to read their own attempt through
- * the staff resource (which exposes correctness and unpublished scores) and
- * then grade and publish it themselves.
+ * Original defect: the teacher route group carried only `auth:sanctum` (no role
+ * middleware) and ExamAttemptPolicy::view() was satisfied by attempt ownership.
+ * Together those allowed a student to read their own attempt through the staff
+ * resource (which exposes correctness and unpublished scores) and then grade and
+ * publish it themselves.
+ *
+ * The group now also carries `role:teacher|assistant|admin`, and grading uses
+ * the dedicated viewStaff / grade / publishGrades abilities. Both layers must
+ * hold: the middleware is a coarse boundary, the policy is the real check.
  */
 class ExamGradingAuthorizationTest extends ApiTestCase
 {

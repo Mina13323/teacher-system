@@ -31,6 +31,11 @@ class StudentExamDetailResource extends JsonResource
             'shuffle_questions' => $this->shuffle_questions,
             'shuffle_options' => $this->shuffle_options,
             'show_result_immediately' => $this->show_result_immediately,
+            // Display-only window fields for the countdown timer. The server
+            // stays the sole authority: it re-checks the window on start and
+            // rejects saves/submits on an expired attempt.
+            'starts_at' => $this->starts_at?->toISOString(),
+            'effective_deadline' => $this->effectiveDeadline()?->toISOString(),
             'questions_count' => $this->whenCounted('questions'),
             'my_attempts' => $this->whenLoaded('attempts', function () {
                 return $this->attempts
@@ -47,6 +52,9 @@ class StudentExamDetailResource extends JsonResource
                             'score' => $published ? $attempt->score : null,
                             'percentage' => $published ? $attempt->percentage : null,
                             'started_at' => $attempt->started_at?->toISOString(),
+                            // Server-computed deadline for an in-progress
+                            // attempt; drives the resume countdown.
+                            'expires_at' => $attempt->expires_at?->toISOString(),
                             'submitted_at' => $attempt->submitted_at?->toISOString(),
                         ];
                     })

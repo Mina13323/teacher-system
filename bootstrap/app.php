@@ -12,6 +12,8 @@ use App\Exceptions\DuplicateEnrollmentException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
 use App\Exceptions\ExamNotReadyToPublishException;
+use App\Exceptions\ExamWindowClosedException;
+use App\Exceptions\ExamWindowNotOpenException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
 use App\Exceptions\InvalidVideoPlaybackSessionException;
@@ -147,6 +149,24 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (AttemptLimitReachedException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (ExamWindowNotOpenException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (ExamWindowClosedException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,

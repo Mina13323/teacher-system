@@ -27,7 +27,15 @@ const submitting = ref(false);
 const submittingBusy = ref(false);
 const confirmOpen = ref(false);
 const timeLeft = ref(0);
+const expired = ref(false);
 let timer = null;
+
+/**
+ * True once the attempt can no longer be mutated. Driven by the server's own
+ * view of the attempt (never by the local clock alone), so a skewed device
+ * clock cannot keep the UI editable after the server has closed the attempt.
+ */
+const blocked = computed(() => expired.value || attempt.value?.status === 'expired' || attempt.value?.status === 'submitted');
 
 const { loading, error, run: load } = useAsync(async () => {
     const a = await student.attempt(route.params.id);
@@ -94,19 +102,41 @@ function fmt(ms) {
     return `${h ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+/**
+ * A 422 means the server refused the mutation — in this flow almost always
+ * because the attempt has expired. Re-read the attempt so the UI reflects the
+ * server's truth, and lock the screen if it is no longer editable.
+ */
+async function handleRejection(e) {
+    if (e?.status === 422) {
+        try {
+            const fresh = normalizeAttempt(await student.attempt(attempt.value.id));
+            attempt.value = fresh;
+            if (fresh?.status === 'expired' || fresh?.status === 'submitted') {
+                expired.value = true;
+                toast.error(t('examTake.expiredBlocked'));
+                return;
+            }
+        } catch {
+            /* fall through to the generic message */
+        }
+    }
+    toast.error(e?.message || t('examTake.timeExpired', { message: '' }));
+}
+
 async function answer(optionId) {
     const q = currentQuestion.value;
-    if (attempt.value?.status !== 'in_progress') return;
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
     try {
         const updated = await student.answer(attempt.value.id, { question_id: q.id, option_id: optionId });
         attempt.value = normalizeAttempt(updated);
     } catch (e) {
-        toast.error(e.message);
+        await handleRejection(e);
     }
 }
 
 async function saveEssay(qId) {
-    if (attempt.value?.status !== 'in_progress') return;
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
     savingAnswer.value = true;
     try {
         const text = essayAnswers.value[qId] || '';
@@ -114,7 +144,7 @@ async function saveEssay(qId) {
         attempt.value = normalizeAttempt(updated);
         toast.success(t('examTake.essaySaved'));
     } catch (e) {
-        toast.error(e.message);
+        await handleRejection(e);
     } finally {
         savingAnswer.value = false;
     }
@@ -128,7 +158,7 @@ async function submit() {
         result.value = res;
         notifications.refreshUnread();
     } catch (e) {
-        toast.error(e.message);
+        await handleRejection(e);
     } finally {
         submitting.value = false;
     }
@@ -141,7 +171,10 @@ async function onTimeUp() {
         result.value = res;
         toast.info(t('examTake.timeUp'));
     } catch (e) {
-        toast.error(t('examTake.timeExpired', { message: e.message }));
+        // The countdown is display-only; the server decides. Lock the screen
+        // and surface the translated expiration notice.
+        expired.value = true;
+        await handleRejection(e);
     } finally {
         submittingBusy.value = false;
     }
@@ -167,7 +200,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
                 </div>
                 <h1 class="text-2xl font-bold text-ink-900">
-                    {{ result ? ($t('examTake.submitted') || 'تم تسليم الامتحان بنجاح!') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
+                    {{ result ? $t('examTake.submitted') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
                 </h1>
 
                 <!-- Score if published -->
@@ -186,7 +219,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     <p class="text-xs text-amber-800">{{ $t('examTake.gradingBody') }}</p>
                 </div>
 
-                <div class="pt-2"><AppButton @click="finish">{{ $t('examTake.backToExams') || 'العودة لصفحة الامتحانات' }}</AppButton></div>
+                <div class="pt-2"><AppButton @click="finish">{{ $t('examTake.backToExams') }}</AppButton></div>
             </div>
         </div>
 
@@ -201,6 +234,11 @@ onBeforeUnmount(() => clearInterval(timer));
                     <AppBadge :tone="timeLeft < 60000 ? 'danger' : 'primary'">⏱ {{ fmt(timeLeft) }}</AppBadge>
                     <span class="text-xs text-ink-400">{{ $t('examTake.answered', { n: answeredCount, total: questions.length }) }}</span>
                 </div>
+            </div>
+
+            <!-- Server-authoritative expiration notice: blocks all mutation -->
+            <div v-if="blocked" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700" role="alert">
+                ⏱ {{ $t('examTake.expiredBlocked') }}
             </div>
 
             <!-- Question Card -->
@@ -219,6 +257,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         id="essay-input"
                         :rows="6"
                         :placeholder="$t('examTake.essayPlaceholder')"
+                        :disabled="blocked"
                         dir="auto"
                     />
                     <div class="flex justify-end">
@@ -234,8 +273,9 @@ onBeforeUnmount(() => clearInterval(timer));
                         v-for="opt in currentQuestion?.options"
                         :key="opt.id"
                         type="button"
-                        class="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-start transition focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400"
+                        class="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-start transition focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400 disabled:cursor-not-allowed disabled:opacity-60"
                         :class="opt.selected ? 'border-terracotta-500 bg-terracotta-50' : 'border-ink-200 hover:border-ink-300 hover:bg-ink-50'"
+                        :disabled="blocked"
                         @click="answer(opt.id)"
                     >
                         <span class="flex h-5 w-5 items-center justify-center rounded-full border" :class="opt.selected ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-ink-300'">
@@ -265,7 +305,7 @@ onBeforeUnmount(() => clearInterval(timer));
             </div>
 
             <div class="flex justify-end pt-2">
-                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy" @click="confirmOpen = true">{{ $t('examTake.submitExam') || 'إنهاء وتسليم الامتحان' }}</AppButton>
+                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy || blocked" @click="confirmOpen = true">{{ $t('examTake.submitExam') }}</AppButton>
             </div>
         </template>
 

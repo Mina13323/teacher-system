@@ -6,6 +6,8 @@ use App\Enums\ExamAttemptStatus;
 use App\Exceptions\AttemptLimitReachedException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
+use App\Exceptions\ExamWindowClosedException;
+use App\Exceptions\ExamWindowNotOpenException;
 use App\Actions\Integrity\CreateAttemptIntegritySettingsAction;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
@@ -67,6 +69,11 @@ class StartExamAttemptAction
                 // deadline has passed so it no longer blocks a new attempt.
                 $this->expireStaleAttempts($studentId, $examId);
 
+                // Server-authoritative window enforcement. Only windowed exams
+                // are affected; legacy exams (starts_at/ends_at both null) keep
+                // their duration-per-attempt behaviour.
+                $this->assertWindowAllowsStart($exam);
+
                 // Re-check for a currently active attempt.
                 $existing = ExamAttempt::query()
                     ->where('student_id', $studentId)
@@ -93,12 +100,21 @@ class StartExamAttemptAction
                 }
 
                 $startedAt = now();
+
+                // CORE INVARIANT: a windowed exam expires at its authoritative
+                // global deadline, never at (entry time + duration). A student
+                // entering late therefore receives only the time still left,
+                // and cannot gain extra time by delaying their entry.
+                $expiresAt = $exam->isWindowed()
+                    ? $exam->effectiveDeadline()
+                    : $startedAt->copy()->addMinutes($exam->duration_minutes);
+
                 $attempt = ExamAttempt::create([
                     'exam_id' => $examId,
                     'student_id' => $studentId,
                     'attempt_number' => $attemptCount + 1,
                     'started_at' => $startedAt,
-                    'expires_at' => $startedAt->copy()->addMinutes($exam->duration_minutes),
+                    'expires_at' => $expiresAt,
                     'status' => ExamAttemptStatus::InProgress->value,
                     'pass_percentage' => $exam->pass_percentage,
                     'active_key' => $studentId.':'.$examId,
@@ -129,6 +145,37 @@ class StartExamAttemptAction
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * Enforce the official exam window against server time.
+     *
+     * Legacy exams without a window are unaffected. For windowed exams:
+     *  - before starts_at            -> ExamWindowNotOpenException
+     *  - at/after the effective
+     *    deadline min(starts_at +
+     *    duration_minutes, ends_at)  -> ExamWindowClosedException
+     *
+     * No value from the request is consulted, so a manipulated browser clock
+     * cannot open or extend the window.
+     */
+    private function assertWindowAllowsStart(Exam $exam): void
+    {
+        if (! $exam->isWindowed()) {
+            return;
+        }
+
+        $now = now();
+
+        if ($now->lessThan($exam->starts_at)) {
+            throw new ExamWindowNotOpenException();
+        }
+
+        $deadline = $exam->effectiveDeadline();
+
+        if ($deadline !== null && $now->greaterThanOrEqualTo($deadline)) {
+            throw new ExamWindowClosedException();
         }
     }
 

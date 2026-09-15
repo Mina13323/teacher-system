@@ -67,7 +67,11 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // ---- Teacher / Admin: course management + content nesting -------------------
-Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
+// Staff-only boundary. Every controller under this prefix still performs its own
+// policy/ownership authorization; this middleware is a second, group-level gate
+// so that a single forgotten authorize() call cannot expose a teacher endpoint
+// to a student. Uses the Spatie `role` alias registered in bootstrap/app.php.
+Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|admin'])->group(function () {
     Route::get('dashboard', [TeacherDashboardController::class, 'index']);
 
     Route::get('courses', [TeacherCourseController::class, 'index']);

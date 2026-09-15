@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Course;
+use App\Support\ExamWindowRules;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 class CreateExamRequest extends FormRequest
@@ -30,6 +32,22 @@ class CreateExamRequest extends FormRequest
             'shuffle_questions' => ['nullable', 'boolean'],
             'shuffle_options' => ['nullable', 'boolean'],
             'show_result_immediately' => ['nullable', 'boolean'],
+            // Optional official window. Timestamps are interpreted in the
+            // application timezone (UTC); clients should send ISO-8601 with an
+            // explicit offset. The browser's local timezone never authorizes.
+            'starts_at' => ['nullable', 'date'],
+            'ends_at' => ['nullable', 'date'],
         ];
+    }
+
+    /**
+     * Reject ambiguous partial windows and inverted ordering. A window must be
+     * both-or-neither so an exam can never end up in an undefined timing state.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            ExamWindowRules::validate($this->all(), $validator);
+        });
     }
 }
