@@ -588,12 +588,15 @@ class ExamWindowTest extends ApiTestCase
         ExamAttemptQuestion::where('attempt_id', $attempt->id)
             ->update(['question_type' => QuestionType::Essay->value]);
 
+        // Reported against the awarded_points field by the controller's
+        // InvalidArgumentException -> ValidationException conversion.
         $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/attempts/{$attempt->id}/grade-essay", [
                 'question_id' => $question->id,
                 'awarded_points' => 999,
             ])
-            ->assertStatus(422);
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['awarded_points']);
     }
 
     // ---------------------------------------------------------------------

@@ -48,8 +48,11 @@ class GradeEssayAnswerAction
             throw new InvalidAttemptStateException('Only essay questions can be graded manually.');
         }
 
+        // Out-of-range awards are reported against the `awarded_points` field:
+        // Teacher\AttemptController::gradeEssay catches InvalidArgumentException
+        // and converts it into a field-level 422. Keep this exception type.
         if ($awardedPoints < 0 || $awardedPoints > $attemptQuestion->points) {
-            throw new InvalidAttemptStateException("Awarded points must be between 0 and {$attemptQuestion->points}.");
+            throw new \InvalidArgumentException("Awarded points must be between 0 and {$attemptQuestion->points}.");
         }
 
         DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
