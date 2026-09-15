@@ -371,7 +371,7 @@ export default {
         autoGenHintA: 'if you leave the email or password empty, the username is generated as',
         autoGenHintB: 'and a secure random temporary password is generated for the first login.',
         emailLabel: 'Email / username',
-        emailAutoPlaceholder: 'Automatic: ELM-1001@student.com',
+        emailAutoPlaceholder: 'Automatic: ELM-1001{\'@\'}student.com',
         initialPassword: 'Initial password',
         passwordAutoPlaceholder: 'Automatic: secure random temporary password',
         directEnrollment: 'Direct course enrolment',

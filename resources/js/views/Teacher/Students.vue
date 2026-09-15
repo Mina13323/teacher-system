@@ -455,88 +455,160 @@ onMounted(() => load(1));
             <EmptyState v-else-if="!filtered.length" icon="users" :title="$t('students.emptyTitle')" :message="$t('students.emptyMessage')">
                 <router-link :to="`/${authRole}/students/new`"><AppButton>{{ $t('students.addStudent') }}</AppButton></router-link>
             </EmptyState>
-            <div v-else class="divide-y divide-ink-100">
-                <div class="flex items-center gap-3 bg-ink-50 px-5 py-2.5 text-xs font-semibold text-ink-500 uppercase tracking-wider">
-                    <input type="checkbox" class="h-4 w-4 rounded border-ink-300 text-terracotta-600" :checked="isAllSelected" @change="toggleSelectAll" />
-                    <span class="w-24">{{ $t('students.colCode') }}</span>
-                    <span class="flex-1">{{ $t('students.colStudent') }}</span>
-                    <span class="w-32 hidden md:inline">{{ $t('students.colYearTrack') }}</span>
-                    <span class="w-28">{{ $t('students.colAccess') }}</span>
-                    <span class="w-auto text-left">{{ $t('students.colActions') }}</span>
-                </div>
+            <div v-else class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-ink-100 text-start text-sm border-collapse">
+                    <thead class="bg-ink-50 text-xs font-semibold text-ink-500 uppercase tracking-wider">
+                        <tr>
+                            <th scope="col" class="w-12 px-4 py-3 text-center align-middle">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
+                                    :checked="isAllSelected"
+                                    @change="toggleSelectAll"
+                                />
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle">
+                                {{ $t('students.colCode') }}
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-start min-w-[200px] align-middle">
+                                {{ $t('students.colStudent') }}
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle hidden md:table-cell">
+                                {{ $t('students.colYearTrack') }}
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle">
+                                {{ $t('students.colAccess') }}
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-end whitespace-nowrap align-middle">
+                                {{ $t('students.colActions') }}
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-ink-100 bg-white">
+                        <tr v-for="s in filtered" :key="s.id" class="hover:bg-ink-50/50 transition-colors">
+                            <td class="w-12 px-4 py-3.5 text-center align-middle">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
+                                    :checked="selectedIds.includes(s.id)"
+                                    @change="toggleSelectStudent(s.id)"
+                                />
+                            </td>
 
-                <div v-for="s in filtered" :key="s.id" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
-                    <input type="checkbox" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 shrink-0" :checked="selectedIds.includes(s.id)" @change="toggleSelectStudent(s.id)" />
+                            <td class="px-4 py-3.5 whitespace-nowrap align-middle">
+                                <span class="font-mono font-bold text-terracotta-700 text-sm">
+                                    {{ s.student_code || '---' }}
+                                </span>
+                            </td>
 
-                    <div class="w-24 shrink-0 font-mono font-bold text-terracotta-700 text-sm">
-                        {{ s.student_code || '---' }}
-                    </div>
+                            <td class="px-4 py-3.5 align-middle min-w-[200px]">
+                                <p class="font-semibold text-ink-900 whitespace-nowrap" dir="auto">
+                                    {{ s.name }}
+                                </p>
+                                <div class="text-xs text-ink-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                    <span>{{ s.email }}</span>
+                                    <span v-if="s.phone" class="text-ink-300">·</span>
+                                    <span v-if="s.phone" dir="ltr">{{ s.phone }}</span>
+                                </div>
+                            </td>
 
-                    <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <p class="font-semibold text-ink-900" dir="auto">{{ s.name }}</p>
-                        </div>
-                        <p class="text-xs text-ink-400 mt-0.5">{{ s.email }} {{ s.phone ? `· ${s.phone}` : '' }}</p>
-                    </div>
+                            <td class="px-4 py-3.5 whitespace-nowrap align-middle hidden md:table-cell text-xs text-ink-600">
+                                <p class="font-medium text-ink-800">{{ getYearLabel(s) }}</p>
+                                <p v-if="s.academic_year === 'secondary_3'" class="text-terracotta-700 font-semibold mt-0.5">
+                                    {{ getSubjectLabel(s) }}
+                                </p>
+                            </td>
 
-                    <div class="w-32 shrink-0 hidden md:block text-xs text-ink-600 space-y-0.5">
-                        <p class="font-medium text-ink-800">{{ getYearLabel(s) }}</p>
-                        <p v-if="s.academic_year === 'secondary_3'" class="text-terracotta-700 font-semibold">{{ getSubjectLabel(s) }}</p>
-                    </div>
+                            <td class="px-4 py-3.5 whitespace-nowrap align-middle">
+                                <AppBadge v-if="s.access_status === 'active' || (!s.access_status && s.is_active)" tone="success">
+                                    {{ $t('students.statusActive') || 'نشط' }}
+                                </AppBadge>
+                                <AppBadge v-else-if="s.access_status === 'due'" tone="warning">
+                                    {{ $t('students.statusDue') || 'مستحق التجديد' }}
+                                </AppBadge>
+                                <AppBadge v-else tone="danger">
+                                    {{ $t('students.statusSuspended') || 'معلق' }}
+                                </AppBadge>
+                            </td>
 
-                    <!-- Status Badges -->
-                    <div class="w-28 shrink-0 flex items-center gap-1.5">
-                        <AppBadge v-if="s.access_status === 'active' || (!s.access_status && s.is_active)" tone="success">
-                            {{ $t('students.statusActive') || 'نشط' }}
-                        </AppBadge>
-                        <AppBadge v-else-if="s.access_status === 'due'" tone="warning">
-                            {{ $t('students.statusDue') || 'مستحق التجديد' }}
-                        </AppBadge>
-                        <AppBadge v-else tone="danger">
-                            {{ $t('students.statusSuspended') || 'معلق' }}
-                        </AppBadge>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <router-link :to="`/${authRole}/students/${s.id}`">
-                            <AppButton variant="outline" size="sm">{{ $t('common.view') }}</AppButton>
-                        </router-link>
-                        <router-link :to="`/${authRole}/students/${s.id}/edit`">
-                            <AppButton variant="ghost" size="sm">{{ $t('common.edit') }}</AppButton>
-                        </router-link>
-                        <!-- Compact icon action; label supplied for screen readers -->
-                        <AppButton
-                            v-if="s.whatsapp_phone"
-                            variant="outline"
-                            size="sm"
-                            class="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                            :title="$t('whatsapp.contactStudent')"
-                            :aria-label="$t('whatsapp.contactStudent')"
-                            @click="openWhatsAppFor(s)"
-                        >
-                            <Icon name="whatsapp" :size="16" />
-                        </AppButton>
-                        <AppButton variant="outline" size="sm" class="text-emerald-700 border-emerald-300 hover:bg-emerald-50" @click="openAllowImmediately(s)">
-                            ⚡ {{ $t('students.actionAllowNow') }}
-                        </AppButton>
-                        <AppButton v-if="s.access_status === 'suspended' || !s.is_active" variant="outline" size="sm" class="text-blue-700 border-blue-300 hover:bg-blue-50" @click="openRestore(s)">
-                            ♻️ {{ $t('students.actionRestore') }}
-                        </AppButton>
-                        <AppButton v-else variant="ghost" size="sm" class="text-amber-700 hover:bg-amber-50" @click="openSuspend(s)">
-                            🚫 {{ $t('students.actionSuspend') }}
-                        </AppButton>
-                        <AppButton variant="ghost" size="sm" @click="openRenew(s)">
-                            🔄 {{ $t('students.actionRenew') }}
-                        </AppButton>
-                        <AppButton variant="ghost" size="sm" @click="openResetCredentials(s)">
-                            🔑 {{ $t('students.actionPassword') }}
-                        </AppButton>
-                        <AppButton variant="ghost" size="sm" @click="openPrintSingle(s)">
-                            🖨️ {{ $t('students.actionPrint') }}
-                        </AppButton>
-                    </div>
-                </div>
+                            <td class="px-4 py-3.5 whitespace-nowrap text-end align-middle">
+                                <div class="flex items-center justify-end gap-1.5 flex-nowrap">
+                                    <router-link :to="`/${authRole}/students/${s.id}`">
+                                        <AppButton variant="outline" size="sm" class="!px-2.5 !py-1 text-xs">
+                                            {{ $t('common.view') }}
+                                        </AppButton>
+                                    </router-link>
+                                    <router-link :to="`/${authRole}/students/${s.id}/edit`">
+                                        <AppButton variant="ghost" size="sm" class="!px-2.5 !py-1 text-xs">
+                                            {{ $t('common.edit') }}
+                                        </AppButton>
+                                    </router-link>
+                                    <AppButton
+                                        v-if="s.whatsapp_phone"
+                                        variant="outline"
+                                        size="sm"
+                                        class="!px-2 !py-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                        :title="$t('whatsapp.contactStudent')"
+                                        :aria-label="$t('whatsapp.contactStudent')"
+                                        @click="openWhatsAppFor(s)"
+                                    >
+                                        <Icon name="whatsapp" :size="15" />
+                                    </AppButton>
+                                    <AppButton
+                                        variant="outline"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                                        @click="openAllowImmediately(s)"
+                                    >
+                                        ⚡ {{ $t('students.actionAllowNow') }}
+                                    </AppButton>
+                                    <AppButton
+                                        v-if="s.access_status === 'suspended' || !s.is_active"
+                                        variant="outline"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs text-blue-700 border-blue-300 hover:bg-blue-50"
+                                        @click="openRestore(s)"
+                                    >
+                                        ♻️ {{ $t('students.actionRestore') }}
+                                    </AppButton>
+                                    <AppButton
+                                        v-else
+                                        variant="ghost"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs text-amber-700 hover:bg-amber-50"
+                                        @click="openSuspend(s)"
+                                    >
+                                        🚫 {{ $t('students.actionSuspend') }}
+                                    </AppButton>
+                                    <AppButton
+                                        variant="ghost"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs"
+                                        @click="openRenew(s)"
+                                    >
+                                        🔄 {{ $t('students.actionRenew') }}
+                                    </AppButton>
+                                    <AppButton
+                                        variant="ghost"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs"
+                                        @click="openResetCredentials(s)"
+                                    >
+                                        🔑 {{ $t('students.actionPassword') }}
+                                    </AppButton>
+                                    <AppButton
+                                        variant="ghost"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs"
+                                        @click="openPrintSingle(s)"
+                                    >
+                                        🖨️ {{ $t('students.actionPrint') }}
+                                    </AppButton>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             <div class="border-t border-ink-100 px-4 py-3">
                 <Pagination v-if="meta" :meta="meta" @change="load" />

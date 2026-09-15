@@ -371,7 +371,7 @@ export default {
         autoGenHintA: 'عند ترك البريد أو كلمة المرور فارغين، سيتم توليد اسم المستخدم بنموذج',
         autoGenHintB: 'ويتم توليد كلمة مرور مؤقتة عشوائية وآمنة لتسجيل الدخول الأول.',
         emailLabel: 'البريد الإلكتروني / اسم المستخدم',
-        emailAutoPlaceholder: 'تلقائي: ELM-1001@student.com',
+        emailAutoPlaceholder: 'تلقائي: ELM-1001{\'@\'}student.com',
         initialPassword: 'كلمة المرور الأولية',
         passwordAutoPlaceholder: 'تلقائي: كلمة مرور مؤقتة عشوائية آمنة',
         directEnrollment: 'التسجيل المباشر في الكورسات',

@@ -102,6 +102,8 @@ function onFullscreenChange() {
 }
 
 // ---- Deterrence listeners --------------------------------------------------
+const isBlurred = ref(false);
+
 function prevent(e) {
     e.preventDefault();
 }
@@ -109,6 +111,14 @@ function prevent(e) {
 function onKeydown(e) {
     const ctrl = e.ctrlKey || e.metaKey;
     const key = (e.key || '').toLowerCase();
+    if (e.key === 'PrintScreen' || (ctrl && key === 'p')) {
+        e.preventDefault();
+        try { navigator.clipboard?.writeText?.(''); } catch {}
+        isBlurred.value = true;
+        setTimeout(() => { isBlurred.value = false; }, 2500);
+        report('KEYBOARD_SHORTCUT');
+        return;
+    }
     if (flag('block_ctrl_s') && ctrl && key === 's') { e.preventDefault(); return; }
     if (flag('block_ctrl_p') && ctrl && key === 'p') { e.preventDefault(); return; }
     if (flag('block_ctrl_u') && ctrl && key === 'u') { e.preventDefault(); return; }
@@ -117,13 +127,23 @@ function onKeydown(e) {
 }
 
 function onVisibilityChange() {
-    if (document.visibilityState === 'hidden' && flag('detect_tab_switch')) {
-        report('TAB_SWITCH');
+    if (document.visibilityState === 'hidden') {
+        isBlurred.value = true;
+        if (flag('detect_tab_switch')) {
+            report('TAB_SWITCH');
+        }
+    } else {
+        isBlurred.value = false;
     }
 }
 
 function onBlur() {
+    isBlurred.value = true;
     if (flag('detect_window_blur')) report('WINDOW_BLUR');
+}
+
+function onFocus() {
+    isBlurred.value = false;
 }
 
 // Simple DevTools detection heuristic (deterrence/audit only).
@@ -179,6 +199,7 @@ onMounted(() => {
     document.addEventListener('keydown', onKeydown);
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
     document.addEventListener('fullscreenchange', onFullscreenChange);
     // A lightweight DevTools heuristic poll.
     devtoolsTimer = setInterval(detectDevtools, 1500);
@@ -196,6 +217,7 @@ onBeforeUnmount(() => {
     document.removeEventListener('keydown', onKeydown);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.removeEventListener('blur', onBlur);
+    window.removeEventListener('focus', onFocus);
     document.removeEventListener('fullscreenchange', onFullscreenChange);
 
     if (wmTimer) clearInterval(wmTimer);
@@ -225,9 +247,9 @@ function badgeTone(eventType) {
             <iframe
                 v-if="provider === 'youtube'"
                 :src="embedSrc"
-                class="absolute inset-0 h-full w-full"
+                class="absolute inset-0 h-full w-full select-none"
                 frameborder="0"
-                allow="autoplay; encrypted-media; picture-in-picture"
+                allow="autoplay; encrypted-media"
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
                 :title="$t('common.videoPlayer')"
@@ -236,10 +258,25 @@ function badgeTone(eventType) {
                 v-else
                 :src="storageSrc"
                 controls
-                class="absolute inset-0 h-full w-full"
-                controlslist="nodownload"
+                class="absolute inset-0 h-full w-full select-none"
+                controlslist="nodownload noplaybackrate noremoteplayback"
+                disablePictureInPicture
+                disableRemotePlayback
                 @contextmenu.prevent
             />
+
+            <!-- Privacy Shield on blur / screen-capture attempt -->
+            <div
+                v-if="isBlurred"
+                class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/95 p-6 text-center text-white backdrop-blur-md transition-opacity duration-150"
+            >
+                <div class="mb-2 text-3xl">🛡️</div>
+                <p class="text-base font-bold text-amber-300">محتوى الفيديو محمي</p>
+                <p class="mt-1 text-xs text-ink-300">لا يُسمح بتسجيل الشاشة أو التقاط صور أثناء تشغيل المحتوى.</p>
+                <div v-if="watermarkText" class="mt-3 rounded border border-white/20 bg-white/10 px-3 py-1 font-mono text-[11px] text-white/80">
+                    {{ watermarkText }}
+                </div>
+            </div>
 
             <!-- Watermark overlay -->
             <div
