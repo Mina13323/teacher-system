@@ -14,12 +14,23 @@ import AppSelect from '@/components/ui/AppSelect.vue';
 import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import Pagination from '@/components/ui/Pagination.vue';
+import Icon from '@/components/ui/Icon.vue';
+import WhatsAppContactModal from '@/components/students/WhatsAppContactModal.vue';
 
 const { t } = useI18n();
 const route = useRoute();
 const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 const authRole = route.path.startsWith('/assistant') ? 'assistant' : 'teacher';
+
+// WhatsApp contact modal. Opened from the list with no credential payload, so
+// the credentials template stays disabled here and the staff member is pointed
+// at the credential reset on the student detail screen instead.
+const whatsappStudent = ref(null);
+
+function openWhatsAppFor(student) {
+    whatsappStudent.value = student;
+}
 
 const items = ref([]);
 const meta = ref(null);
@@ -449,6 +460,18 @@ onMounted(() => load(1));
                         <router-link :to="`/${authRole}/students/${s.id}/edit`">
                             <AppButton variant="ghost" size="sm">{{ $t('common.edit') }}</AppButton>
                         </router-link>
+                        <!-- Compact icon action; label supplied for screen readers -->
+                        <AppButton
+                            v-if="s.whatsapp_phone"
+                            variant="outline"
+                            size="sm"
+                            class="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                            :title="$t('whatsapp.contactStudent')"
+                            :aria-label="$t('whatsapp.contactStudent')"
+                            @click="openWhatsAppFor(s)"
+                        >
+                            <Icon name="whatsapp" :size="16" />
+                        </AppButton>
                         <AppButton variant="outline" size="sm" class="text-emerald-700 border-emerald-300 hover:bg-emerald-50" @click="openAllowImmediately(s)">
                             ⚡ {{ $t('students.actionAllowNow') }}
                         </AppButton>
@@ -673,6 +696,14 @@ onMounted(() => load(1));
                 <AppButton :loading="notifyBusy" @click="submitNotify">{{ $t('common.send') }}</AppButton>
             </template>
         </AppModal>
+
+        <!-- WhatsApp contact -->
+        <WhatsAppContactModal
+            :open="Boolean(whatsappStudent)"
+            :student="whatsappStudent"
+            :credentials="null"
+            @close="whatsappStudent = null"
+        />
     </div>
 </template>
 

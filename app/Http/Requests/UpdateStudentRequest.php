@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ValidPhoneNumber;
 use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use Illuminate\Foundation\Http\FormRequest;
@@ -32,7 +33,7 @@ class UpdateStudentRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'string', 'email', 'max:255', 'unique:users,email,'.$student->id],
-            'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:50', new ValidPhoneNumber],
             'bio' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'avatar' => ['sometimes', 'nullable', 'string', 'max:255'],
             'academic_year' => ['sometimes', 'nullable', new Enum(AcademicYear::class)],

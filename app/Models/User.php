@@ -7,6 +7,7 @@ use App\Enums\AcademicYear;
 use App\Enums\StudentAccessStatus;
 use App\Enums\StudentCapabilityPreset;
 use App\Enums\UserRole;
+use App\Support\PhoneNumber;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -73,6 +74,33 @@ class User extends Authenticatable
             'academic_subject' => AcademicSubject::class,
             'profile_completed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Normalize every phone number to E.164 on write.
+     *
+     * One canonical representation per number: the database never holds both
+     * 01012345678 and +201012345678 for the same person. Invalid values become
+     * null rather than being stored malformed; the ValidPhoneNumber rule is
+     * what surfaces the error to the user before this point.
+     */
+    public function setPhoneAttribute(?string $value): void
+    {
+        $this->attributes['phone'] = ($value === null || trim($value) === '')
+            ? null
+            : PhoneNumber::normalize($value);
+    }
+
+    /**
+     * The E.164 digits (no leading '+') suitable for a wa.me deep link, or null
+     * when this user has no valid phone number.
+     *
+     * Normalization is resolved server-side so no client re-implements the rule
+     * and can never produce a different number than the one stored.
+     */
+    public function whatsappNumber(): ?string
+    {
+        return PhoneNumber::toWhatsApp($this->phone);
     }
 
     /**

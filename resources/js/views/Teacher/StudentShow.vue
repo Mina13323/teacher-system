@@ -13,6 +13,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import Icon from '@/components/ui/Icon.vue';
+import WhatsAppContactModal from '@/components/students/WhatsAppContactModal.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -45,6 +46,10 @@ const showResetConfirm = ref(false);
 const revealCredentials = ref(null);
 const resetBusy = ref(false);
 const copied = ref(false);
+
+// WhatsApp contact modal. The credentials option is only enabled while a
+// one-time reveal payload is held in memory here — it is never refetched.
+const showWhatsApp = ref(false);
 
 async function loadCourses() {
     try {
@@ -273,6 +278,15 @@ onMounted(async () => {
                     <AppButton variant="outline" @click="showResetConfirm = true">
                         🔑 {{ $t('students.resetCredentials') }}
                     </AppButton>
+                    <AppButton
+                        variant="outline"
+                        class="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        :disabled="!student?.whatsapp_phone"
+                        @click="showWhatsApp = true"
+                    >
+                        <Icon name="whatsapp" :size="16" class="me-1 inline-block align-[-3px]" />
+                        {{ $t('whatsapp.contactStudent') }}
+                    </AppButton>
                     <router-link :to="`/${authRole}/students/${student.id}/edit`">
                         <AppButton variant="ghost">{{ $t('common.edit') }}</AppButton>
                     </router-link>
@@ -398,6 +412,18 @@ onMounted(async () => {
                         <span v-if="copied">✓ {{ $t('students.copied') }}</span>
                         <span v-else>📋 {{ $t('students.copyCredentials') }}</span>
                     </AppButton>
+                    <!-- Straight from the one-time reveal into WhatsApp. The
+                         reveal payload stays in memory, so the credentials
+                         template becomes available. Nothing is auto-sent. -->
+                    <AppButton
+                        variant="outline"
+                        class="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        :disabled="!student?.whatsapp_phone"
+                        @click="showWhatsApp = true"
+                    >
+                        <Icon name="whatsapp" :size="16" class="me-1 inline-block align-[-3px]" />
+                        {{ $t('whatsapp.sendCredentials') }}
+                    </AppButton>
                     <AppButton @click="revealCredentials = null">{{ $t('common.confirm') }}</AppButton>
                 </div>
             </div>
@@ -415,5 +441,13 @@ onMounted(async () => {
                 </div>
             </div>
         </AppModal>
+
+        <!-- WhatsApp contact -->
+        <WhatsAppContactModal
+            :open="showWhatsApp"
+            :student="student"
+            :credentials="revealCredentials"
+            @close="showWhatsApp = false"
+        />
     </div>
 </template>

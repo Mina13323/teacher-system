@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ValidPhoneNumber;
 use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use App\Models\User;
@@ -31,7 +32,7 @@ class CreateStudentRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['nullable', 'string', 'min:8'],
-            'phone' => ['nullable', 'string', 'max:50'],
+            'phone' => ['nullable', 'string', 'max:50', new ValidPhoneNumber],
             'bio' => ['nullable', 'string', 'max:2000'],
             'student_code' => ['nullable', 'string', 'max:64', 'unique:users,student_code'],
             'academic_year' => ['nullable', new Enum(AcademicYear::class)],

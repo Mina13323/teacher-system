@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ValidPhoneNumber;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -41,7 +42,7 @@ class UpdateAssistantRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'string', 'email', 'max:255', 'unique:users,email,'.$assistant->id],
-            'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:50', new ValidPhoneNumber],
             'bio' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'avatar' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];

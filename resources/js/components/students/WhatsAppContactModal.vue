@@ -1,0 +1,161 @@
+<script setup>
+import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import AppModal from '@/components/ui/AppModal.vue';
+import AppButton from '@/components/ui/AppButton.vue';
+import Icon from '@/components/ui/Icon.vue';
+import { useWhatsApp, WHATSAPP_MESSAGE_TYPES } from '@/composables/useWhatsApp';
+
+/**
+ * WhatsApp contact modal — shared by the student list and the student detail
+ * screen so the workflow is implemented once.
+ *
+ * This never sends anything. It builds a wa.me deep link to the STUDENT's
+ * normalized number and opens WhatsApp on the staff member's device; the staff
+ * member reviews the preview and presses Send.
+ */
+const props = defineProps({
+    open: { type: Boolean, default: false },
+    student: { type: Object, default: null },
+    // The one-time credential reveal payload, present only immediately after a
+    // credential reset. Null means no password is legitimately available.
+    credentials: { type: Object, default: null },
+});
+
+const emit = defineEmits(['close']);
+
+const { t } = useI18n();
+const { buildMessage, openWhatsApp, copyMessage } = useWhatsApp();
+
+const selected = ref(WHATSAPP_MESSAGE_TYPES.GENERAL);
+
+/** Statuses for which a renewal reminder is the relevant message. */
+const RENEWAL_STATUSES = ['due', 'pending_review', 'expired'];
+
+const whatsappPhone = computed(() => props.student?.whatsapp_phone || null);
+
+const hasCredentials = computed(() => Boolean(props.credentials?.temporary_password));
+
+const showRenewal = computed(() => RENEWAL_STATUSES.includes(props.student?.access_status));
+
+const options = computed(() => {
+    const list = [
+        { type: WHATSAPP_MESSAGE_TYPES.GENERAL, label: t('whatsapp.contactStudent'), enabled: true },
+    ];
+
+    if (showRenewal.value) {
+        list.push({ type: WHATSAPP_MESSAGE_TYPES.RENEWAL, label: t('whatsapp.sendRenewal'), enabled: true });
+    }
+
+    // Only offered when a password is legitimately in hand; otherwise the
+    // staff member is told to reset credentials first.
+    list.push({ type: WHATSAPP_MESSAGE_TYPES.CREDENTIALS, label: t('whatsapp.sendCredentials'), enabled: hasCredentials.value });
+
+    return list;
+});
+
+const context = computed(() => {
+    const creds = props.credentials || {};
+
+    return {
+        studentName: props.student?.name || '',
+        studentCode: creds.student_code || props.student?.student_code || '',
+        email: creds.login || creds.email || props.student?.email || '',
+        password: creds.temporary_password || '',
+    };
+});
+
+const message = computed(() => buildMessage(selected.value, context.value));
+
+// Keep the selection valid whenever the modal opens or the options change.
+watch(
+    () => [props.open, options.value.length],
+    () => {
+        if (!props.open) return;
+        const current = options.value.find((o) => o.type === selected.value);
+        if (!current || !current.enabled) {
+            selected.value = (options.value.find((o) => o.enabled) || {}).type || WHATSAPP_MESSAGE_TYPES.GENERAL;
+        }
+    },
+    { immediate: true }
+);
+
+function select(type) {
+    const option = options.value.find((o) => o.type === type);
+    if (option && option.enabled) selected.value = type;
+}
+
+/**
+ * Called directly from the click handler with nothing awaited beforehand, so
+ * the browser sees a user gesture and does not block the popup.
+ */
+function confirmOpen() {
+    if (!openWhatsApp(whatsappPhone.value, message.value)) return;
+    emit('close');
+}
+
+function copy() {
+    copyMessage(message.value);
+}
+</script>
+
+<template>
+    <AppModal :open="open" :title="$t('whatsapp.title')" size="md" @close="emit('close')">
+        <div v-if="student" class="space-y-4">
+            <!-- Destination -->
+            <div class="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-sm">
+                <span class="font-medium text-ink-900" dir="auto">{{ student.name }}</span>
+                <span class="font-mono text-xs text-ink-600" dir="ltr">{{ student.phone || $t('whatsapp.noPhone') }}</span>
+            </div>
+
+            <p v-if="!whatsappPhone" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {{ student.phone ? $t('whatsapp.invalidPhone') : $t('whatsapp.noPhone') }}
+            </p>
+
+            <!-- Message type -->
+            <div class="space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-ink-400">{{ $t('whatsapp.preview') }}</p>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        v-for="opt in options"
+                        :key="opt.type"
+                        type="button"
+                        class="rounded-lg border px-3 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400 disabled:cursor-not-allowed disabled:opacity-45"
+                        :class="selected === opt.type
+                            ? 'border-terracotta-500 bg-terracotta-50 text-terracotta-800'
+                            : 'border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-ink-50'"
+                        :disabled="!opt.enabled"
+                        @click="select(opt.type)"
+                    >
+                        {{ opt.label }}
+                    </button>
+                </div>
+                <p v-if="selected === 'credentials' && !hasCredentials" class="text-xs text-amber-800">
+                    {{ $t('whatsapp.credentialsUnavailable') }}
+                </p>
+            </div>
+
+            <!-- Preview -->
+            <div class="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg border border-ink-200 bg-white p-3 text-sm text-ink-800" dir="auto">{{ message }}</div>
+
+            <p class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                <Icon name="bell" :size="14" class="mt-0.5 shrink-0" />
+                <span>{{ $t('whatsapp.mustSendYourself') }}</span>
+            </p>
+        </div>
+
+        <template #footer>
+            <div class="flex flex-wrap justify-end gap-2">
+                <AppButton variant="ghost" @click="emit('close')">{{ $t('common.cancel') }}</AppButton>
+                <AppButton variant="outline" :disabled="!message" @click="copy">
+                    <Icon name="clipboard" :size="16" class="me-1 inline-block align-[-3px]" />
+                    {{ $t('whatsapp.copyMessage') }}
+                </AppButton>
+                <AppButton variant="success" :disabled="!whatsappPhone || !message" @click="confirmOpen">
+                    <Icon name="whatsapp" :size="16" class="me-1 inline-block align-[-3px]" />
+                    {{ $t('whatsapp.confirm') }}
+                </AppButton>
+            </div>
+        </template>
+    </AppModal>
+</template>

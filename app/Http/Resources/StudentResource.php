@@ -38,6 +38,11 @@ class StudentResource extends JsonResource
             'student_code' => $this->student_code,
             'avatar' => $this->avatar,
             'phone' => $this->phone,
+            // E.164 digits for a wa.me deep link, resolved server-side so the
+            // client never re-implements normalization. Null when the number is
+            // absent or invalid, which is the signal to hide the WhatsApp
+            // action rather than build a link to a guessed destination.
+            'whatsapp_phone' => $this->whatsappNumber(),
             'bio' => $this->bio,
             'academic_year' => $academicYearEnum?->value,
             'academic_year_label' => $academicYearEnum?->label(),

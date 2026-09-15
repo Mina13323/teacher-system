@@ -33,6 +33,9 @@ const paths = {
     target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
     graduationCap: '<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
     x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    // Speech bubble with a handset — the WhatsApp contact action. Drawn to
+    // match the existing stroke style rather than importing an icon library.
+    whatsapp: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/><path d="M8.6 8.4c-.2-.5-.4-.5-.7-.5h-.5c-.2 0-.5.1-.7.4-.3.3-.6.8-.6 1.7s.7 1.9.8 2c.1.2 1.4 2.2 3.4 3 1.7.7 2 .6 2.4.5.4 0 1.2-.5 1.3-1 .2-.5.2-.8.1-.9l-1.4-.7c-.2-.1-.4-.1-.5.1l-.6.7c-.1.2-.3.2-.5.1-.2-.1-.9-.3-1.8-1.1-.6-.5-1-1.2-1.2-1.4-.1-.2 0-.3.1-.5l.4-.4c.1-.1.2-.3.2-.4 0-.1 0-.3 0-.4l-.7-1.2Z"/>',
 };
 
 const svg = computed(() => paths[props.name] || paths.dot);
