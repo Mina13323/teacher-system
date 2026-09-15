@@ -34,6 +34,8 @@ export const useAuthStore = defineStore('auth', {
         canJoinCompetitions: (s) => Boolean(s.user?.can_join_competitions ?? true),
         studentCode: (s) => s.user?.student_code || null,
         academicYear: (s) => s.user?.academic_year || null,
+        academicSubject: (s) => s.user?.academic_subject || null,
+        academicSubjectLabel: (s) => s.user?.academic_subject_label || null,
         accessStatus: (s) => s.user?.access_status || 'active',
         isSuspended: (s) => s.user?.access_status === 'suspended' || s.user?.is_active === false,
         isRenewalDue: (s) => s.user?.access_status === 'due',

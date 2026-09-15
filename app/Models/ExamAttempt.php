@@ -44,6 +44,7 @@ class ExamAttempt extends Model
             'started_at' => 'datetime',
             'submitted_at' => 'datetime',
             'expires_at' => 'datetime',
+            'grades_published_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',
             'pass_percentage' => 'integer',

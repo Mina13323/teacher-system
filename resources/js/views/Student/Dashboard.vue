@@ -5,9 +5,9 @@ import { student, toList } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import AppBadge from '@/components/ui/AppBadge.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import Icon from '@/components/ui/Icon.vue';
-
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
@@ -29,21 +29,48 @@ function fmtDate(iso) {
 
 <template>
     <div class="space-y-6">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <!-- Suspended Banner -->
+        <div v-if="auth.isSuspended" class="rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-900 flex items-start gap-3">
+            <span class="text-2xl">🚫</span>
             <div>
-                <div class="flex items-center gap-3">
-                    <h1 class="text-2xl font-bold text-ink-900">{{ $t('dashboard.welcomeBack') }}</h1>
+                <h3 class="font-bold text-base">حسابك المعلق مؤقتاً</h3>
+                <p class="text-xs text-rose-800 mt-0.5">تم تجميد وصولك لخدمات المنصة مؤقتاً. يرجى التواصل مع إدارة المنصة أو معلم المادة لإعادة التفعيل.</p>
+            </div>
+        </div>
+
+        <!-- Renewal Due Banner -->
+        <div v-else-if="auth.isRenewalDue" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 flex items-start gap-3">
+            <span class="text-2xl">⚠️</span>
+            <div>
+                <h3 class="font-bold text-base">استحقاق التجديد الشهري</h3>
+                <p class="text-xs text-amber-800 mt-0.5">موعد التجديد الشهري لاشتراكك مستحق. يرجى سداد الاشتراك للمعلم لمنع إيقاف الوصول للخدمات.</p>
+            </div>
+        </div>
+
+        <!-- Student Profile Card Header -->
+        <div class="rounded-xl border border-ink-100 bg-white p-6 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="space-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <h1 class="text-2xl font-bold text-ink-900">{{ auth.displayName }}</h1>
                     <span v-if="auth.studentCode" class="inline-flex items-center rounded-md bg-parchment-200 px-2.5 py-0.5 text-xs font-mono font-bold text-ink-800 tracking-wide">
                         {{ auth.studentCode }}
                     </span>
-                    <span v-if="auth.academicYear" class="inline-flex items-center rounded-md bg-terracotta-100 px-2.5 py-0.5 text-xs font-medium text-terracotta-800">
-                        {{ $t(`students.${auth.academicYear === 'secondary_1' ? 'secondary1' : auth.academicYear === 'secondary_2' ? 'secondary2' : 'secondary3'}`) }}
-                    </span>
+                    <AppBadge tone="primary">
+                        {{ auth.academicYear === 'secondary_1' ? '1st Secondary (الصف الأول الثانوي)' : (auth.academicYear === 'secondary_2' ? '2nd Secondary (الصف الثاني الثانوي)' : '3rd Secondary (الصف الثالث الثانوي)') }}
+                    </AppBadge>
+                    <AppBadge v-if="auth.academicYear === 'secondary_3'" tone="terracotta">
+                        {{ auth.academicSubjectLabel || (auth.academicSubject === 'history' ? 'التاريخ' : (auth.academicSubject === 'geography' ? 'الجغرافيا' : 'التاريخ والجغرافيا')) }}
+                    </AppBadge>
                 </div>
-                <p class="text-sm text-ink-500 mt-1">{{ $t('dashboard.continueJourney') }}</p>
+                <div class="flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                    <span>الصلاحيات المتاحة:</span>
+                    <span v-if="auth.canAccessLessons" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ شرح ودروس</span>
+                    <span v-if="auth.canTakeExams" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ امتحانات</span>
+                    <span v-if="auth.canJoinCompetitions" class="rounded bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">✓ مسابقات</span>
+                </div>
             </div>
-            <div v-if="auth.canAccessLessons">
-                <router-link to="/student/courses"><AppButton>{{ $t('dashboard.browseCourses') }}</AppButton></router-link>
+            <div v-if="auth.canAccessLessons && !auth.isSuspended">
+                <router-link to="/student/courses"><AppButton>{{ $t('dashboard.browseCourses') || 'تصفح الكورسات' }}</AppButton></router-link>
             </div>
         </div>
 
@@ -52,13 +79,13 @@ function fmtDate(iso) {
 
         <template v-else-if="data">
             <div class="grid gap-4 sm:grid-cols-3">
-                <StatCard :label="$t('dashboard.enrolledCourses')" :value="data.enrolled_courses_count" icon="book" tone="terracotta" />
-                <StatCard :label="$t('dashboard.completedLessons')" :value="data.completed_lessons_count" icon="check" tone="emerald" />
-                <StatCard :label="$t('dashboard.inProgressLessons')" :value="data.in_progress_lessons_count" icon="layers" tone="sky" />
+                <StatCard :label="$t('dashboard.enrolledCourses') || 'الكورسات المشترك بها'" :value="data.enrolled_courses_count" icon="book" tone="terracotta" />
+                <StatCard :label="$t('dashboard.completedLessons') || 'الدروس المكتملة'" :value="data.completed_lessons_count" icon="check" tone="emerald" />
+                <StatCard :label="$t('dashboard.inProgressLessons') || 'دروس جاري متابعتها'" :value="data.in_progress_lessons_count" icon="layers" tone="sky" />
             </div>
 
             <div v-if="data.recently_accessed_lessons.length" class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
-                <div class="px-5 py-4"><h2 class="font-semibold text-ink-900">{{ $t('dashboard.continueLeftOff') }}</h2></div>
+                <div class="px-5 py-4"><h2 class="font-semibold text-ink-900">{{ $t('dashboard.continueLeftOff') || 'متابعة التعلم من حيث توقفت' }}</h2></div>
                 <div class="divide-y divide-ink-100">
                     <router-link
                         v-for="l in data.recently_accessed_lessons"
@@ -71,14 +98,14 @@ function fmtDate(iso) {
                             <p class="truncate font-medium text-ink-800">{{ l.lesson?.title || `${$t('nav.lesson')} #${l.lesson_id}` }}</p>
                             <p class="text-xs text-ink-400">{{ l.progress_percentage }}% · {{ fmtDate(l.updated_at) }}</p>
                         </div>
-                        <span class="text-xs font-medium text-terracotta-600">{{ $t('dashboard.resume') }}</span>
+                        <span class="text-xs font-medium text-terracotta-600">{{ $t('dashboard.resume') || 'متابعة' }}</span>
                     </router-link>
                 </div>
             </div>
 
             <div class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-ink-900">{{ $t('dashboard.myCourses') }}</h2>
-                <router-link to="/student/courses" class="text-sm font-medium text-terracotta-600 hover:underline">{{ $t('dashboard.viewAll') }}</router-link>
+                <h2 class="text-lg font-semibold text-ink-900">{{ $t('dashboard.myCourses') || 'كورساتي' }}</h2>
+                <router-link to="/student/courses" class="text-sm font-medium text-terracotta-600 hover:underline">{{ $t('dashboard.viewAll') || 'عرض الكل' }}</router-link>
             </div>
 
             <EmptyState

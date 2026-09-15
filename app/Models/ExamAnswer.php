@@ -26,6 +26,7 @@ class ExamAnswer extends Model
             'is_correct' => 'boolean',
             'points_earned' => 'integer',
             'answered_at' => 'datetime',
+            'graded_at' => 'datetime',
         ];
     }
 

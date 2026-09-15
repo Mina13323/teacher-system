@@ -2,13 +2,14 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Profile representation for a student account as seen by a managing teacher or
- * the student themselves. Includes capabilities, academic year, and access lifecycle.
+ * the student themselves. Includes capabilities, academic year, subject, and access lifecycle.
  * Never includes the password or any internal token.
  *
  * @mixin \App\Models\User
@@ -24,6 +25,10 @@ class StudentResource extends JsonResource
             ? $this->academic_year
             : ($this->academic_year ? AcademicYear::tryFrom($this->academic_year) : null);
 
+        $academicSubjectEnum = $this->academic_subject instanceof AcademicSubject
+            ? $this->academic_subject
+            : ($this->academic_subject ? AcademicSubject::tryFrom($this->academic_subject) : null);
+
         $latestPeriod = $this->latestAccessPeriod;
 
         return [
@@ -36,7 +41,10 @@ class StudentResource extends JsonResource
             'bio' => $this->bio,
             'academic_year' => $academicYearEnum?->value,
             'academic_year_label' => $academicYearEnum?->label(),
+            'academic_subject' => $academicSubjectEnum?->value ?? 'general',
+            'academic_subject_label' => $academicSubjectEnum?->label(),
             'is_active' => $this->is_active,
+            'must_change_password' => (bool) $this->must_change_password,
             'can_access_lessons' => $this->canAccessLessons(),
             'can_take_exams' => $this->canTakeExams(),
             'can_join_competitions' => $this->canJoinCompetitions(),

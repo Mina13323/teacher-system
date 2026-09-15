@@ -23,14 +23,12 @@ class StudentCredentialService
         if ($lastStudent && preg_match('/^ELM-(\d+)$/', (string) $lastStudent->student_code, $matches)) {
             $nextNumber = ((int) $matches[1]) + 1;
         } else {
-            // Also take into account the count of existing students if any
             $count = User::query()->whereNotNull('student_code')->count();
             if ($count > 0) {
                 $nextNumber = 1000 + $count + 1;
             }
         }
 
-        // Guarantee uniqueness loop in case of race
         while (User::query()->where('student_code', 'ELM-'.$nextNumber)->exists()) {
             $nextNumber++;
         }
@@ -39,37 +37,36 @@ class StudentCredentialService
     }
 
     /**
-     * Generates a unique system email based on student name and student code.
+     * Generates a unique system login email using the exact template:
+     * {student_code}@student.com
+     *
+     * Example: ELM-1001@student.com
      */
     public function generateEmail(string $name, string $studentCode): string
     {
-        $numericPart = preg_replace('/\D/', '', $studentCode) ?: Str::random(4);
-        $slug = Str::slug($name, '');
-
-        if ($slug === '' || ! preg_match('/^[a-z0-9]+$/', $slug)) {
-            $base = 'elm'.$numericPart;
-        } else {
-            $base = substr($slug, 0, 12).'.elm'.$numericPart;
-        }
-
-        $email = $base.'@elmasry.local';
+        $baseEmail = Str::lower($studentCode).'@student.com';
+        $email = $baseEmail;
 
         $attempts = 0;
         while (User::query()->where('email', $email)->exists() && $attempts < 50) {
             $attempts++;
-            $email = $base.'.'.Str::lower(Str::random(3)).'@elmasry.local';
+            $email = Str::lower($studentCode).$attempts.'@student.com';
         }
 
         return $email;
     }
 
     /**
-     * Generates a cryptographically secure, random temporary password.
+     * Generates an initial temporary password using the business template:
+     * {student_code}{academic_year}
+     *
+     * Example: ELM-10012026
      */
-    public function generateTemporaryPassword(): string
+    public function generateTemporaryPassword(string $studentCode, ?string $academicYearSuffix = '2026'): string
     {
-        // 10 characters: 'Elm#' prefix + 4 random characters + 3 random digits
-        return 'Elm#'.Str::random(4).random_int(100, 999);
+        $year = preg_match('/^\d{4}$/', (string) $academicYearSuffix) ? $academicYearSuffix : '2026';
+
+        return $studentCode.$year;
     }
 
     /**
@@ -77,11 +74,11 @@ class StudentCredentialService
      *
      * @return array{student_code: string, email: string, temporary_password: string}
      */
-    public function generateCredentials(string $name): array
+    public function generateCredentials(string $name, ?string $academicYear = '2026'): array
     {
         $code = $this->generateStudentCode();
         $email = $this->generateEmail($name, $code);
-        $password = $this->generateTemporaryPassword();
+        $password = $this->generateTemporaryPassword($code, $academicYear);
 
         return [
             'student_code' => $code,

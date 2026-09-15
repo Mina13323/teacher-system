@@ -21,7 +21,7 @@ class ExamAttemptResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $studentAnswers = $this->answers->pluck('option_id', 'question_id');
+        $answersByQuestion = $this->answers->keyBy('question_id');
 
         return [
             'id' => $this->id,
@@ -33,19 +33,26 @@ class ExamAttemptResource extends JsonResource
             'submitted_at' => $this->submitted_at?->toISOString(),
             'expires_at' => $this->expires_at?->toISOString(),
             'duration_minutes' => $this->whenLoaded('exam', fn () => $this->exam->duration_minutes),
-            'questions' => $this->attemptQuestions->map(fn ($attemptQuestion) => [
-                'id' => $attemptQuestion->question_id,
-                'attempt_question_id' => $attemptQuestion->id,
-                'question_text' => $attemptQuestion->question_text,
-                'points' => $attemptQuestion->points,
-                'position' => $attemptQuestion->position,
-                'options' => $attemptQuestion->attemptOptions->map(fn ($attemptOption) => [
-                    'id' => $attemptOption->option_id,
-                    'option_text' => $attemptOption->option_text,
-                    'position' => $attemptOption->position,
-                    'selected' => ($studentAnswers->get($attemptQuestion->question_id) === $attemptOption->option_id),
-                ])->values(),
-            ])->values(),
+            'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
+                $answer = $answersByQuestion->get($attemptQuestion->question_id);
+
+                return [
+                    'id' => $attemptQuestion->question_id,
+                    'attempt_question_id' => $attemptQuestion->id,
+                    'question_text' => $attemptQuestion->question_text,
+                    'question_type' => $attemptQuestion->question_type ?? 'single_choice',
+                    'points' => $attemptQuestion->points,
+                    'position' => $attemptQuestion->position,
+                    'selected_option_id' => $answer?->option_id,
+                    'answer_text' => $answer?->answer_text,
+                    'options' => $attemptQuestion->attemptOptions->map(fn ($attemptOption) => [
+                        'id' => $attemptOption->option_id,
+                        'option_text' => $attemptOption->option_text,
+                        'position' => $attemptOption->position,
+                        'selected' => ($answer?->option_id === $attemptOption->option_id),
+                    ])->values(),
+                ];
+            })->values(),
         ];
     }
 }

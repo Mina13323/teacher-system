@@ -10,6 +10,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import AppInput from '@/components/ui/AppInput.vue';
+import AppSelect from '@/components/ui/AppSelect.vue';
 import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import Tabs from '@/components/ui/Tabs.vue';
@@ -36,6 +37,15 @@ const attempts = ref([]);
 const attemptsMeta = ref(null);
 const integrity = ref(null);
 
+// Grading Modal State
+const gradingAttempt = ref(null);
+const gradingData = ref(null);
+const gradingLoading = ref(false);
+const gradeForm = reactive({});
+const gradeFeedback = reactive({});
+const gradingBusy = ref(false);
+const publishBusy = ref(false);
+
 async function loadAttempts(p = 1) {
     const res = toList(await teacher.examAttempts(examId, { per_page: 15, page: p }));
     attempts.value = res.items;
@@ -46,7 +56,6 @@ async function loadIntegrity() {
     catch { integrity.value = null; }
 }
 
-// `questions` are a nested resource collection; normalise each question's options.
 const questions = computed(() => {
     const qs = data.value?.questions;
     if (!qs) return [];
@@ -55,8 +64,14 @@ const questions = computed(() => {
 });
 
 const tabs = computed(() => [
-    { key: 'questions', label: t('exams.questionsTab') },
-    { key: 'attempts', label: t('exams.attemptsTab') },
+    { key: 'questions', label: t('exams.questionsTab') || 'الأسئلة' },
+    { key: 'attempts', label: t('exams.attemptsTab') || 'محاولات الطلاب والتصحيح' },
+]);
+
+const questionTypeOptions = computed(() => [
+    { value: 'single_choice', label: 'اختيار من متعدد (Single Choice)' },
+    { value: 'multiple_choice', label: 'متعدد الخيارات (Multiple Choice)' },
+    { value: 'essay', label: 'سؤال مقالي (Essay)' },
 ]);
 
 const integrityFields = computed(() => [
@@ -75,7 +90,7 @@ async function setStatus(kind) {
     statusBusy.value = true;
     try {
         await (kind === 'publish' ? teacher.publishExam : teacher.archiveExam)(examId);
-        toast.success(kind === 'publish' ? t('exams.publishedToast') : t('exams.archived'));
+        toast.success(kind === 'publish' ? (t('exams.publishedToast') || 'تم نشر الامتحان') : (t('exams.archived') || 'تم الأرشيف'));
         await run();
     } catch (e) {
         toast.error(e.message);
@@ -100,13 +115,15 @@ async function remove() {
 
 // ---- Question modal ----
 const qModal = ref(false);
-const qForm = reactive({ id: null, question_text: '', points: 1 });
+const qForm = reactive({ id: null, question_text: '', type: 'single_choice', points: 1, reference_answer: '' });
 const qErrors = ref({});
 const qBusy = ref(false);
 function openQuestion(q = null) {
     qForm.id = q?.id || null;
     qForm.question_text = q?.question_text || '';
+    qForm.type = q?.type || 'single_choice';
     qForm.points = q?.points || 1;
+    qForm.reference_answer = q?.reference_answer || '';
     qErrors.value = {};
     qModal.value = true;
 }
@@ -114,8 +131,14 @@ async function saveQuestion() {
     qBusy.value = true;
     qErrors.value = {};
     try {
-        if (qForm.id) await teacher.updateQuestion(qForm.id, { question_text: qForm.question_text, points: qForm.points });
-        else await teacher.createQuestion(examId, { question_text: qForm.question_text, points: qForm.points, type: 'single_choice' });
+        const payload = {
+            question_text: qForm.question_text,
+            type: qForm.type,
+            points: Number(qForm.points),
+            reference_answer: qForm.reference_answer || null,
+        };
+        if (qForm.id) await teacher.updateQuestion(qForm.id, payload);
+        else await teacher.createQuestion(examId, payload);
         toast.success(qForm.id ? t('exams.questionUpdated') : t('exams.questionCreated'));
         qModal.value = false;
         refresh();
@@ -177,6 +200,65 @@ async function deleteOption(q, option) {
     }
 }
 
+// ---- ESSAY GRADING MODAL ----
+async function openGrading(attempt) {
+    gradingAttempt.value = attempt;
+    gradingLoading.value = true;
+    try {
+        const res = await teacher.attempt(attempt.id);
+        gradingData.value = res.data || res;
+        // Populate form
+        if (gradingData.value?.answers) {
+            gradingData.value.answers.forEach((ans) => {
+                gradeForm[ans.question_id] = ans.points_earned !== null ? ans.points_earned : 0;
+                gradeFeedback[ans.question_id] = ans.feedback || '';
+            });
+        }
+    } catch (e) {
+        toast.error(e.message);
+        gradingAttempt.value = null;
+    } finally {
+        gradingLoading.value = false;
+    }
+}
+
+async function submitEssayGrade(questionId) {
+    if (!gradingAttempt.value) return;
+    gradingBusy.value = true;
+    try {
+        const pts = Number(gradeForm[questionId] || 0);
+        const fb = gradeFeedback[questionId] || null;
+        const res = await teacher.gradeEssay(gradingAttempt.value.id, {
+            question_id: questionId,
+            awarded_points: pts,
+            feedback: fb,
+        });
+        const updated = res.data || res;
+        gradingData.value = updated;
+        toast.success('تم حفظ درجات وتصحيح السؤال المقالي');
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        gradingBusy.value = false;
+    }
+}
+
+async function submitPublishGrades() {
+    if (!gradingAttempt.value) return;
+    publishBusy.value = true;
+    try {
+        const res = await teacher.publishGrades(gradingAttempt.value.id);
+        const updated = res.data || res;
+        gradingData.value = updated;
+        toast.success('تم رصد ونشر درجات الطالب بنجاح! أصبح بإمكان الطالب مشاهدة النتيجة والتقييم.');
+        loadAttempts(attemptsMeta.value?.current_page || 1);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        publishBusy.value = false;
+    }
+}
+
 // ---- Delete helpers ----
 const confirmTarget = ref(null);
 const confirmBusy = ref(false);
@@ -229,7 +311,7 @@ async function refresh() { await run(); loadAttempts(1); loadIntegrity(); }
 onMounted(() => run());
 
 function attemptTone(status) {
-    return { submitted: 'success', in_progress: 'warning', expired: 'danger' }[status] || 'neutral';
+    return { published: 'success', submitted: 'info', grading: 'warning', in_progress: 'warning', expired: 'danger' }[status] || 'neutral';
 }
 </script>
 
@@ -259,27 +341,39 @@ function attemptTone(status) {
             <Tabs :tabs="tabs" v-model="tab" />
 
             <div v-if="tab === 'questions'" class="space-y-4">
-                <div class="flex justify-end"><AppButton @click="openQuestion()">{{ $t('exams.addQuestion') }}</AppButton></div>
+                <div class="flex justify-end"><AppButton @click="openQuestion()">{{ $t('exams.addQuestion') || 'إضافة سؤال جديد' }}</AppButton></div>
                 <EmptyState v-if="!questions.length" icon="clipboard" :title="$t('exams.noQuestionsTitle')" :message="$t('exams.noQuestionsMessage')">
                     <AppButton @click="openQuestion()">{{ $t('exams.addQuestion') }}</AppButton>
                 </EmptyState>
                 <div v-else class="space-y-4">
-                    <div v-for="(q, qi) in questions" :key="q.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm">
+                    <div v-for="(q, qi) in questions" :key="q.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm space-y-3">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs text-ink-400">{{ $t('exams.questionMeta', { n: qi + 1, points: q.points }) }}</p>
-                                <p class="mt-1 font-medium text-ink-900" dir="auto">{{ q.question_text }}</p>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-ink-500">سؤال #{{ qi + 1 }}</span>
+                                    <AppBadge :tone="q.type === 'essay' ? 'warning' : 'info'">
+                                        {{ q.type === 'essay' ? 'مقالي (Essay)' : (q.type === 'multiple_choice' ? 'متعدد الاختيارات' : 'اختيار من متعدد') }}
+                                    </AppBadge>
+                                    <span class="text-xs text-ink-500 font-bold">({{ q.points }} درجة)</span>
+                                </div>
+                                <p class="mt-2 font-medium text-ink-900 text-base" dir="auto">{{ q.question_text }}</p>
+                                <div v-if="q.reference_answer" class="mt-2 rounded-lg bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
+                                    <strong class="block text-amber-800 mb-1">الإجابة النموذجية المرجعية للمعلم:</strong>
+                                    {{ q.reference_answer }}
+                                </div>
                             </div>
-                            <div class="flex items-center gap-1.5">
+                            <div class="flex items-center gap-1.5 shrink-0">
                                 <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100" @click="openQuestion(q)">{{ $t('common.edit') }}</button>
                                 <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="confirmTarget = q; runDelete('question')">{{ $t('common.delete') }}</button>
-                                <AppButton variant="outline" size="sm" @click="openOption(q)">{{ $t('exams.addOption') }}</AppButton>
+                                <AppButton v-if="q.type !== 'essay'" variant="outline" size="sm" @click="openOption(q)">{{ $t('exams.addOption') }}</AppButton>
                             </div>
                         </div>
-                        <div v-if="q.options?.length" class="mt-3 space-y-2">
+
+                        <!-- MCQ Options list -->
+                        <div v-if="q.type !== 'essay' && q.options?.length" class="mt-3 space-y-2">
                             <div v-for="o in q.options" :key="o.id" class="flex items-center gap-3 rounded-lg border px-3 py-2" :class="o.is_correct ? 'border-emerald-300 bg-emerald-50' : 'border-ink-100 bg-ink-50/40'">
                                 <span class="h-3 w-3 shrink-0 rounded-full" :class="o.is_correct ? 'bg-emerald-500' : 'bg-ink-300'" />
-                                <span class="flex-1 text-sm text-ink-800" :class="o.is_correct ? 'text-emerald-800' : ''" dir="auto">{{ o.option_text }}</span>
+                                <span class="flex-1 text-sm text-ink-800" :class="o.is_correct ? 'text-emerald-800 font-bold' : ''" dir="auto">{{ o.option_text }}</span>
                                 <button class="rounded px-2 py-1 text-xs font-medium" :class="o.is_correct ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'" @click="toggleCorrect(q, o)">{{ o.is_correct ? $t('exams.unmark') : $t('exams.markCorrect') }}</button>
                                 <button class="rounded px-2 py-1 text-xs font-medium text-ink-500 hover:bg-ink-100" @click="openOption(q, o)">{{ $t('common.edit') }}</button>
                                 <button class="rounded px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="deleteOption(q, o)">{{ $t('common.delete') }}</button>
@@ -289,6 +383,7 @@ function attemptTone(status) {
                 </div>
             </div>
 
+            <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
                 <EmptyState v-if="!attempts.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
@@ -296,11 +391,24 @@ function attemptTone(status) {
                         <div v-for="a in attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (a.student?.name || 'U').slice(0, 1) }}</div>
                             <div class="min-w-0 flex-1">
-                                <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }}</p>
-                                <p class="text-xs text-ink-400">{{ $t('common.attemptN', { n: a.attempt_number }) }} · {{ a.percentage ?? '—' }}%</p>
+                                <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }} ({{ a.student?.student_code || '---' }})</p>
+                                <p class="text-xs text-ink-400">
+                                    المحاولة #{{ a.attempt_number }} ·
+                                    الدرجة: <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span>
+                                    ({{ a.percentage ?? '—' }}%)
+                                    <span v-if="a.grades_published_at" class="text-emerald-600 font-semibold mr-2">✓ مرصودة ومعلنة</span>
+                                    <span v-else class="text-amber-600 font-semibold mr-2">⏳ قيد التصحيح / مسودة</span>
+                                </p>
                             </div>
-                            <AppBadge :tone="attemptTone(a.status)">{{ $t(`status.${a.status}`, a.status) }}</AppBadge>
-                            <router-link :to="`/teacher/integrity/attempts/${a.id}`"><AppButton variant="outline" size="sm">{{ $t('integrity.review') }}</AppButton></router-link>
+                            <AppBadge :tone="attemptTone(a.status)">
+                                {{ a.status === 'published' ? 'تم النشر والرصد' : (a.status === 'grading' ? 'يحتاج تصحيح مقالي' : a.status) }}
+                            </AppBadge>
+                            <AppButton variant="outline" size="sm" @click="openGrading(a)">
+                                📝 تصحيح ورصد الدرجات
+                            </AppButton>
+                            <router-link :to="`/teacher/integrity/attempts/${a.id}`">
+                                <AppButton variant="ghost" size="sm">🔍 النزاهة والريسك</AppButton>
+                            </router-link>
                         </div>
                     </div>
                     <div class="border-t border-ink-100 px-4 py-3"><Pagination v-if="attemptsMeta" :meta="attemptsMeta" @change="loadAttempts" /></div>
@@ -311,9 +419,21 @@ function attemptTone(status) {
         <!-- Question modal -->
         <AppModal :open="qModal" :title="qForm.id ? $t('exams.editQuestion') : $t('exams.addQuestion')" size="md" @close="qModal = false">
             <form class="space-y-4" @submit.prevent="saveQuestion">
+                <AppSelect v-model="qForm.type" label="نوع السؤال" :options="questionTypeOptions" id="q-type" required />
                 <AppTextarea v-model="qForm.question_text" :label="$t('exams.questionText')" required id="q-text" :error="qErrors.question_text" :rows="3" />
-                <AppInput v-model="qForm.points" :label="$t('exams.points')" type="number" id="q-points" :error="qErrors.points" />
-                <div class="flex justify-end gap-2"><AppButton variant="outline" @click="qModal = false">{{ $t('common.cancel') }}</AppButton><AppButton type="submit" :loading="qBusy">{{ $t('common.save') }}</AppButton></div>
+                <AppInput v-model="qForm.points" :label="$t('exams.points')" type="number" min="1" max="1000" id="q-points" :error="qErrors.points" required />
+                <AppTextarea
+                    v-if="qForm.type === 'essay'"
+                    v-model="qForm.reference_answer"
+                    label="الإجابة النموذجية المرجعية للمعلم (اختياري - لا تظهر للطالب)"
+                    id="q-ref-answer"
+                    :rows="3"
+                    placeholder="اكتب هنا عناصر الإجابة النموذجية لمساعدتك ومساعدة المساعدين أثناء التصحيح..."
+                />
+                <div class="flex justify-end gap-2">
+                    <AppButton variant="outline" @click="qModal = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton type="submit" :loading="qBusy">{{ $t('common.save') }}</AppButton>
+                </div>
             </form>
         </AppModal>
 
@@ -321,9 +441,80 @@ function attemptTone(status) {
         <AppModal :open="oModal" :title="oForm.id ? $t('exams.editOption') : $t('exams.addOption')" size="md" @close="oModal = false">
             <form class="space-y-4" @submit.prevent="saveOption">
                 <AppInput v-model="oForm.option_text" :label="$t('exams.optionText')" required id="o-text" :error="oErrors.option_text" />
-                <label class="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" v-model="oForm.is_correct" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('exams.correctAnswer') }}</label>
-                <div class="flex justify-end gap-2"><AppButton variant="outline" @click="oModal = false">{{ $t('common.cancel') }}</AppButton><AppButton type="submit" :loading="oBusy">{{ $t('common.save') }}</AppButton></div>
+                <label class="flex items-center gap-2 text-sm text-ink-700">
+                    <input type="checkbox" v-model="oForm.is_correct" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" />
+                    {{ $t('exams.correctAnswer') }}
+                </label>
+                <div class="flex justify-end gap-2">
+                    <AppButton variant="outline" @click="oModal = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton type="submit" :loading="oBusy">{{ $t('common.save') }}</AppButton>
+                </div>
             </form>
+        </AppModal>
+
+        <!-- Essay Grading & Publication Modal -->
+        <AppModal :open="Boolean(gradingAttempt)" :title="'تصحيح محاولة الطالب: ' + (gradingAttempt?.student?.name || '')" size="lg" @close="gradingAttempt = null">
+            <LoadingSpinner v-if="gradingLoading" />
+            <div v-else-if="gradingData" class="space-y-6">
+                <div class="rounded-xl border border-ink-200 bg-ink-50/50 p-4 flex justify-between items-center">
+                    <div>
+                        <p class="text-sm font-bold text-ink-900">{{ gradingData.student?.name }} ({{ gradingData.student?.student_code }})</p>
+                        <p class="text-xs text-ink-500">حالة الدرجات: {{ gradingData.grades_published ? 'مرفوعة ومعلنة للطالب' : 'مسودة / قيد المراجعة' }}</p>
+                    </div>
+                    <div class="text-left">
+                        <span class="text-2xl font-black text-terracotta-700">{{ gradingData.score ?? 0 }}</span>
+                        <span class="text-xs text-ink-400 block">إجمالي الدرجة ({{ gradingData.percentage }}%)</span>
+                    </div>
+                </div>
+
+                <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    <div v-for="(q, index) in questions" :key="q.id" class="rounded-xl border border-ink-200 p-4 space-y-3 bg-white">
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span class="text-xs font-bold text-ink-500">سؤال #{{ index + 1 }} ({{ q.type === 'essay' ? 'مقالي' : 'اختيار' }}) — الدرجة الكلية: {{ q.points }}</span>
+                                <p class="text-sm font-semibold text-ink-900 mt-1" dir="auto">{{ q.question_text }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Reference answer if essay -->
+                        <div v-if="q.reference_answer" class="rounded bg-amber-50 p-2.5 text-xs text-amber-900">
+                            <strong>الإجابة النموذجية المرجعية:</strong> {{ q.reference_answer }}
+                        </div>
+
+                        <!-- Student Answer -->
+                        <div class="rounded-lg bg-ink-50 p-3 text-sm">
+                            <span class="text-xs font-medium text-ink-500 block mb-1">إجابة الطالب:</span>
+                            <div v-if="q.type === 'essay'" class="text-ink-900 font-mono whitespace-pre-wrap" dir="auto">
+                                {{ (gradingData.answers?.find(a => a.question_id === q.id))?.answer_text || 'لم يتم إدخال إجابة' }}
+                            </div>
+                            <div v-else class="text-ink-900 font-medium" dir="auto">
+                                <span :class="(gradingData.answers?.find(a => a.question_id === q.id))?.is_correct ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'">
+                                    {{ (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct ? '✓ إجابة صحيحة' : '✗ إجابة خاطئة' }}
+                                </span>
+                                ({{ (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? 0 }} من {{ q.points }} درجة)
+                            </div>
+                        </div>
+
+                        <!-- Grading Controls for Essay -->
+                        <div v-if="q.type === 'essay'" class="border-t pt-3 space-y-3">
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <AppInput v-model="gradeForm[q.id]" type="number" min="0" :max="q.points" label="الدرجة الممنوحة" id="essay-pts" />
+                                <AppInput v-model="gradeFeedback[q.id]" label="ملاحظات / تقييم للمعلم للطالب (اختياري)" id="essay-fb" />
+                            </div>
+                            <div class="flex justify-end">
+                                <AppButton size="sm" variant="outline" :loading="gradingBusy" @click="submitEssayGrade(q.id)">حفظ درجة هذا السؤال</AppButton>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center border-t pt-4">
+                    <AppButton variant="outline" @click="gradingAttempt = null">إغلاق</AppButton>
+                    <AppButton variant="success" :loading="publishBusy" @click="submitPublishGrades">
+                        🚀 رصد ونشر الدرجات للطالب (Send Grades)
+                    </AppButton>
+                </div>
+            </div>
         </AppModal>
 
         <!-- Integrity settings modal -->

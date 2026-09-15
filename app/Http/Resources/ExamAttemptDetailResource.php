@@ -6,9 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Teacher-facing attempt detail. Includes the full per-question breakdown and
- * the correctness of each answer. Only returned for attempts belonging to
- * exams the teacher manages.
+ * Staff-facing attempt detail. Includes the full per-question breakdown,
+ * essay answers, correctness, awarded points, and feedback.
  *
  * @mixin \App\Models\ExamAttempt
  */
@@ -28,13 +27,13 @@ class ExamAttemptDetailResource extends JsonResource
             'student' => $this->whenLoaded('student', fn () => new UserResource($this->student)),
             'attempt_number' => $this->attempt_number,
             'status' => $this->status?->value,
+            'grades_published' => $this->grades_published_at !== null,
+            'grades_published_at' => $this->grades_published_at?->toISOString(),
             'score' => $this->score,
             'percentage' => $this->percentage,
             'pass_percentage' => $this->pass_percentage,
             'integrity_status' => $this->integrity_status?->value,
             'risk_score' => $this->risk_score,
-            // pass/fail uses the attempt's frozen pass threshold, never the
-            // current exam config.
             'passed' => $this->when(
                 $this->percentage !== null && $this->pass_percentage !== null,
                 fn () => $this->percentage >= $this->pass_percentage
@@ -45,8 +44,12 @@ class ExamAttemptDetailResource extends JsonResource
             'answers' => $this->answers->map(fn ($answer) => [
                 'question_id' => $answer->question_id,
                 'option_id' => $answer->option_id,
+                'answer_text' => $answer->answer_text,
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,
+                'feedback' => $answer->feedback,
+                'graded_by' => $answer->graded_by,
+                'graded_at' => $answer->graded_at?->toISOString(),
                 'answered_at' => $answer->answered_at?->toISOString(),
             ])->values(),
         ];

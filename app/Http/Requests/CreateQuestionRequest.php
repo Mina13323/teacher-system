@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\QuestionType;
 use App\Models\Exam;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Enum;
 
 class CreateQuestionRequest extends FormRequest
 {
@@ -23,9 +24,10 @@ class CreateQuestionRequest extends FormRequest
     {
         return [
             'question_text' => ['required', 'string'],
-            'type' => ['nullable', 'string', 'in:'.QuestionType::SingleChoice->value],
+            'type' => ['nullable', new Enum(QuestionType::class)],
             'points' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'position' => ['nullable', 'integer', 'min:1'],
+            'reference_answer' => ['nullable', 'string', 'max:5000'],
         ];
     }
 }

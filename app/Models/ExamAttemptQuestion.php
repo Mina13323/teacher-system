@@ -16,6 +16,7 @@ class ExamAttemptQuestion extends Model
         'attempt_id',
         'question_id',
         'question_text',
+        'question_type',
         'points',
         'position',
     ];

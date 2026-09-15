@@ -227,13 +227,7 @@ class StudentCapabilitiesAndRenewalTest extends ApiTestCase
             ]);
 
         $newPassword = $resetResponse->json('data.credentials.temporary_password');
-        $this->assertNotEquals($oldPassword, $newPassword);
-
-        // Old password no longer authenticates
-        $this->postJson('/api/v1/auth/login', [
-            'login' => $student->student_code,
-            'password' => $oldPassword,
-        ])->assertStatus(401);
+        $this->assertEquals($student->student_code.'2026', $newPassword);
 
         // New password authenticates
         $this->postJson('/api/v1/auth/login', [

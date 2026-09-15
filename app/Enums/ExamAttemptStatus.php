@@ -9,6 +9,8 @@ enum ExamAttemptStatus: string
 {
     case InProgress = 'in_progress';
     case Submitted = 'submitted';
+    case Grading = 'grading';
+    case Published = 'published';
     case Expired = 'expired';
 
     public function isInProgress(): bool
@@ -19,6 +21,16 @@ enum ExamAttemptStatus: string
     public function isSubmitted(): bool
     {
         return $this === self::Submitted;
+    }
+
+    public function isGrading(): bool
+    {
+        return $this === self::Grading;
+    }
+
+    public function isPublished(): bool
+    {
+        return $this === self::Published;
     }
 
     public function isExpired(): bool

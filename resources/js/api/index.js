@@ -83,6 +83,9 @@ export const teacher = {
     deactivateStudent: (id) => api.patch(`/teacher/students/${id}/deactivate`),
     resetStudentPassword: (id, payload) => api.post(`/teacher/students/${id}/reset-password`, payload),
     resetStudentCredentials: (id) => api.post(`/teacher/students/${id}/reset-credentials`),
+    suspendStudent: (id, payload) => api.post(`/teacher/students/${id}/suspend`, payload),
+    restoreStudent: (id, payload) => api.post(`/teacher/students/${id}/restore`, payload),
+    allowStudentImmediately: (id, payload) => api.post(`/teacher/students/${id}/allow-immediately`, payload),
     renewStudent: (id, payload) => api.post(`/teacher/students/${id}/renew`, payload),
     notifyStudent: (id, payload) => api.post(`/teacher/students/${id}/notify`, payload),
 
@@ -135,6 +138,8 @@ export const teacher = {
     deleteExam: (id) => api.delete(`/teacher/exams/${id}`),
     examAttempts: (examId, params) => api.get(`/teacher/exams/${examId}/attempts`, params),
     attempt: (id) => api.get(`/teacher/attempts/${id}`),
+    gradeEssay: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, payload),
+    publishGrades: (attemptId) => api.post(`/teacher/attempts/${attemptId}/publish-grades`),
 
     questions: (examId) => api.get(`/teacher/exams/${examId}/questions`),
     question: (id) => api.get(`/teacher/questions/${id}`),

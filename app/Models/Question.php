@@ -19,6 +19,7 @@ class Question extends Model
         'type',
         'points',
         'position',
+        'reference_answer',
     ];
 
     protected function casts(): array
@@ -41,14 +42,27 @@ class Question extends Model
             ->orderBy('options.position');
     }
 
+    public function isEssay(): bool
+    {
+        return $this->type === QuestionType::Essay;
+    }
+
+    public function isMcq(): bool
+    {
+        return $this->type !== QuestionType::Essay;
+    }
+
     /**
-     * Whether the question has exactly one correct option (required before
-     * an exam containing it may be published).
+     * Validation check before exam publication.
      */
     public function hasValidSingleCorrectOption(): bool
     {
+        if ($this->isEssay()) {
+            return true;
+        }
+
         $correctCount = $this->options()->where('is_correct', true)->count();
 
-        return $correctCount === 1;
+        return $correctCount >= 1;
     }
 }

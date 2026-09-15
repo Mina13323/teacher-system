@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\QuestionType;
 use App\Models\Question;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Enum;
 
 class UpdateQuestionRequest extends FormRequest
 {
@@ -23,9 +24,10 @@ class UpdateQuestionRequest extends FormRequest
     {
         return [
             'question_text' => ['sometimes', 'string'],
-            'type' => ['sometimes', 'string', 'in:'.QuestionType::SingleChoice->value],
+            'type' => ['sometimes', new Enum(QuestionType::class)],
             'points' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'position' => ['sometimes', 'integer', 'min:1'],
+            'reference_answer' => ['sometimes', 'nullable', 'string', 'max:5000'],
         ];
     }
 }

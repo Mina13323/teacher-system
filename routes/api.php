@@ -117,6 +117,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
+    Route::post('attempts/{attempt}/grade-essay', [TeacherAttemptController::class, 'gradeEssay']);
+    Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
 
     // Exam integrity configuration + attempt integrity review
     Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
@@ -156,6 +158,9 @@ Route::prefix('teacher')->middleware(['auth:sanctum'])->group(function () {
     Route::put('students/{student}', [TeacherStudentController::class, 'update']);
     Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [TeacherStudentController::class, 'deactivate']);
+    Route::post('students/{student}/suspend', [TeacherStudentController::class, 'suspend']);
+    Route::post('students/{student}/restore', [TeacherStudentController::class, 'restore']);
+    Route::post('students/{student}/allow-immediately', [TeacherStudentController::class, 'allowImmediately']);
     Route::post('students/{student}/reset-password', [TeacherStudentController::class, 'resetPassword']);
     Route::post('students/{student}/reset-credentials', [TeacherStudentController::class, 'resetCredentials']);
     Route::post('students/{student}/renew', [TeacherStudentController::class, 'renew']);

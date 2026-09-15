@@ -2,6 +2,7 @@
 
 namespace App\Actions\Auth;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use App\Enums\StudentAccessStatus;
 use App\Enums\StudentCapabilityPreset;
@@ -15,16 +16,6 @@ use Spatie\Permission\Models\Role;
 /**
  * Creates a student account on behalf of a teacher (or assistant/admin) in a
  * school workflow LMS.
- *
- * Deterministically generates:
- *  - student_code (e.g. ELM-1001)
- *  - system email/login if not manually specified
- *  - cryptographically random temporary password if not manually specified
- *
- * Configures:
- *  - academic year / grade
- *  - student capabilities (lessons, exams, competitions)
- *  - initial active monthly access period
  */
 class CreateStudentAction
 {
@@ -42,21 +33,36 @@ class CreateStudentAction
         // Determine student code
         $studentCode = $data['student_code'] ?? $this->credentialsService->generateStudentCode();
 
-        // Determine email
+        // Determine email ({student_code}@student.com template)
         $email = ! empty($data['email'])
             ? mb_strtolower(trim($data['email']))
             : $this->credentialsService->generateEmail($name, $studentCode);
-
-        // Determine password
-        $rawPassword = ! empty($data['password'])
-            ? $data['password']
-            : $this->credentialsService->generateTemporaryPassword();
 
         // Determine academic year
         $academicYear = $data['academic_year'] ?? AcademicYear::Secondary1->value;
         if ($academicYear instanceof AcademicYear) {
             $academicYear = $academicYear->value;
         }
+
+        // Determine academic subject
+        $academicSubject = $data['academic_subject'] ?? null;
+        if ($academicSubject instanceof AcademicSubject) {
+            $academicSubject = $academicSubject->value;
+        }
+
+        if ($academicYear === AcademicYear::Secondary3->value) {
+            if (! in_array($academicSubject, [AcademicSubject::History->value, AcademicSubject::Geography->value, AcademicSubject::Both->value], true)) {
+                $academicSubject = AcademicSubject::Both->value;
+            }
+        } else {
+            $academicSubject = AcademicSubject::General->value;
+        }
+
+        // Determine password ({student_code}2026 template)
+        $isGeneratedPassword = empty($data['password']);
+        $rawPassword = ! $isGeneratedPassword
+            ? $data['password']
+            : $this->credentialsService->generateTemporaryPassword($studentCode, '2026');
 
         // Determine access capabilities
         $canLessons = true;
@@ -93,10 +99,12 @@ class CreateStudentAction
             'phone' => $data['phone'] ?? null,
             'bio' => $data['bio'] ?? null,
             'academic_year' => $academicYear,
+            'academic_subject' => $academicSubject,
             'can_access_lessons' => $canLessons,
             'can_take_exams' => $canExams,
             'can_join_competitions' => $canCompetitions,
             'is_active' => true,
+            'must_change_password' => $isGeneratedPassword,
             'created_by' => $creator->isAssistant()
                 ? ($creator->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $creator->getKey()))
                 : $creator->getKey(),

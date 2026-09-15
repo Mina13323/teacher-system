@@ -9,7 +9,10 @@ use App\Actions\Auth\SetAccountActiveStateAction;
 use App\Actions\Auth\UpdateAccountEmailAction;
 use App\Actions\Auth\UpdateUserAccountAction;
 use App\Actions\Enrollment\EnrollStudentToCourseAction;
+use App\Actions\Student\AllowStudentImmediatelyAction;
 use App\Actions\Student\RenewStudentAccessAction;
+use App\Actions\Student\RestoreStudentAction;
+use App\Actions\Student\SuspendStudentAction;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateStudentRequest;
@@ -23,9 +26,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Student account management for a teacher-owned LMS. A teacher may only manage
- * students they created or students enrolled in courses they own (enforced by
- * StudentPolicy). Admins may manage any student.
+ * Student account management for a teacher-owned LMS. A teacher or authorized assistant
+ * may manage students they created or students enrolled in courses they own.
  */
 class StudentController extends Controller
 {
@@ -37,6 +39,9 @@ class StudentController extends Controller
         private readonly ResetUserPasswordAction $resetPassword,
         private readonly RegenerateStudentCredentialsAction $regenerateCredentials,
         private readonly RenewStudentAccessAction $renewAccess,
+        private readonly SuspendStudentAction $suspendStudent,
+        private readonly RestoreStudentAction $restoreStudent,
+        private readonly AllowStudentImmediatelyAction $allowStudentImmediately,
         private readonly EnrollStudentToCourseAction $enrollStudent,
     ) {
     }
@@ -74,12 +79,37 @@ class StudentController extends Controller
             $query->where('academic_year', $request->string('academic_year')->toString());
         }
 
+        if ($request->filled('academic_subject')) {
+            $query->where('academic_subject', $request->string('academic_subject')->toString());
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->trim()->toString();
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('student_code', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
         if ($request->filled('status')) {
             $status = $request->string('status')->toString();
             if ($status === 'active') {
                 $query->where('is_active', true);
-            } elseif ($status === 'inactive' || $status === 'suspended') {
+            } elseif ($status === 'suspended' || $status === 'inactive') {
                 $query->where('is_active', false);
+            }
+        }
+
+        if ($request->filled('capability')) {
+            $cap = $request->string('capability')->toString();
+            if ($cap === 'lessons') {
+                $query->where('can_access_lessons', true);
+            } elseif ($cap === 'exams') {
+                $query->where('can_take_exams', true);
+            } elseif ($cap === 'competitions') {
+                $query->where('can_join_competitions', true);
             }
         }
 
@@ -92,7 +122,6 @@ class StudentController extends Controller
     {
         $student = $this->createStudent->execute($request->user(), $request->validated());
 
-        // Optionally enroll into the courses selected.
         foreach ($request->validated('course_ids', []) as $courseId) {
             $course = Course::find($courseId);
             if ($course && ($request->user()->can('manageEnrollments', $course) || $request->user()->can('update', $course))) {
@@ -155,6 +184,56 @@ class StudentController extends Controller
         return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student deactivated.');
     }
 
+    public function suspend(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('manage', $student);
+
+        $reason = $request->input('reason') ?: $request->input('notes');
+        $updatedStudent = $this->suspendStudent->execute($request->user(), $student, $reason);
+
+        return $this->success(
+            new StudentResource($updatedStudent),
+            'Student suspended successfully.'
+        );
+    }
+
+    public function restore(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('manage', $student);
+
+        $months = $request->integer('months', 1);
+        $notes = $request->input('notes');
+
+        $updatedStudent = $this->restoreStudent->execute($request->user(), $student, $months, $notes);
+
+        return $this->success(
+            new StudentResource($updatedStudent),
+            'Student restored successfully.'
+        );
+    }
+
+    public function allowImmediately(Request $request, User $student): JsonResponse
+    {
+        $this->authorize('manage', $student);
+
+        $months = $request->integer('months', 1);
+        $amount = $request->filled('amount') ? (float) $request->input('amount') : null;
+        $notes = $request->input('notes');
+
+        $updatedStudent = $this->allowStudentImmediately->execute(
+            $request->user(),
+            $student,
+            $months,
+            $amount,
+            $notes
+        );
+
+        return $this->success(
+            new StudentResource($updatedStudent),
+            'Student access allowed immediately.'
+        );
+    }
+
     public function resetPassword(ResetPasswordRequest $request, User $student): JsonResponse
     {
         $this->authorize('manage', $student);
@@ -164,9 +243,6 @@ class StudentController extends Controller
         return $this->success(null, 'Student password reset.');
     }
 
-    /**
-     * Regenerate credentials (student code + secure random password) with one-time reveal.
-     */
     public function resetCredentials(Request $request, User $student): JsonResponse
     {
         $this->authorize('manage', $student);
@@ -179,9 +255,6 @@ class StudentController extends Controller
         ], 'Student credentials regenerated successfully.');
     }
 
-    /**
-     * Staff renewal decision: Keep Active or Suspend Access.
-     */
     public function renew(Request $request, User $student): JsonResponse
     {
         $this->authorize('manage', $student);

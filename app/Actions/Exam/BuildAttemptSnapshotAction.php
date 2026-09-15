@@ -12,10 +12,6 @@ use Illuminate\Support\Facades\DB;
  * Freezes the structure of an exam into an attempt-specific snapshot so that
  * later teacher edits (renaming a question, changing an option, changing the
  * answer key, reordering) do not alter an in-progress attempt.
- *
- * Randomization is applied a single time here, at attempt start. The stored
- * `position` reflects the order presented to the student; it is never
- * re-randomized on later reads.
  */
 class BuildAttemptSnapshotAction
 {
@@ -37,6 +33,7 @@ class BuildAttemptSnapshotAction
                     'attempt_id' => $attempt->getKey(),
                     'question_id' => $question->getKey(),
                     'question_text' => $question->question_text,
+                    'question_type' => $question->type?->value ?? 'single_choice',
                     'points' => $question->points,
                     'position' => $index + 1,
                 ]);

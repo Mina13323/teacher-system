@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Enum;
@@ -35,6 +36,7 @@ class UpdateStudentRequest extends FormRequest
             'bio' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'avatar' => ['sometimes', 'nullable', 'string', 'max:255'],
             'academic_year' => ['sometimes', 'nullable', new Enum(AcademicYear::class)],
+            'academic_subject' => ['sometimes', 'nullable', new Enum(AcademicSubject::class)],
             'can_access_lessons' => ['sometimes', 'nullable', 'boolean'],
             'can_take_exams' => ['sometimes', 'nullable', 'boolean'],
             'can_join_competitions' => ['sometimes', 'nullable', 'boolean'],

@@ -31,6 +31,7 @@ class QuestionController extends Controller
             'type' => $request->validated('type', QuestionType::SingleChoice->value),
             'points' => $request->validated('points', 1),
             'position' => $request->validated('position', (int) $exam->questions()->max('position') + 1),
+            'reference_answer' => $request->validated('reference_answer'),
         ]);
 
         return $this->success(

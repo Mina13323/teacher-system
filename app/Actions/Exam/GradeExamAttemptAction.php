@@ -3,16 +3,15 @@
 namespace App\Actions\Exam;
 
 use App\Enums\ExamAttemptStatus;
+use App\Enums\QuestionType;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptOption;
-use App\Notifications\ResultAvailableNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Grades an attempt by persisting the result computed against the frozen
- * snapshot, populating each answer's `is_correct` and `points_earned`, then
- * marking the attempt as submitted and stamping `submitted_at`.
+ * Auto-grades MCQ questions upon submission and sets status to submitted or grading.
+ * Scores are draft until published by staff.
  */
 class GradeExamAttemptAction
 {
@@ -34,6 +33,10 @@ class GradeExamAttemptAction
             $answersByQuestion = $attempt->answers->keyBy('question_id');
 
             foreach ($attempt->attemptQuestions as $attemptQuestion) {
+                if ($attemptQuestion->question_type === QuestionType::Essay->value) {
+                    continue;
+                }
+
                 /** @var ExamAnswer|null $answer */
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
 
@@ -56,18 +59,22 @@ class GradeExamAttemptAction
 
             $attempt->score = $result['earned_points'];
             $attempt->percentage = $result['percentage'];
-            $attempt->status = ExamAttemptStatus::Submitted->value;
+            $attempt->status = $result['requires_manual_grading']
+                ? ExamAttemptStatus::Grading->value
+                : ExamAttemptStatus::Submitted->value;
             $attempt->active_key = null;
-            $attempt->submitted_at = $now;
+            if (! $attempt->submitted_at) {
+                $attempt->submitted_at = $now;
+            }
+
+            if (! $result['requires_manual_grading'] && ($attempt->exam?->show_result_immediately ?? true)) {
+                $attempt->grades_published_at = $now;
+                if ($attempt->student) {
+                    $attempt->student->notify(new \App\Notifications\ResultAvailableNotification($attempt));
+                }
+            }
 
             $attempt->save();
-
-            // Notify the student of the available result. This runs only when the
-            // attempt is genuinely graded (GradeExamAttemptAction is never re-run
-            // for an already-submitted attempt), so a re-submit never duplicates
-            // the notification. The notification contains no score or answer key.
-            $attempt->loadMissing('student');
-            $attempt->student?->notify(new ResultAvailableNotification($attempt));
         });
 
         return $attempt->fresh();

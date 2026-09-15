@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use App\Enums\StudentAccessStatus;
 use App\Enums\StudentCapabilityPreset;
@@ -33,7 +34,9 @@ class User extends Authenticatable
         'bio',
         'student_code',
         'academic_year',
+        'academic_subject',
         'is_active',
+        'must_change_password',
         'can_access_lessons',
         'can_take_exams',
         'can_join_competitions',
@@ -62,10 +65,12 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
             'can_access_lessons' => 'boolean',
             'can_take_exams' => 'boolean',
             'can_join_competitions' => 'boolean',
             'academic_year' => AcademicYear::class,
+            'academic_subject' => AcademicSubject::class,
             'profile_completed_at' => 'datetime',
         ];
     }

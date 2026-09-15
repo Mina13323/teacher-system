@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,6 +35,7 @@ class CreateStudentRequest extends FormRequest
             'bio' => ['nullable', 'string', 'max:2000'],
             'student_code' => ['nullable', 'string', 'max:64', 'unique:users,student_code'],
             'academic_year' => ['nullable', new Enum(AcademicYear::class)],
+            'academic_subject' => ['nullable', new Enum(AcademicSubject::class)],
             'can_access_lessons' => ['nullable', 'boolean'],
             'can_take_exams' => ['nullable', 'boolean'],
             'can_join_competitions' => ['nullable', 'boolean'],

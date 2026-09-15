@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AcademicSubject;
 use App\Enums\AcademicYear;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -22,6 +23,10 @@ class UserResource extends JsonResource
             ? $this->academic_year
             : ($this->academic_year ? AcademicYear::tryFrom($this->academic_year) : null);
 
+        $academicSubjectEnum = $this->academic_subject instanceof AcademicSubject
+            ? $this->academic_subject
+            : ($this->academic_subject ? AcademicSubject::tryFrom($this->academic_subject) : null);
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -30,7 +35,10 @@ class UserResource extends JsonResource
             'avatar' => $this->avatar,
             'academic_year' => $academicYearEnum?->value,
             'academic_year_label' => $academicYearEnum?->label(),
+            'academic_subject' => $academicSubjectEnum?->value ?? 'general',
+            'academic_subject_label' => $academicSubjectEnum?->label(),
             'is_active' => $this->is_active,
+            'must_change_password' => (bool) $this->must_change_password,
             'can_access_lessons' => $this->canAccessLessons(),
             'can_take_exams' => $this->canTakeExams(),
             'can_join_competitions' => $this->canJoinCompetitions(),
