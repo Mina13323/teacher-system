@@ -85,11 +85,11 @@ const yearOptions = computed(() => [
 ]);
 
 const subjectOptions = computed(() => [
-    { value: 'all', label: 'جميع المواد / الشعب' },
-    { value: 'history', label: 'التاريخ' },
-    { value: 'geography', label: 'الجغرافيا' },
-    { value: 'both', label: 'التاريخ والجغرافيا' },
-    { value: 'general', label: 'عام' },
+    { value: 'all', label: t('subject.all') },
+    { value: 'history', label: t('subject.history') },
+    { value: 'geography', label: t('subject.geography') },
+    { value: 'both', label: t('subject.both') },
+    { value: 'general', label: t('subject.general') },
 ]);
 
 const statusOptions = computed(() => [
@@ -222,7 +222,7 @@ async function submitAllowImmediately() {
             amount: allowAmount.value ? Number(allowAmount.value) : null,
             notes: allowNotes.value,
         });
-        toast.success('تم السماح بالدخول فوراً بنجاح');
+        toast.success(t('students.allowNowToast'));
         allowTarget.value = null;
         load(page.value);
     } catch (e) {
@@ -290,7 +290,11 @@ async function submitResetCredentials() {
 function copyAllCredentials() {
     if (!revealCredentials.value) return;
     const creds = revealCredentials.value;
-    const text = `منصة المصري - بيانات الدخول الجديدة:\nكود الطالب: ${creds.student_code}\nاسم المستخدم: ${creds.login || creds.email}\nكلمة المرور: ${creds.temporary_password}`;
+    const text = t('students.credentialsShareText', {
+        code: creds.student_code,
+        login: creds.login || creds.email,
+        password: creds.temporary_password,
+    });
     navigator.clipboard.writeText(text);
     copied.value = true;
     toast.success(t('students.copied') || 'تم النسخ');
@@ -334,18 +338,18 @@ async function submitNotify() {
 
 function getSubjectLabel(s) {
     if (s.academic_subject_label) return s.academic_subject_label;
-    if (s.academic_subject === 'history') return 'التاريخ';
-    if (s.academic_subject === 'geography') return 'الجغرافيا';
-    if (s.academic_subject === 'both') return 'التاريخ والجغرافيا';
-    return 'عام';
+    if (s.academic_subject === 'history') return t('subject.history');
+    if (s.academic_subject === 'geography') return t('subject.geography');
+    if (s.academic_subject === 'both') return t('subject.both');
+    return t('subject.general');
 }
 
 function getYearLabel(s) {
     if (s.academic_year_label) return s.academic_year_label;
-    if (s.academic_year === 'secondary_1') return '1st Secondary (الصف الأول الثانوي)';
-    if (s.academic_year === 'secondary_2') return '2nd Secondary (الصف الثاني الثانوي)';
-    if (s.academic_year === 'secondary_3') return '3rd Secondary (الصف الثالث الثانوي)';
-    return s.academic_year || 'غير محدد';
+    if (s.academic_year === 'secondary_1') return t('students.secondary1');
+    if (s.academic_year === 'secondary_2') return t('students.secondary2');
+    if (s.academic_year === 'secondary_3') return t('students.secondary3');
+    return s.academic_year || t('students.yearUnspecified');
 }
 
 onMounted(() => load(1));
@@ -357,11 +361,11 @@ onMounted(() => load(1));
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between no-print">
             <div>
                 <h1 class="text-2xl font-bold text-ink-900">{{ $t('nav.students') || 'إدارة الطلاب' }}</h1>
-                <p class="text-sm text-ink-500">إدارة حسابات الطلاب، الصف الدراسي، الشعبة، وحالات الاشتراك والدخول</p>
+                <p class="text-sm text-ink-500">{{ $t('students.pageSubtitle') }}</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <AppButton v-if="selectedIds.length" variant="outline" size="sm" @click="openPrintSelected">
-                    🖨️ طباعة كروت المحدد ({{ selectedIds.length }})
+                    🖨️ {{ $t('students.printSelected') }} ({{ selectedIds.length }})
                 </AppButton>
                 <router-link :to="`/${authRole}/students/new`">
                     <AppButton>{{ $t('students.addStudent') || 'إضافة طالب جديد' }}</AppButton>
@@ -398,11 +402,11 @@ onMounted(() => load(1));
             <div v-else class="divide-y divide-ink-100">
                 <div class="flex items-center gap-3 bg-ink-50 px-5 py-2.5 text-xs font-semibold text-ink-500 uppercase tracking-wider">
                     <input type="checkbox" class="h-4 w-4 rounded border-ink-300 text-terracotta-600" :checked="isAllSelected" @change="toggleSelectAll" />
-                    <span class="w-24">كود الطالب</span>
-                    <span class="flex-1">اسم الطالب والبيانات</span>
-                    <span class="w-32 hidden md:inline">الصف والشعبة</span>
-                    <span class="w-28">حالة الدخول</span>
-                    <span class="w-auto text-left">الإجراءات</span>
+                    <span class="w-24">{{ $t('students.colCode') }}</span>
+                    <span class="flex-1">{{ $t('students.colStudent') }}</span>
+                    <span class="w-32 hidden md:inline">{{ $t('students.colYearTrack') }}</span>
+                    <span class="w-28">{{ $t('students.colAccess') }}</span>
+                    <span class="w-auto text-left">{{ $t('students.colActions') }}</span>
                 </div>
 
                 <div v-for="s in filtered" :key="s.id" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
@@ -446,22 +450,22 @@ onMounted(() => load(1));
                             <AppButton variant="ghost" size="sm">{{ $t('common.edit') }}</AppButton>
                         </router-link>
                         <AppButton variant="outline" size="sm" class="text-emerald-700 border-emerald-300 hover:bg-emerald-50" @click="openAllowImmediately(s)">
-                            ⚡ السماح فوراً
+                            ⚡ {{ $t('students.actionAllowNow') }}
                         </AppButton>
                         <AppButton v-if="s.access_status === 'suspended' || !s.is_active" variant="outline" size="sm" class="text-blue-700 border-blue-300 hover:bg-blue-50" @click="openRestore(s)">
-                            ♻️ استعادة
+                            ♻️ {{ $t('students.actionRestore') }}
                         </AppButton>
                         <AppButton v-else variant="ghost" size="sm" class="text-amber-700 hover:bg-amber-50" @click="openSuspend(s)">
-                            🚫 إيقاف
+                            🚫 {{ $t('students.actionSuspend') }}
                         </AppButton>
                         <AppButton variant="ghost" size="sm" @click="openRenew(s)">
-                            🔄 تجديد
+                            🔄 {{ $t('students.actionRenew') }}
                         </AppButton>
                         <AppButton variant="ghost" size="sm" @click="openResetCredentials(s)">
-                            🔑 كلمة السر
+                            🔑 {{ $t('students.actionPassword') }}
                         </AppButton>
                         <AppButton variant="ghost" size="sm" @click="openPrintSingle(s)">
-                            🖨️ طباعة
+                            🖨️ {{ $t('students.actionPrint') }}
                         </AppButton>
                     </div>
                 </div>
@@ -472,42 +476,42 @@ onMounted(() => load(1));
         </div>
 
         <!-- Suspend Modal -->
-        <AppModal :open="Boolean(suspendTarget)" :title="'إيقاف حساب الطالب: ' + (suspendTarget?.name || '')" size="sm" @close="suspendTarget = null">
+        <AppModal :open="Boolean(suspendTarget)" :title="$t('students.suspendModalTitle') + (suspendTarget?.name || '')" size="sm" @close="suspendTarget = null">
             <div class="space-y-4">
-                <p class="text-sm text-ink-700">سيتم تجميد وصول الطالب إلى المنصة مؤقتاً مع الحفاظ على كافة بياناته وسجلاته بالكامل.</p>
-                <AppTextarea v-model="suspendReason" label="سبب الإيقاف (اختياري)" id="suspend-reason" :rows="2" placeholder="مثال: تأخر في السداد الشهري..." />
+                <p class="text-sm text-ink-700">{{ $t('students.suspendBody') }}</p>
+                <AppTextarea v-model="suspendReason" :label="$t('students.suspendReasonLabel')" id="suspend-reason" :rows="2" :placeholder="$t('students.suspendReasonPlaceholder')" />
                 <div class="flex justify-end gap-2 pt-2">
-                    <AppButton variant="outline" :disabled="suspendBusy" @click="suspendTarget = null">إلغاء</AppButton>
-                    <AppButton variant="danger" :loading="suspendBusy" @click="submitSuspend">تأكيد الإيقاف</AppButton>
+                    <AppButton variant="outline" :disabled="suspendBusy" @click="suspendTarget = null">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton variant="danger" :loading="suspendBusy" @click="submitSuspend">{{ $t('students.suspendConfirm') }}</AppButton>
                 </div>
             </div>
         </AppModal>
 
         <!-- Restore Modal -->
-        <AppModal :open="Boolean(restoreTarget)" :title="'استعادة الطالب: ' + (restoreTarget?.name || '')" size="sm" @close="restoreTarget = null">
+        <AppModal :open="Boolean(restoreTarget)" :title="$t('students.restoreModalTitle') + (restoreTarget?.name || '')" size="sm" @close="restoreTarget = null">
             <div class="space-y-4">
-                <p class="text-sm text-ink-700">سيتم تفعيل حساب الطالب مجدداً وتحديد فترة وصول نشطة.</p>
-                <AppInput v-model="restoreMonths" type="number" min="1" max="12" label="مدة تمديد الوصول (بالأشهر)" id="restore-months" />
-                <AppTextarea v-model="restoreNotes" label="ملاحظات الاستعادة" id="restore-notes" :rows="2" />
+                <p class="text-sm text-ink-700">{{ $t('students.restoreBody') }}</p>
+                <AppInput v-model="restoreMonths" type="number" min="1" max="12" :label="$t('students.restoreMonthsLabel')" id="restore-months" />
+                <AppTextarea v-model="restoreNotes" :label="$t('students.restoreNotesLabel')" id="restore-notes" :rows="2" />
                 <div class="flex justify-end gap-2 pt-2">
-                    <AppButton variant="outline" :disabled="restoreBusy" @click="restoreTarget = null">إلغاء</AppButton>
-                    <AppButton :loading="restoreBusy" @click="submitRestore">تأكيد الاستعادة</AppButton>
+                    <AppButton variant="outline" :disabled="restoreBusy" @click="restoreTarget = null">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton :loading="restoreBusy" @click="submitRestore">{{ $t('students.restoreConfirm') }}</AppButton>
                 </div>
             </div>
         </AppModal>
 
         <!-- Allow Immediately Modal -->
-        <AppModal :open="Boolean(allowTarget)" :title="'السماح بالدخول فوراً: ' + (allowTarget?.name || '')" size="sm" @close="allowTarget = null">
+        <AppModal :open="Boolean(allowTarget)" :title="$t('students.allowModalTitle') + (allowTarget?.name || '')" size="sm" @close="allowTarget = null">
             <div class="space-y-4">
-                <p class="text-sm text-ink-700">سيتم إلغاء أي حالة إيقاف وتفعيل دخول الطالب فوراً مع إنشاء أو تمديد فترته النشطة.</p>
+                <p class="text-sm text-ink-700">{{ $t('students.allowBody') }}</p>
                 <div class="grid gap-3 sm:grid-cols-2">
-                    <AppInput v-model="allowMonths" type="number" min="1" max="12" label="عدد الأشهر" id="allow-months" />
-                    <AppInput v-model="allowAmount" type="number" min="0" step="0.5" label="المبلغ (اختياري)" id="allow-amount" placeholder="مثال: 200" />
+                    <AppInput v-model="allowMonths" type="number" min="1" max="12" :label="$t('students.allowMonthsLabel')" id="allow-months" />
+                    <AppInput v-model="allowAmount" type="number" min="0" step="0.5" :label="$t('students.allowAmountLabel')" id="allow-amount" :placeholder="$t('students.allowAmountPlaceholder')" />
                 </div>
-                <AppTextarea v-model="allowNotes" label="ملاحظات الموافقة" id="allow-notes" :rows="2" />
+                <AppTextarea v-model="allowNotes" :label="$t('students.allowNotesLabel')" id="allow-notes" :rows="2" />
                 <div class="flex justify-end gap-2 pt-2">
-                    <AppButton variant="outline" :disabled="allowBusy" @click="allowTarget = null">إلغاء</AppButton>
-                    <AppButton :loading="allowBusy" @click="submitAllowImmediately">تأكيد وتفعيل الدخول</AppButton>
+                    <AppButton variant="outline" :disabled="allowBusy" @click="allowTarget = null">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton :loading="allowBusy" @click="submitAllowImmediately">{{ $t('students.allowConfirm') }}</AppButton>
                 </div>
             </div>
         </AppModal>
@@ -542,7 +546,7 @@ onMounted(() => load(1));
                     <AppInput v-model="renewAmount" type="number" min="0" step="0.5" :label="$t('students.renewalAmount')" id="renew-amount" placeholder="e.g. 200" />
                 </div>
 
-                <AppTextarea v-model="renewNotes" :label="$t('students.renewalNotes')" id="renew-notes" :rows="2" placeholder="ملاحظات الدفع أو سبب الإيقاف..." />
+                <AppTextarea v-model="renewNotes" :label="$t('students.renewalNotes')" id="renew-notes" :rows="2" :placeholder="$t('students.renewalNotesPlaceholder')" />
 
                 <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="renewBusy" @click="renewTarget = null">{{ $t('common.cancel') }}</AppButton>
@@ -555,10 +559,10 @@ onMounted(() => load(1));
         <AppModal :open="Boolean(resetTarget)" :title="$t('students.resetCredentials')" size="sm" @close="resetTarget = null">
             <div class="space-y-4">
                 <p class="text-sm text-ink-700">
-                    هل أنت متأكد من إعادة توليد بيانات الدخول للطالب <strong>{{ resetTarget?.name }}</strong>؟
+                    {{ $t('students.regenConfirm') }} <strong>{{ resetTarget?.name }}</strong>?
                 </p>
                 <p class="text-xs text-rose-600">
-                    سيتم إنشاء كلمة مرور مؤقتة جديدة بالنموذج الرسمية (كود الطالب + 2026) وإنهاء أية جلسات نشطة.
+                    {{ $t('students.regenBodyCredentials') }}
                 </p>
                 <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="resetBusy" @click="resetTarget = null">{{ $t('common.cancel') }}</AppButton>
@@ -581,11 +585,11 @@ onMounted(() => load(1));
                         <span class="text-lg font-mono font-bold text-terracotta-700 select-all">{{ revealCredentials.student_code }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">اسم المستخدم / البريد الإلكتروني</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('students.usernameOrEmail') }}</span>
                         <span class="text-sm font-mono text-ink-900 select-all">{{ revealCredentials.login || revealCredentials.email }}</span>
                     </div>
                     <div>
-                        <span class="text-xs font-medium text-ink-500 block">كلمة المرور الرسمية الأولى</span>
+                        <span class="text-xs font-medium text-ink-500 block">{{ $t('students.firstPasswordLabel') }}</span>
                         <span class="text-base font-mono font-bold text-ink-900 bg-white border border-ink-200 px-3 py-1.5 rounded-lg inline-block select-all">{{ revealCredentials.temporary_password }}</span>
                     </div>
                 </div>
@@ -601,11 +605,11 @@ onMounted(() => load(1));
         </AppModal>
 
         <!-- Print Credentials Modal / Sheet -->
-        <AppModal :open="Boolean(printStudents.length)" title="طباعة بطاقة دخول الطالب" size="lg" @close="printStudents = []">
+        <AppModal :open="Boolean(printStudents.length)" :title="$t('students.printModalTitle')" size="lg" @close="printStudents = []">
             <div class="space-y-6">
                 <div class="no-print flex justify-between items-center border-b pb-3">
-                    <p class="text-sm text-ink-600">اضغط على زر الطباعة لطباعة كارت الدخول للطالب بالهوية الرسمية لمنصة المصري.</p>
-                    <AppButton @click="triggerPrint">🖨️ طباعة الآن</AppButton>
+                    <p class="text-sm text-ink-600">{{ $t('students.printModalBody') }}</p>
+                    <AppButton @click="triggerPrint">🖨️ {{ $t('students.printNow') }}</AppButton>
                 </div>
 
                 <!-- Printable Content Area -->
@@ -616,39 +620,39 @@ onMounted(() => load(1));
                         class="print-card border-2 border-ink-900 rounded-xl p-6 bg-white max-w-md mx-auto space-y-4 shadow-sm page-break-after"
                     >
                         <div class="text-center border-b-2 border-ink-900 pb-3">
-                            <h2 class="text-2xl font-black text-ink-900 tracking-wide">El Masry - المصري</h2>
-                            <p class="text-sm font-bold text-ink-600 mt-1">بيانات دخول الطالب</p>
+                            <h2 class="text-2xl font-black text-ink-900 tracking-wide">{{ $t('students.printBrand') }}</h2>
+                            <p class="text-sm font-bold text-ink-600 mt-1">{{ $t('students.printCredentialsTitle') }}</p>
                         </div>
 
                         <div class="space-y-2 text-sm font-medium text-ink-900 dir-rtl">
                             <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">اسم الطالب:</span>
+                                <span class="text-ink-500">{{ $t('students.printNameLabel') }}</span>
                                 <span class="font-bold text-ink-900">{{ st.name }}</span>
                             </div>
                             <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">Student Code:</span>
+                                <span class="text-ink-500">{{ $t('students.printCodeLabel') }}</span>
                                 <span class="font-mono font-bold text-terracotta-700">{{ st.student_code }}</span>
                             </div>
                             <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">Email:</span>
+                                <span class="text-ink-500">{{ $t('students.printEmailLabel') }}</span>
                                 <span class="font-mono">{{ st.email }}</span>
                             </div>
                             <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">Password:</span>
+                                <span class="text-ink-500">{{ $t('students.printPasswordLabel') }}</span>
                                 <span class="font-mono font-bold text-ink-900">
-                                    {{ st.student_code ? `${st.student_code}2026` : 'Password unavailable — Reset Credentials' }}
+                                    {{ st.student_code ? `${st.student_code}2026` : $t('students.printPasswordUnavailable') }}
                                 </span>
                             </div>
                             <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">Academic Year:</span>
+                                <span class="text-ink-500">{{ $t('students.printYearLabel') }}</span>
                                 <span>{{ getYearLabel(st) }}</span>
                             </div>
                             <div v-if="st.academic_year === 'secondary_3'" class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">Subject:</span>
+                                <span class="text-ink-500">{{ $t('students.printSubjectLabel') }}</span>
                                 <span class="font-bold text-terracotta-700">{{ getSubjectLabel(st) }}</span>
                             </div>
                             <div v-if="st.phone" class="flex justify-between py-1">
-                                <span class="text-ink-500">Phone:</span>
+                                <span class="text-ink-500">{{ $t('students.printPhoneLabel') }}</span>
                                 <span>{{ st.phone }}</span>
                             </div>
                         </div>

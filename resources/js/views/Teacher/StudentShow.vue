@@ -358,7 +358,7 @@ onMounted(async () => {
         <AppModal :open="showResetConfirm" :title="$t('students.resetCredentials')" size="sm" @close="showResetConfirm = false">
             <div class="space-y-4">
                 <p class="text-sm text-ink-700">
-                    {{ $t('students.regenConfirm') }} <strong>{{ student?.name }}</strong>؟
+                    {{ $t('students.regenConfirm') }} <strong>{{ student?.name }}</strong>?
                 </p>
                 <p class="text-xs text-rose-600">
                     {{ $t('students.regenConfirmBody') }}
