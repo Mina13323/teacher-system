@@ -21,6 +21,31 @@ function iconFor(type) {
     return 'bell';
 }
 
+/**
+ * Where a notification should take the user when it points at something
+ * actionable. Returning null leaves it display-only.
+ *
+ * Keyed on subject_type rather than the display type so a notification can be
+ * re-worded without breaking its link. These three are all sent to students,
+ * so the student routes are the right target; the view is shared with staff,
+ * but staff never receive them.
+ */
+function linkFor(n) {
+    const id = n.data?.subject_id;
+    if (!id) return null;
+
+    switch (n.data?.subject_type) {
+        case 'exam_attempt':
+            return `/student/attempts/${id}`;
+        case 'exam':
+            return `/student/exams/${id}`;
+        case 'competition':
+            return `/student/competitions/${id}`;
+        default:
+            return null;
+    }
+}
+
 async function read(id) {
     await store.markRead(id).catch((e) => toast.error(e.message));
 }
@@ -73,6 +98,15 @@ onMounted(() => store.fetch());
                     </div>
                     <p class="mt-0.5 text-sm text-ink-600" dir="auto">{{ n.data?.message }}</p>
                     <p class="mt-1 text-xs text-ink-400">{{ new Date(n.created_at).toLocaleString() }}</p>
+                    <router-link
+                        v-if="linkFor(n)"
+                        :to="linkFor(n)"
+                        class="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-terracotta-600 hover:text-terracotta-700"
+                        @click="!n.read_at && read(n.id)"
+                    >
+                        {{ $t('notifications.openLink') }}
+                        <Icon name="arrowRight" :size="14" />
+                    </router-link>
                 </div>
                 <button v-if="!n.read_at" type="button" class="shrink-0 self-center rounded-lg px-3 py-1.5 text-xs font-medium text-terracotta-600 hover:bg-terracotta-50" @click="read(n.id)">
                     {{ $t('notifications.markRead') }}

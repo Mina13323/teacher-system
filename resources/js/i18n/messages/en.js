@@ -972,6 +972,7 @@ export default {
         subtitle: 'Stay updated on your courses, exams and competitions.',
         empty: 'No notifications yet.',
         emptyHint: 'When something happens in your courses, it will show up here.',
+        openLink: 'View',
         markAllRead: 'Mark all read',
         markRead: 'Mark read',
         unread: 'Unread',

@@ -93,6 +93,13 @@ const { loading, error, run: load } = useAsync(async () => {
     const a = await student.attempt(route.params.id);
     attempt.value = normalizeAttempt(a);
     initEssayAnswers();
+    // A student returning to an attempt they already finished (reload, or the
+    // link from a result notification) must see the outcome. Previously the
+    // result panel was only ever populated by the submit response, so it sat
+    // on "under review" forever — even after the grades were published.
+    if (a && a.status !== 'in_progress' && a.status !== 'expired') {
+        result.value = a;
+    }
     startTimer();
     beginMonitoring();
 });

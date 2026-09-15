@@ -301,4 +301,62 @@ class ExamGradingAuthorizationTest extends ApiTestCase
 
         Notification::assertSentToTimes($student, ResultAvailableNotification::class, 1);
     }
+
+    /**
+     * Regression: the student attempt endpoint used to carry no score at all.
+     * A student who returned to a graded attempt — by reloading, or by
+     * following the "result available" notification — saw a permanent "under
+     * review" message even though the grades had been published.
+     */
+    public function test_published_result_is_visible_on_the_student_attempt_endpoint(): void
+    {
+        [$student, , $attempt] = $this->makeSubmittedEssayAttempt(published: true);
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.grades_published', true)
+            ->assertJsonPath('data.percentage', 100)
+            ->assertJsonPath('data.passed', true);
+    }
+
+    /**
+     * The other half of the gate: an unpublished score must stay absent from
+     * the same endpoint, not merely null.
+     */
+    public function test_unpublished_result_stays_absent_from_the_student_attempt_endpoint(): void
+    {
+        [$student, , $attempt] = $this->makeSubmittedEssayAttempt();
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.grades_published', false);
+
+        $content = $response->getContent();
+        $this->assertStringNotContainsString('"percentage"', $content);
+        $this->assertStringNotContainsString('"passed"', $content);
+    }
+
+    /**
+     * The notification that tells a student their result is ready must carry
+     * enough to reach it, otherwise the message dead-ends.
+     */
+    public function test_result_notification_points_at_the_attempt(): void
+    {
+        [$student, , $attempt] = $this->makeSubmittedEssayAttempt();
+        $teacher = $attempt->exam->creator;
+
+        Notification::fake();
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/attempts/{$attempt->id}/publish-grades")
+            ->assertStatus(200);
+
+        Notification::assertSentTo(
+            $student,
+            fn (ResultAvailableNotification $n) => $n->toArray($student)['subject_id'] === $attempt->id
+                && $n->toArray($student)['subject_type'] === 'exam_attempt'
+        );
+    }
 }

@@ -49,6 +49,20 @@ class ExamAttemptResource extends JsonResource
                 'detect_keyboard_shortcuts' => (bool) $this->integritySetting->detect_keyboard_shortcuts,
                 'terminate_on_violation' => (bool) $this->integritySetting->terminate_on_violation,
             ]),
+            // The published result. Strictly gated on grades_published_at, the
+            // same gate ExamResultResource and the attempts list use, so an
+            // unpublished score still never reaches the student. Without these
+            // fields a student returning to a graded attempt saw a permanent
+            // "under review" message, because this endpoint carried no score.
+            'grades_published' => $this->grades_published_at !== null,
+            'score' => $this->when($this->grades_published_at !== null, $this->score),
+            'percentage' => $this->when($this->grades_published_at !== null, $this->percentage),
+            'passed' => $this->when(
+                $this->grades_published_at !== null
+                    && $this->percentage !== null
+                    && $this->pass_percentage !== null,
+                fn () => $this->percentage >= $this->pass_percentage
+            ),
             'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
 
