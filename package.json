@@ -2,7 +2,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
+        "build": "node scripts/build-frontend.mjs",
+        "build:vite": "vite build",
         "dev": "vite"
     },
     "devDependencies": {
