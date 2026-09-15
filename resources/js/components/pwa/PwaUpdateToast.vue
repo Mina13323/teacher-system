@@ -21,15 +21,15 @@ function update() {
 
         <div class="flex-1">
             <h4 class="text-sm font-bold text-white">
-                New Version Available
+                {{ $t('pwa.updateTitle') }}
             </h4>
             <p class="text-xs text-ink-300">
-                Update to get the latest features and performance enhancements.
+                {{ $t('pwa.updateBody') }}
             </p>
         </div>
 
         <AppButton size="sm" variant="primary" @click="update">
-            Update App
+            {{ $t('pwa.updateCta') }}
         </AppButton>
     </div>
 </template>

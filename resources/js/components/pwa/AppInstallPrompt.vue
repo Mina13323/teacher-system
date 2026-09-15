@@ -6,7 +6,6 @@ import AppButton from '@/components/ui/AppButton.vue';
 
 const { isInstallable, isInstalled, isIos, promptInstall } = usePwa();
 const isDismissed = ref(false);
-const showIosHint = ref(false);
 
 onMounted(() => {
     if (sessionStorage.getItem('pwa_prompt_dismissed') === '1') {
@@ -41,34 +40,37 @@ async function handleInstall() {
             <div class="flex-1">
                 <div class="flex items-center justify-between">
                     <h4 class="font-display text-sm font-bold text-ink-900">
-                        Install El Masry
+                        {{ $t('pwa.installTitle') }}
                     </h4>
                     <button
                         type="button"
                         @click="dismiss"
                         class="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600"
-                        aria-label="Dismiss install prompt"
+                        :aria-label="$t('pwa.dismissInstall')"
                     >
                         <Icon name="x" :size="16" />
                     </button>
                 </div>
 
                 <p class="mt-1 text-xs text-ink-600">
-                    Install on your device for standalone access and fast performance.
+                    {{ $t('pwa.installBody') }}
                 </p>
 
                 <!-- iOS Safari specific Share Hint -->
                 <div v-if="isIos" class="mt-2.5 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
-                    To install on iPhone/iPad: Tap <span class="font-bold">Share</span> → <span class="font-bold">Add to Home Screen</span>.
+                    {{ $t('pwa.installIosPrefix') }}
+                    <span class="font-bold">{{ $t('pwa.installIosShare') }}</span>
+                    {{ $t('pwa.installIosArrow') }}
+                    <span class="font-bold">{{ $t('pwa.installIosAdd') }}</span>.
                 </div>
 
                 <div v-else class="mt-3 flex items-center gap-2">
                     <AppButton size="sm" variant="primary" @click="handleInstall">
                         <Icon name="sparkles" :size="14" class="me-1" />
-                        Install App
+                        {{ $t('pwa.installCta') }}
                     </AppButton>
                     <button type="button" @click="dismiss" class="px-2 py-1 text-xs font-medium text-ink-500 hover:text-ink-800">
-                        Maybe later
+                        {{ $t('pwa.installLater') }}
                     </button>
                 </div>
             </div>
