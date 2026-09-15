@@ -116,6 +116,7 @@ return [
         'detect_tab_switch' => true,
         'detect_window_blur' => true,
         'detect_keyboard_shortcuts' => false,
+        'terminate_on_violation' => true,
     ],
 
     /*

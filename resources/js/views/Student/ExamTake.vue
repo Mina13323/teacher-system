@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
+import { useExamIntegrity } from '@/composables/useExamIntegrity';
 import { student } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useNotificationsStore } from '@/stores/notifications';
@@ -37,11 +38,63 @@ let timer = null;
  */
 const blocked = computed(() => expired.value || attempt.value?.status === 'expired' || attempt.value?.status === 'submitted');
 
+/**
+ * Proctoring. The rules come from the server's frozen per-attempt settings, so
+ * the student cannot switch monitoring off from the client. When the exam is
+ * configured to terminate on a violation, leaving the tab, backgrounding the
+ * app or dropping fullscreen submits the attempt immediately.
+ */
+const integrityRules = computed(() => attempt.value?.integrity_rules || null);
+const terminatedByIntegrity = ref(false);
+
+const {
+    start: startMonitoring,
+    stop: stopMonitoring,
+    requestFullscreen,
+    fullscreenActive,
+    violations,
+} = useExamIntegrity({
+    getAttemptId: () => attempt.value?.id ?? null,
+    getRules: () => integrityRules.value,
+    onTerminate: (type) => terminateExam(type),
+});
+
+/**
+ * Ends the attempt because the student left the exam screen. Goes through the
+ * same submit endpoint as a normal submission, so the server grades it and
+ * applies the usual expiry rules — the client never decides the outcome.
+ */
+async function terminateExam(type) {
+    if (!attempt.value || attempt.value.status !== 'in_progress') return;
+
+    stopMonitoring();
+    terminatedByIntegrity.value = true;
+    submittingBusy.value = true;
+
+    try {
+        const res = await student.submit(attempt.value.id);
+        result.value = res;
+        notifications.refreshUnread();
+        toast.error(t('examTake.integrityTerminated'));
+    } catch (e) {
+        expired.value = true;
+        await handleRejection(e);
+    } finally {
+        submittingBusy.value = false;
+    }
+}
+
+function beginMonitoring() {
+    if (attempt.value?.status !== 'in_progress') return;
+    startMonitoring();
+}
+
 const { loading, error, run: load } = useAsync(async () => {
     const a = await student.attempt(route.params.id);
     attempt.value = normalizeAttempt(a);
     initEssayAnswers();
     startTimer();
+    beginMonitoring();
 });
 
 function normalizeAttempt(a) {
@@ -114,6 +167,7 @@ async function handleRejection(e) {
             attempt.value = fresh;
             if (fresh?.status === 'expired' || fresh?.status === 'submitted') {
                 expired.value = true;
+                stopMonitoring();
                 toast.error(t('examTake.expiredBlocked'));
                 return;
             }
@@ -153,6 +207,7 @@ async function saveEssay(qId) {
 async function submit() {
     submitting.value = true;
     confirmOpen.value = false;
+    stopMonitoring();
     try {
         const res = await student.submit(attempt.value.id);
         result.value = res;
@@ -166,6 +221,7 @@ async function submit() {
 
 async function onTimeUp() {
     submittingBusy.value = true;
+    stopMonitoring();
     try {
         const res = await student.submit(attempt.value.id);
         result.value = res;
@@ -203,6 +259,11 @@ onBeforeUnmount(() => clearInterval(timer));
                     {{ result ? $t('examTake.submitted') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
                 </h1>
 
+                <div v-if="terminatedByIntegrity" class="rounded-xl border border-rose-200 bg-rose-50 p-4 max-w-md mx-auto text-sm text-rose-800">
+                    <p class="font-bold mb-1">🛑 {{ $t('examTake.integrityTerminatedTitle') }}</p>
+                    <p class="text-xs leading-relaxed">{{ $t('examTake.integrityTerminatedBody') }}</p>
+                </div>
+
                 <!-- Score if published -->
                 <div v-if="result?.grades_published || (result?.score !== null && result?.score !== undefined)">
                     <p class="text-ink-600">
@@ -239,6 +300,33 @@ onBeforeUnmount(() => clearInterval(timer));
             <!-- Server-authoritative expiration notice: blocks all mutation -->
             <div v-if="blocked" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700" role="alert">
                 ⏱ {{ $t('examTake.expiredBlocked') }}
+            </div>
+
+            <!-- Proctoring notice: states what is monitored and what ends the attempt -->
+            <div
+                v-if="integrityRules && !blocked"
+                class="rounded-xl border px-4 py-3 text-sm"
+                :class="integrityRules.terminate_on_violation ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'"
+                role="status"
+            >
+                <p class="font-semibold mb-1">🛡 {{ $t('examTake.integrityNoticeTitle') }}</p>
+                <p class="text-xs leading-relaxed">
+                    {{ integrityRules.terminate_on_violation ? $t('examTake.integrityStrictBody') : $t('examTake.integrityMonitorBody') }}
+                </p>
+                <p v-if="violations" class="text-xs mt-1.5 font-semibold">
+                    ⚠️ {{ $t('examTake.integrityViolationCount', { n: violations }) }}
+                </p>
+            </div>
+
+            <!-- Fullscreen requirement -->
+            <div
+                v-if="integrityRules?.fullscreen_required && !fullscreenActive && !blocked"
+                class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 flex flex-wrap items-center justify-between gap-2"
+            >
+                <span>{{ $t('examTake.fullscreenRequired') }}</span>
+                <AppButton size="sm" variant="danger" @click="requestFullscreen()">
+                    {{ $t('examTake.enterFullscreen') }}
+                </AppButton>
             </div>
 
             <!-- Question Card -->

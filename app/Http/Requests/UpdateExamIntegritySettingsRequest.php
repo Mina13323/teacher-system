@@ -28,6 +28,7 @@ class UpdateExamIntegritySettingsRequest extends FormRequest
             'detect_tab_switch' => ['sometimes', 'boolean'],
             'detect_window_blur' => ['sometimes', 'boolean'],
             'detect_keyboard_shortcuts' => ['sometimes', 'boolean'],
+            'terminate_on_violation' => ['sometimes', 'boolean'],
         ];
     }
 }

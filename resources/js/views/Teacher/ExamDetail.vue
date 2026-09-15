@@ -82,6 +82,7 @@ const integrityFields = computed(() => [
     { k: 'detect_tab_switch', label: t('exams.detectTab') },
     { k: 'detect_window_blur', label: t('exams.detectBlur') },
     { k: 'detect_keyboard_shortcuts', label: t('exams.detectShortcuts') },
+    { k: 'terminate_on_violation', label: t('exams.terminateOnViolation') },
 ]);
 
 // ---- Publish/archive/delete ----
@@ -278,7 +279,7 @@ async function runDelete(kind) {
 
 // ---- Integrity settings ----
 const intModal = ref(false);
-const intForm = reactive({ fullscreen_required: true, prevent_copy: true, prevent_paste: true, prevent_context_menu: true, detect_tab_switch: true, detect_window_blur: true, detect_keyboard_shortcuts: true });
+const intForm = reactive({ fullscreen_required: true, prevent_copy: true, prevent_paste: true, prevent_context_menu: true, detect_tab_switch: true, detect_window_blur: true, detect_keyboard_shortcuts: true, terminate_on_violation: true });
 const intBusy = ref(false);
 function openIntegrity() {
     const settings = integrity.value?.settings;
@@ -290,6 +291,7 @@ function openIntegrity() {
         intForm.detect_tab_switch = Boolean(settings.detect_tab_switch);
         intForm.detect_window_blur = Boolean(settings.detect_window_blur);
         intForm.detect_keyboard_shortcuts = Boolean(settings.detect_keyboard_shortcuts);
+        intForm.terminate_on_violation = Boolean(settings.terminate_on_violation);
     }
     intModal.value = true;
 }

@@ -27,7 +27,7 @@ class AttemptController extends Controller
 
         $this->expireAttempt->execute($attempt);
 
-        $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions']);
+        $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions', 'integritySetting']);
 
         return $this->success(new ExamAttemptResource($attempt), 'Attempt retrieved.');
     }

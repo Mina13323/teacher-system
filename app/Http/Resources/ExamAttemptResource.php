@@ -33,6 +33,22 @@ class ExamAttemptResource extends JsonResource
             'submitted_at' => $this->submitted_at?->toISOString(),
             'expires_at' => $this->expires_at?->toISOString(),
             'duration_minutes' => $this->whenLoaded('exam', fn () => $this->exam->duration_minutes),
+            // The frozen proctoring rules for THIS attempt. Configuration only:
+            // no risk score, no severity, no integrity status and no review
+            // history — those stay server-side. The client needs the flags to
+            // know which protections to apply and whether a violation ends the
+            // attempt, and telling the student what is monitored is both a
+            // deterrent and a fairness requirement.
+            'integrity_rules' => $this->whenLoaded('integritySetting', fn () => [
+                'fullscreen_required' => (bool) $this->integritySetting->fullscreen_required,
+                'prevent_copy' => (bool) $this->integritySetting->prevent_copy,
+                'prevent_paste' => (bool) $this->integritySetting->prevent_paste,
+                'prevent_context_menu' => (bool) $this->integritySetting->prevent_context_menu,
+                'detect_tab_switch' => (bool) $this->integritySetting->detect_tab_switch,
+                'detect_window_blur' => (bool) $this->integritySetting->detect_window_blur,
+                'detect_keyboard_shortcuts' => (bool) $this->integritySetting->detect_keyboard_shortcuts,
+                'terminate_on_violation' => (bool) $this->integritySetting->terminate_on_violation,
+            ]),
             'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
 

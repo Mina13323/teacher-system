@@ -24,6 +24,7 @@ class ExamAttemptIntegritySetting extends Model
         'detect_tab_switch',
         'detect_window_blur',
         'detect_keyboard_shortcuts',
+        'terminate_on_violation',
     ];
 
     protected function casts(): array
@@ -36,6 +37,7 @@ class ExamAttemptIntegritySetting extends Model
             'detect_tab_switch' => 'boolean',
             'detect_window_blur' => 'boolean',
             'detect_keyboard_shortcuts' => 'boolean',
+            'terminate_on_violation' => 'boolean',
         ];
     }
 

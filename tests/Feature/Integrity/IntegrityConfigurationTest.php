@@ -98,6 +98,52 @@ class IntegrityConfigurationTest extends ApiTestCase
         ]);
     }
 
+    public function test_terminate_on_violation_defaults_to_on(): void
+    {
+        [, , , , $attempt] = $this->enrolledStudentWithStartedAttempt();
+
+        $this->assertDatabaseHas('exam_attempt_integrity_settings', [
+            'attempt_id' => $attempt->id,
+            'terminate_on_violation' => true,
+        ]);
+    }
+
+    public function test_terminate_on_violation_can_be_disabled_and_is_frozen(): void
+    {
+        [, , , , $attempt] = $this->enrolledStudentWithStartedAttempt(
+            [],
+            ['terminate_on_violation' => false]
+        );
+
+        $this->assertDatabaseHas('exam_attempt_integrity_settings', [
+            'attempt_id' => $attempt->id,
+            'terminate_on_violation' => false,
+        ]);
+    }
+
+    /**
+     * The student client needs the frozen rules to know which protections to
+     * apply and whether a violation ends the attempt — but the risk side of
+     * integrity must stay server-side.
+     */
+    public function test_student_attempt_exposes_frozen_rules_but_no_risk_data(): void
+    {
+        [$student, , , , $attempt] = $this->enrolledStudentWithStartedAttempt();
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.integrity_rules.detect_tab_switch', true)
+            ->assertJsonPath('data.integrity_rules.terminate_on_violation', true);
+
+        $content = $response->getContent();
+        $this->assertStringNotContainsString('risk_score', $content);
+        $this->assertStringNotContainsString('integrity_status', $content);
+        $this->assertStringNotContainsString('risk_points', $content);
+        $this->assertStringNotContainsString('severity', $content);
+        $this->assertStringNotContainsString('reviews', $content);
+    }
+
     public function test_getting_settings_returns_defaults_when_unconfigured(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);

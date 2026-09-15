@@ -33,6 +33,7 @@ class CreateAttemptIntegritySettingsAction
             'detect_tab_switch',
             'detect_window_blur',
             'detect_keyboard_shortcuts',
+            'terminate_on_violation',
         ]) ?? $this->riskConfig->defaults();
 
         return ExamAttemptIntegritySetting::create(array_merge(
