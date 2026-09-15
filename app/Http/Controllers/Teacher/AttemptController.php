@@ -37,13 +37,19 @@ class AttemptController extends Controller
             'feedback' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $updatedAttempt = $this->gradeEssayAnswer->execute(
-            $request->user(),
-            $attempt,
-            (int) $validated['question_id'],
-            (int) $validated['awarded_points'],
-            $validated['feedback'] ?? null
-        );
+        try {
+            $updatedAttempt = $this->gradeEssayAnswer->execute(
+                $request->user(),
+                $attempt,
+                (int) $validated['question_id'],
+                (int) $validated['awarded_points'],
+                $validated['feedback'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'awarded_points' => [$e->getMessage()],
+            ]);
+        }
 
         return $this->success(
             new ExamAttemptDetailResource($updatedAttempt->load(['exam', 'student', 'answers'])),

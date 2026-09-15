@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Exam;
 
+use App\Enums\EnrollmentStatus;
 use App\Enums\ExamAttemptStatus;
 use App\Enums\ExamStatus;
 use App\Enums\QuestionType;
 use App\Enums\UserRole;
+use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
@@ -54,6 +56,13 @@ class ExamGradingAuthorizationTest extends ApiTestCase
         ]);
 
         $student = $this->createUserWithRole($ownerRole, ['can_take_exams' => true]);
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => EnrollmentStatus::Active->value,
+            'enrolled_at' => now(),
+        ]);
 
         $attempt = ExamAttempt::factory()->create([
             'exam_id' => $exam->id,
