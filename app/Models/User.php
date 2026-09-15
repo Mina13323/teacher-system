@@ -155,6 +155,108 @@ class User extends Authenticatable
         return $this->hasRole(UserRole::Assistant->value);
     }
 
+    /**
+     * Operational staff of the LMS: the Teacher and their Assistants.
+     *
+     * Teacher and Assistant are operationally equivalent — an Assistant is not
+     * a restricted staff role. Admin is deliberately NOT included here because
+     * admin authority is granted globally by each Policy::before(); keeping it
+     * out of isStaff() preserves the distinction between "works the LMS" and
+     * "administers the system".
+     */
+    public function isStaff(): bool
+    {
+        return $this->isTeacher() || $this->isAssistant();
+    }
+
+    /**
+     * Whether this user is operational staff for resources owned by $ownerId.
+     *
+     * A Teacher owns their resources directly. An Assistant is staff of the
+     * Teacher who created their account (users.created_by) and so operates on
+     * that Teacher's resources with the same powers, without having to be the
+     * creator of each individual record.
+     *
+     * Single-LMS fallback: an Assistant created directly by an admin (or with
+     * no creator) has no teacher link, so it is treated as staff of the LMS and
+     * may operate on resources owned by any Teacher. Resources owned by another
+     * Assistant or by a Student are never in scope, which keeps a future
+     * multi-teacher boundary meaningful.
+     */
+    public function isStaffFor(?int $ownerId): bool
+    {
+        if ($ownerId === null) {
+            return false;
+        }
+
+        if ($this->isTeacher()) {
+            return (int) $this->getKey() === (int) $ownerId;
+        }
+
+        if (! $this->isAssistant()) {
+            return false;
+        }
+
+        // The usual case: the Teacher created both the resource and this
+        // assistant account, so both carry the same created_by.
+        if ($this->created_by !== null && (int) $this->created_by === (int) $ownerId) {
+            return true;
+        }
+
+        // No teacher link — fall back to the single-LMS rule. Memoized per
+        // owner id, since policies evaluate many resources per request.
+        $cacheKey = (string) $ownerId;
+
+        if (! array_key_exists($cacheKey, $this->staffScopeCache)) {
+            $this->staffScopeCache[$cacheKey] = User::query()
+                ->whereKey($ownerId)
+                ->role(UserRole::Teacher->value)
+                ->exists();
+        }
+
+        return $this->staffScopeCache[$cacheKey];
+    }
+
+    /**
+     * The owner ids whose operational resources this user may list, or null
+     * when unrestricted (admin).
+     *
+     * A Teacher sees their own resources. An Assistant sees the resources of
+     * the Teacher who employs them, so the listing matches what the policies
+     * already let them manage — otherwise the backend would authorize an
+     * Assistant to edit a course that never appears in their list.
+     *
+     * @return list<int>|null
+     */
+    public function staffOwnerIds(): ?array
+    {
+        if ($this->isAdmin()) {
+            return null;
+        }
+
+        if ($this->isTeacher()) {
+            return [(int) $this->getKey()];
+        }
+
+        if (! $this->isAssistant()) {
+            return [];
+        }
+
+        if ($this->created_by !== null) {
+            return [(int) $this->created_by];
+        }
+
+        // No teacher link: the Assistant is staff of the LMS as a whole.
+        return User::query()
+            ->role(UserRole::Teacher->value)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /** @var array<string, bool> */
+    private array $staffScopeCache = [];
+
     public function isStudent(): bool
     {
         return $this->hasRole(UserRole::Student->value);

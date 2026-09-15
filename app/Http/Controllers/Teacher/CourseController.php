@@ -35,8 +35,14 @@ class CourseController extends Controller
             ->with('creator')
             ->withCount(['units', 'lessons', 'enrollments']);
 
-        if (! $request->user()->isAdmin()) {
-            $query->where('created_by', $request->user()->getKey());
+        // Scope to the resources this staff member operates on, not merely the
+        // ones they personally created: an Assistant works the Teacher's
+        // courses and must see them, or the policy would authorize edits to
+        // courses that never appear in the list.
+        $ownerIds = $request->user()->staffOwnerIds();
+
+        if ($ownerIds !== null) {
+            $query->whereIn('created_by', $ownerIds);
         }
 
         return $this->success(

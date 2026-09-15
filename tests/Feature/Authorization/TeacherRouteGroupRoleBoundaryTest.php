@@ -31,7 +31,8 @@ class TeacherRouteGroupRoleBoundaryTest extends ApiTestCase
     /**
      * GET /teacher/assistants additionally requires the assistants.view
      * permission via AssistantController::authorizeStaff(). Assistants are
-     * deliberately NOT granted it (see PermissionSeeder::assignAssistantPermissions).
+     * deliberately NOT granted it — see
+     * PermissionSeeder::STAFF_ADMINISTRATION_PERMISSIONS.
      */
     private const ASSISTANT_MANAGEMENT_ENDPOINT = '/api/v1/teacher/assistants';
 

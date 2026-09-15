@@ -77,6 +77,6 @@ class LessonPolicy
 
     private function canManageCourse(User $user, Course $course): bool
     {
-        return $user->hasRole('admin') || $course->isOwnedBy($user);
+        return $course->isManagedBy($user);
     }
 }

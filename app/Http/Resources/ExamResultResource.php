@@ -20,7 +20,7 @@ class ExamResultResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $isStaff = $request->user()?->isTeacher() || $request->user()?->isAssistant() || $request->user()?->isAdmin();
+        $isStaff = $request->user()?->isStaff() || $request->user()?->isAdmin();
         $isPublished = $this->grades_published_at !== null || $isStaff;
 
         return [

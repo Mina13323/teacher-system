@@ -61,11 +61,15 @@ class BuildTeacherOverviewAction
 
     protected function scopedCourses(User $user): Collection
     {
-        if ($user->isAdmin()) {
+        $ownerIds = $user->staffOwnerIds();
+
+        if ($ownerIds === null) {
             return Course::query()->get();
         }
 
-        return Course::query()->where('created_by', $user->getKey())->get();
+        // An Assistant's analytics cover the Teacher's courses, matching what
+        // the policies let them see.
+        return Course::query()->whereIn('created_by', $ownerIds)->get();
     }
 
     protected function scopedEnrollments(User $user, Collection $courseIds): Collection

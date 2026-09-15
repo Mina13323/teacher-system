@@ -45,6 +45,6 @@ class LessonDetailResource extends JsonResource
             return false;
         }
 
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->isStaff() || $user->isAdmin();
     }
 }

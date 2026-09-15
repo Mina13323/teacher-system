@@ -18,7 +18,7 @@ class CompetitionPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->isStaff();
     }
 
     public function view(User $user, Competition $competition): bool
@@ -28,7 +28,7 @@ class CompetitionPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasRole('teacher') && $user->hasPermissionTo('competitions.manage');
+        return $user->isStaff() && $user->hasPermissionTo('competitions.manage');
     }
 
     public function update(User $user, Competition $competition): bool
@@ -52,6 +52,6 @@ class CompetitionPolicy
 
     private function canManage(User $user, Competition $competition): bool
     {
-        return $user->hasRole('admin') || $competition->isOwnedBy($user);
+        return $competition->isManagedBy($user);
     }
 }

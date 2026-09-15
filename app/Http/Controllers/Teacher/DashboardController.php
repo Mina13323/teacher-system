@@ -17,8 +17,11 @@ class DashboardController extends Controller
 
         $query = Course::query()->withCount(['units', 'lessons', 'enrollments']);
 
-        if (! $request->user()->isAdmin()) {
-            $query->where('created_by', $request->user()->getKey());
+        // Staff scoping so an Assistant's dashboard reflects the Teacher's LMS.
+        $ownerIds = $request->user()->staffOwnerIds();
+
+        if ($ownerIds !== null) {
+            $query->whereIn('created_by', $ownerIds);
         }
 
         $stats = $query->get();

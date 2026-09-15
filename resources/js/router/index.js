@@ -33,7 +33,12 @@ const routes = [
     {
         path: '/teacher',
         component: () => import('@/layouts/TeacherLayout.vue'),
-        meta: { roles: ['teacher', 'admin'] },
+        // Assistant is operationally equivalent to Teacher and reuses these
+        // views directly. They contain ~30 hard-coded `/teacher/...` links, so
+        // mirroring them under /assistant would break every one; admitting the
+        // role here gives full capability parity with zero component
+        // duplication. /assistant remains the Assistant's own shell.
+        meta: { roles: ['teacher', 'admin', 'assistant'] },
         children: [
             { path: '', name: 'teacher.dashboard', component: () => import('@/views/Teacher/Dashboard.vue') },
             { path: 'students', name: 'teacher.students', component: () => import('@/views/Teacher/Students.vue') },

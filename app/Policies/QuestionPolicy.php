@@ -18,7 +18,7 @@ class QuestionPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->isStaff();
     }
 
     public function view(User $user, Question $question): bool

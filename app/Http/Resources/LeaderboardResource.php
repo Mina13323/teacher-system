@@ -33,7 +33,7 @@ class LeaderboardResource extends JsonResource
             'completion_time' => $this->completion_time,
         ];
 
-        if ($this->isTeacherView($request)) {
+        if ($this->isStaffView($request)) {
             $data['participant_id'] = $this->participant_id;
             $data['qualified'] = $this->qualified;
         }
@@ -41,7 +41,7 @@ class LeaderboardResource extends JsonResource
         return $data;
     }
 
-    private function isTeacherView(Request $request): bool
+    private function isStaffView(Request $request): bool
     {
         $user = $request->user();
 
@@ -49,6 +49,6 @@ class LeaderboardResource extends JsonResource
             return false;
         }
 
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->isStaff() || $user->isAdmin();
     }
 }

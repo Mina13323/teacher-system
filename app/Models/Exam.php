@@ -130,7 +130,7 @@ class Exam extends Model
      */
     public function isManagedBy(User $user): bool
     {
-        return $this->isOwnedBy($user) || $this->course->isOwnedBy($user);
+        return $this->isOwnedBy($user) || $this->course->isManagedBy($user);
     }
 
     public function scopePublished($query)

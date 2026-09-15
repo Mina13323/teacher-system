@@ -30,10 +30,9 @@ class StudentPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('teacher')
-            || $user->hasRole('admin')
-            || $user->hasRole('assistant')
-            || $user->hasPermissionTo('students.view');
+        // Teacher and Assistant are operationally equivalent; admin is granted
+        // by before(). The explicit permission keeps non-staff grants possible.
+        return $user->isStaff() || $user->hasPermissionTo('students.view');
     }
 
     public function view(User $user, User $student): bool

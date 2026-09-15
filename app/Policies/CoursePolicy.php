@@ -21,33 +21,28 @@ class CoursePolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('teacher')
-            || $user->hasRole('admin');
+        // Teacher and Assistant are operationally equivalent. Admin is granted
+        // by before().
+        return $user->isStaff();
     }
 
     /**
-     * Viewing a specific course is restricted to its owner or an admin. A staff
-     * assistant may also view a course (read-only) so they can see the enrolled
-     * students it maps to; they never receive teacher-only staff resource fields
-     * (e.g. provider metadata) or editing powers. Public browsing of published
-     * courses bypasses this policy.
+     * Viewing a specific course is restricted to the operational staff of the
+     * course's owner (the Teacher, or an Assistant working for that Teacher).
+     * Public browsing of published courses bypasses this policy.
      */
     public function view(User $user, Course $course): bool
     {
-        return $user->hasRole('assistant') || $this->canManage($user, $course);
+        return $this->canManage($user, $course);
     }
 
     /**
-     * Enrollment management on a course. Separate from `update` (course structure
-     * editing): a staff assistant may enrol/unenrol students on behalf of the main
-     * teacher without being able to edit the course, its units, lessons, videos or
-     * exams.
+     * Enrollment management on a course. Assistants have the same operational
+     * reach as the Teacher they work for.
      */
     public function manageEnrollments(User $user, Course $course): bool
     {
-        return $user->hasRole('admin')
-            || $user->hasRole('assistant')
-            || $course->isOwnedBy($user);
+        return $this->canManage($user, $course);
     }
 
     public function create(User $user): bool
@@ -66,10 +61,11 @@ class CoursePolicy
     }
 
     /**
-     * A user may manage a course only if they own it or are an admin.
+     * A user may manage a course if they own it, or are an Assistant employed
+     * by its owner. Admin is granted by before().
      */
     private function canManage(User $user, Course $course): bool
     {
-        return $user->hasRole('admin') || $course->isOwnedBy($user);
+        return $course->isManagedBy($user);
     }
 }

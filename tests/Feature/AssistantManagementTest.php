@@ -2,18 +2,24 @@
 
 namespace Tests\Feature;
 
-use App\Enums\CourseStatus;
+use App\Enums\ExamStatus;
 use App\Enums\UserRole;
 use App\Models\Course;
+use App\Models\Exam;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Feature\ApiTestCase;
 
 /**
- * Assistant role boundary. An assistant is operational staff under the main
- * teacher: they may create/manage student accounts and enrol them, but they
- * must never gain teacher powers (content, exams, competitions, analytics,
- * integrity, system management).
+ * Assistant role boundary.
+ *
+ * An Assistant is operationally EQUIVALENT to the Teacher — not a restricted
+ * staff role. They share the same operational LMS capability set: students,
+ * enrollments, courses, units, lessons, videos, exams, questions, options,
+ * attempts, grading, grade publication, competitions, analytics and integrity.
+ *
+ * The only capability held by Teacher/Admin and not Assistant is staff identity
+ * administration (teachers.* and assistants.*): minting a new staff account or
+ * resetting a staff member's password is account administration, not LMS work.
  */
 class AssistantManagementTest extends ApiTestCase
 {
@@ -22,9 +28,16 @@ class AssistantManagementTest extends ApiTestCase
         return $this->createUserWithRole(UserRole::Teacher);
     }
 
-    private function assistant(): User
+    /**
+     * An assistant employed by the given teacher. Passing a teacher sets
+     * created_by, which is how the staff-scoping rules recognise the assistant
+     * as operating on that teacher's resources.
+     */
+    private function assistant(?User $employer = null): User
     {
-        return $this->createUserWithRole(UserRole::Assistant);
+        return $this->createUserWithRole(UserRole::Assistant, [
+            'created_by' => $employer?->id,
+        ]);
     }
 
     private function publishedCourse(User $teacher): Course
@@ -92,41 +105,82 @@ class AssistantManagementTest extends ApiTestCase
             ->assertJsonPath('success', true);
     }
 
-    public function test_assistant_cannot_list_or_manage_courses(): void
-    {
-        $assistant = $this->assistant();
-
-        $this->actingAs($assistant, 'sanctum')
-            ->getJson('/api/v1/teacher/courses')
-            ->assertStatus(403);
-
-        $this->actingAs($assistant, 'sanctum')
-            ->postJson('/api/v1/teacher/courses', [
-                'title' => 'Hacked Course',
-            ])
-            ->assertStatus(403);
-    }
-
-    public function test_assistant_cannot_access_analytics_or_exam_management(): void
+    /**
+     * Parity: the assistant lists and creates courses exactly as the teacher
+     * does. The listing must also actually CONTAIN the teacher's courses — a
+     * policy pass with an empty result set would be parity in name only.
+     */
+    public function test_assistant_can_list_and_create_courses(): void
     {
         $teacher = $this->teacher();
         $course = $this->publishedCourse($teacher);
-        $assistant = $this->assistant();
+        $assistant = $this->assistant($teacher);
+
+        $this->actingAs($assistant, 'sanctum')
+            ->getJson('/api/v1/teacher/courses')
+            ->assertStatus(200)
+            ->assertJsonPath('data.0.id', $course->id);
+
+        $this->actingAs($assistant, 'sanctum')
+            ->postJson('/api/v1/teacher/courses', [
+                'title' => 'Assistant Created Course',
+            ])
+            ->assertStatus(201)
+            ->assertJsonPath('success', true);
+    }
+
+    /**
+     * Parity: analytics, exam management, units/lessons and competitions are
+     * all operational LMS capabilities available to the assistant.
+     */
+    public function test_assistant_can_access_analytics_and_exam_management(): void
+    {
+        $teacher = $this->teacher();
+        $course = $this->publishedCourse($teacher);
+        $assistant = $this->assistant($teacher);
 
         $this->actingAs($assistant, 'sanctum')
             ->getJson('/api/v1/teacher/analytics/overview')
-            ->assertStatus(403);
+            ->assertStatus(200);
 
         $this->actingAs($assistant, 'sanctum')
             ->getJson("/api/v1/teacher/courses/{$course->id}/exams")
-            ->assertStatus(403);
+            ->assertStatus(200);
 
         $this->actingAs($assistant, 'sanctum')
-            ->postJson('/api/v1/teacher/competitions', [
-                'title' => 'Hacked',
-                'exam_id' => 1,
+            ->postJson("/api/v1/teacher/courses/{$course->id}/units", [
+                'title' => 'Assistant Unit',
             ])
-            ->assertStatus(403);
+            ->assertStatus(201);
+    }
+
+    public function test_assistant_can_create_and_manage_a_competition(): void
+    {
+        $teacher = $this->teacher();
+        $course = $this->publishedCourse($teacher);
+        $assistant = $this->assistant($teacher);
+
+        $exam = Exam::factory()->create([
+            'course_id' => $course->id,
+            'created_by' => $teacher->id,
+            'status' => ExamStatus::Published,
+        ]);
+
+        $created = $this->actingAs($assistant, 'sanctum')
+            ->postJson('/api/v1/teacher/competitions', [
+                'title' => 'Assistant Competition',
+                'exam_id' => $exam->id,
+            ])
+            ->assertStatus(201)
+            ->json('data.id');
+
+        $this->assertNotNull($created);
+
+        // And can manage it afterwards (update is gated by ownership +
+        // competitions.manage, both of which the assistant now satisfies).
+        $this->actingAs($assistant, 'sanctum')
+            ->getJson("/api/v1/teacher/competitions/{$created}")
+            ->assertStatus(200);
     }
 
     public function test_admin_can_manage_any_assistant(): void

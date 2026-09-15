@@ -41,8 +41,12 @@ class CompetitionController extends Controller
             ->with(['creator', 'exam'])
             ->withCount(['participants', 'results']);
 
-        if (! $request->user()->isAdmin()) {
-            $query->where('created_by', $request->user()->getKey());
+        // Staff scoping: an Assistant sees the Teacher's competitions, matching
+        // what CompetitionPolicy already lets them manage.
+        $ownerIds = $request->user()->staffOwnerIds();
+
+        if ($ownerIds !== null) {
+            $query->whereIn('created_by', $ownerIds);
         }
 
         $competitions = $query->latest()->paginate($this->perPage($request));

@@ -62,6 +62,19 @@ class Course extends Model
         return $this->created_by === $user->getKey();
     }
 
+    /**
+     * Whether the user may manage this course.
+     *
+     * Ownership alone is not enough: an Assistant operates on behalf of the
+     * Teacher who employs them and must reach the Teacher's courses, units,
+     * lessons, videos and exams with the same powers, without being the
+     * creator of each record. Admin is handled by Policy::before().
+     */
+    public function isManagedBy(User $user): bool
+    {
+        return $user->isStaffFor($this->created_by);
+    }
+
     public function publish(): void
     {
         $this->status = CourseStatus::Published;

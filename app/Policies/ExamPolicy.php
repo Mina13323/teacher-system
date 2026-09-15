@@ -18,7 +18,7 @@ class ExamPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('teacher') || $user->hasRole('admin');
+        return $user->isStaff();
     }
 
     public function view(User $user, Exam $exam): bool

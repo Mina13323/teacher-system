@@ -68,6 +68,15 @@ class Competition extends Model
     }
 
     /**
+     * Whether the user may manage this competition. An Assistant has the same
+     * operational reach as the Teacher they work for.
+     */
+    public function isManagedBy(User $user): bool
+    {
+        return $user->isStaffFor($this->created_by);
+    }
+
+    /**
      * Advance the lifecycle to match the competition's scheduling window.
      *
      * This is the lazy scheduling trigger: a PUBLISHED competition is promoted
