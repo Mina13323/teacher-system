@@ -72,6 +72,15 @@ class PublishExamAction
         }
 
         foreach ($questions as $question) {
+            // A template scaffolds blank questions, so an exam can legitimately
+            // hold rows with no text yet. Publishing those would hand students a
+            // paper full of empty prompts.
+            if (trim((string) $question->question_text) === '') {
+                throw new ExamNotReadyToPublishException(
+                    'Question '.$question->id.' has no text.'
+                );
+            }
+
             // An essay question is free-text: it has no options and no answer
             // key, so the MCQ shape checks must not apply to it. All that
             // matters is that it carries a mark a grader can award against.
@@ -89,6 +98,16 @@ class PublishExamAction
                 throw new ExamNotReadyToPublishException(
                     'Question '.$question->id.' must have at least two options.'
                 );
+            }
+
+            // Template scaffolding creates four empty option rows per question.
+            // A blank choice is not an answer a student can select.
+            foreach ($question->options as $option) {
+                if (trim((string) $option->option_text) === '') {
+                    throw new ExamNotReadyToPublishException(
+                        'Question '.$question->id.' has an option with no text.'
+                    );
+                }
             }
 
             if (! $question->hasValidSingleCorrectOption()) {

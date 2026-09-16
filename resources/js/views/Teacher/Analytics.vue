@@ -73,6 +73,8 @@ onMounted(loadOverview);
                 <StatCard :label="$t('analytics.averageScore')" :value="overview.average_score ?? '—'" icon="chart" tone="ink" />
                 <StatCard :label="$t('dashboard.statPassRate')" :value="overview.pass_rate !== null ? overview.pass_rate + '%' : '—'" icon="check" tone="emerald" />
                 <StatCard :label="$t('analytics.flaggedIntegrity')" :value="overview.flagged_integrity_count" icon="shield" tone="danger" />
+                <!-- Attempts sitting with the teacher: the actionable number. -->
+                <StatCard :label="$t('analytics.pendingGrading')" :value="overview.pending_grading_count ?? 0" icon="clock" tone="amber" :hint="$t('analytics.scoredHint', { n: overview.scored_attempts_count ?? 0 })" />
             </div>
 
             <AppCard :title="$t('analytics.courseAnalytics')">

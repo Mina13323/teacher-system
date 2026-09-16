@@ -30,6 +30,8 @@ onMounted(run);
                 <StatCard :label="$t('dashboard.submittedAttempts')" :value="data.submitted_attempts_count" icon="clipboard" tone="terracotta" />
                 <StatCard :label="$t('dashboard.statAverageScore')" :value="data.average_score ?? '—'" icon="chart" tone="emerald" />
                 <StatCard :label="$t('dashboard.activeAttempts')" :value="data.active_attempts_count" icon="play" tone="sky" />
+                <!-- Attempts waiting on a teacher: the platform's grading backlog. -->
+                <StatCard :label="$t('analytics.pendingGrading')" :value="data.pending_grading_count ?? 0" icon="clock" tone="amber" />
             </div>
 
             <AppCard :title="$t('dashboard.integritySignal')">

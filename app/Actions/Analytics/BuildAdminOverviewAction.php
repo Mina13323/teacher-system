@@ -26,9 +26,15 @@ class BuildAdminOverviewAction
         $courses = Course::query()->count();
         $enrollments = Enrollment::query()->where('status', EnrollmentStatus::Active->value)->count();
 
-        $attempts = ExamAttempt::query()->where('status', ExamAttemptStatus::Submitted);
-        $attemptsCount = $attempts->count();
-        $avgPercentage = (clone $attempts)->whereNotNull('percentage')->avg('percentage');
+        // Handed-in = submitted, grading or published. The previous
+        // `where('status', Submitted)` excluded every attempt that had been
+        // through essay grading, so the admin dashboard under-reported both the
+        // attempt volume and the platform average.
+        $attemptsCount = ExamAttempt::query()->submittedForReporting()->count();
+        $avgPercentage = ExamAttempt::query()->withFinalScore()->avg('percentage');
+        $pendingGrading = ExamAttempt::query()
+            ->where('status', ExamAttemptStatus::Grading->value)
+            ->count();
 
         $flagged = ExamAttempt::query()
             ->whereIn('integrity_status', [IntegrityStatus::Flagged->value, IntegrityStatus::Monitoring->value])
@@ -42,6 +48,7 @@ class BuildAdminOverviewAction
             'courses_count' => $courses,
             'active_enrollments_count' => $enrollments,
             'submitted_attempts_count' => (int) $attemptsCount,
+            'pending_grading_count' => (int) $pendingGrading,
             'average_score' => $avgPercentage !== null ? (int) round($avgPercentage) : null,
             'flagged_integrity_count' => (int) $flagged,
             'competitions_count' => $competitions,

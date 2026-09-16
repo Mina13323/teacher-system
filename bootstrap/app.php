@@ -12,6 +12,7 @@ use App\Exceptions\DuplicateEnrollmentException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
 use App\Exceptions\ExamNotReadyToPublishException;
+use App\Exceptions\ExamStructureLockedException;
 use App\Exceptions\ExamWindowClosedException;
 use App\Exceptions\ExamWindowNotOpenException;
 use App\Exceptions\InvalidAttemptStateException;
@@ -200,6 +201,15 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (ExamNotReadyToPublishException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (ExamStructureLockedException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,

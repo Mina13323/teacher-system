@@ -17,6 +17,7 @@ import Tabs from '@/components/ui/Tabs.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import Pagination from '@/components/ui/Pagination.vue';
+import Icon from '@/components/ui/Icon.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -62,6 +63,11 @@ const questions = computed(() => {
     const arr = Array.isArray(qs) ? qs : (qs.data || []);
     return arr.map((q) => ({ ...q, options: Array.isArray(q.options) ? q.options : (q.options?.data || []) }));
 });
+
+// Structure at a glance: how many of each type, and the paper's total marks.
+const mcqCount = computed(() => questions.value.filter((q) => q.type !== 'essay').length);
+const essayCount = computed(() => questions.value.filter((q) => q.type === 'essay').length);
+const totalMarks = computed(() => questions.value.reduce((sum, q) => sum + (Number(q.points) || 0), 0));
 
 const tabs = computed(() => [
     { key: 'questions', label: t('exams.questionsTab') || 'الأسئلة' },
@@ -343,7 +349,19 @@ function attemptTone(status) {
             <Tabs :tabs="tabs" v-model="tab" />
 
             <div v-if="tab === 'questions'" class="space-y-4">
-                <div class="flex justify-end"><AppButton @click="openQuestion()">{{ $t('exams.addQuestion') || 'إضافة سؤال جديد' }}</AppButton></div>
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+                    <p class="text-sm text-ink-600">
+                        <span class="font-semibold text-ink-800">{{ $t('exams.structureSummary') }}</span>
+                        <span class="ms-2">{{ $t('exams.structureCounts', { total: questions.length, mcq: mcqCount, essay: essayCount, marks: totalMarks }) }}</span>
+                    </p>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <AppButton variant="outline" size="sm" @click="openQuestion()">{{ $t('exams.addQuestion') }}</AppButton>
+                        <AppButton size="sm" @click="router.push(`/teacher/exams/${examId}/questions`)">
+                            <Icon name="layers" :size="15" />
+                            {{ $t('examQuestions.bulkEditor') }}
+                        </AppButton>
+                    </div>
+                </div>
                 <EmptyState v-if="!questions.length" icon="clipboard" :title="$t('exams.noQuestionsTitle')" :message="$t('exams.noQuestionsMessage')">
                     <AppButton @click="openQuestion()">{{ $t('exams.addQuestion') }}</AppButton>
                 </EmptyState>

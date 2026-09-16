@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Teacher;
 
+use App\Actions\Exam\SyncExamQuestionsAction;
 use App\Enums\QuestionType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateQuestionRequest;
+use App\Http\Requests\SyncExamQuestionsRequest;
 use App\Http\Requests\UpdateQuestionRequest;
 use App\Http\Resources\QuestionResource;
 use App\Models\Exam;
@@ -14,6 +16,10 @@ use Illuminate\Http\Request;
 
 class QuestionController extends Controller
 {
+    public function __construct(private readonly SyncExamQuestionsAction $syncQuestions)
+    {
+    }
+
     public function index(Request $request, Exam $exam): JsonResponse
     {
         $this->authorize('view', $exam);
@@ -38,6 +44,24 @@ class QuestionController extends Controller
             new QuestionResource($question->load('options')),
             'Question created.',
             201
+        );
+    }
+
+    /**
+     * Saves an entire question paper in one request.
+     *
+     * A template hands the teacher dozens of blank questions at once; authoring
+     * them through the single-question endpoint would mean one round trip per
+     * row. Rows carrying an `id` are updated, the rest are created, so the
+     * authoring screen can be saved repeatedly without duplicating questions.
+     */
+    public function bulk(SyncExamQuestionsRequest $request, Exam $exam): JsonResponse
+    {
+        $questions = $this->syncQuestions->execute($exam, $request->validated('questions'));
+
+        return $this->success(
+            QuestionResource::collection($questions),
+            'Questions saved.'
         );
     }
 

@@ -151,6 +151,15 @@ export const teacher = {
     updateOption: (id, payload) => api.put(`/teacher/options/${id}`, payload),
     deleteOption: (id) => api.delete(`/teacher/options/${id}`),
 
+    // Exam templates — reusable question structures (counts and marks only)
+    examTemplates: () => api.get('/teacher/exam-templates'),
+    applyExamTemplate: (examId, templateId) => api.post(`/teacher/exams/${examId}/apply-template`, { template_id: templateId }),
+    saveExamAsTemplate: (examId, payload) => api.post(`/teacher/exams/${examId}/save-as-template`, payload),
+    deleteExamTemplate: (id) => api.delete(`/teacher/exam-templates/${id}`),
+
+    // Bulk authoring — write the whole paper in one request
+    syncQuestions: (examId, questions) => api.put(`/teacher/exams/${examId}/questions`, { questions }),
+
     integritySettings: (examId) => api.get(`/teacher/exams/${examId}/integrity`),
     updateIntegritySettings: (examId, payload) => api.put(`/teacher/exams/${examId}/integrity`, payload),
     attemptIntegrity: (attemptId) => api.get(`/teacher/attempts/${attemptId}/integrity`),

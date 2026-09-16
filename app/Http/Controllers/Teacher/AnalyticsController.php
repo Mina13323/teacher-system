@@ -42,6 +42,8 @@ class AnalyticsController extends Controller
     {
         $this->authorize('view', $student);
 
-        return $this->success($this->buildStudentAnalytics->execute($student), 'Student analytics retrieved.');
+        return $this->success(// Staff may see unpublished scores; the student's own endpoint does not.
+            $this->buildStudentAnalytics->execute($student, revealUnpublishedScores: true),
+            'Student analytics retrieved.');
     }
 }

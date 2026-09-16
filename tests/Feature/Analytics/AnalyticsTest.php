@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Enums\ExamAttemptStatus;
 use App\Enums\UserRole;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
@@ -130,5 +131,114 @@ class AnalyticsTest extends ApiTestCase
             ->assertStatus(200)
             ->assertJsonPath('data.students_count', 1)
             ->assertJsonPath('data.submitted_attempts_count', 1);
+    }
+
+    // ---- Regression: analytics used to count only `submitted` --------------
+    //
+    // An attempt moves to `grading` when it has essays and to `published` once
+    // grades are released. Filtering on `submitted` alone silently dropped every
+    // attempt that had been through essay grading, so every number on every
+    // analytics screen was understated.
+
+    public function test_a_published_attempt_is_counted_in_the_teacher_overview(): void
+    {
+        [$teacher, , , $student] = $this->buildCourseWithSubmittedStudent();
+
+        ExamAttempt::where('student_id', $student->id)
+            ->update(['status' => ExamAttemptStatus::Published->value]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson('/api/v1/teacher/analytics/overview')
+            ->assertStatus(200)
+            ->assertJsonPath('data.attempts_count', 1)
+            ->assertJsonPath('data.scored_attempts_count', 1)
+            ->assertJsonPath('data.average_score', 100);
+    }
+
+    public function test_a_published_attempt_appears_in_the_student_history(): void
+    {
+        [, , , $student] = $this->buildCourseWithSubmittedStudent();
+
+        ExamAttempt::where('student_id', $student->id)
+            ->update(['status' => ExamAttemptStatus::Published->value]);
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson('/api/v1/student/analytics/me')
+            ->assertStatus(200)
+            ->assertJsonPath('data.attempts_count', 1)
+            ->assertJsonPath('data.history.0.percentage', 100);
+    }
+
+    /**
+     * While an attempt awaits essay grading its percentage is partial — the
+     * ungraded essays count as zero against the full point total. It must count
+     * as an attempt but never as a score.
+     */
+    public function test_an_attempt_awaiting_grading_counts_but_does_not_skew_the_average(): void
+    {
+        [$teacher, , , $student] = $this->buildCourseWithSubmittedStudent();
+
+        ExamAttempt::where('student_id', $student->id)
+            ->update(['status' => ExamAttemptStatus::Grading->value, 'percentage' => 20]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson('/api/v1/teacher/analytics/overview')
+            ->assertStatus(200)
+            ->assertJsonPath('data.attempts_count', 1)
+            ->assertJsonPath('data.pending_grading_count', 1)
+            ->assertJsonPath('data.scored_attempts_count', 0)
+            ->assertJsonPath('data.average_score', null)
+            ->assertJsonPath('data.pass_rate', null);
+    }
+
+    /**
+     * The score is written to the attempt at submit time, but a student must not
+     * see it before the teacher releases grades.
+     */
+    public function test_a_student_does_not_see_an_unpublished_score_in_their_analytics(): void
+    {
+        [, , , $student] = $this->buildCourseWithSubmittedStudent();
+
+        ExamAttempt::where('student_id', $student->id)->update(['grades_published_at' => null]);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson('/api/v1/student/analytics/me')
+            ->assertStatus(200)
+            ->assertJsonPath('data.attempts_count', 1)
+            ->assertJsonPath('data.average_score', null)
+            ->assertJsonPath('data.best_score', null)
+            ->assertJsonPath('data.history.0.percentage', null)
+            ->assertJsonPath('data.history.0.grades_published', false);
+
+        // The attempt is still listed — just without a number on it.
+        $this->assertCount(1, $response->json('data.history'));
+    }
+
+    public function test_a_teacher_still_sees_an_unpublished_score_in_student_analytics(): void
+    {
+        [$teacher, , , $student] = $this->buildCourseWithSubmittedStudent();
+
+        ExamAttempt::where('student_id', $student->id)->update(['grades_published_at' => null]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/analytics/students/{$student->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.average_score', 100)
+            ->assertJsonPath('data.history.0.percentage', 100);
+    }
+
+    public function test_admin_overview_counts_published_attempts(): void
+    {
+        [, , , $student] = $this->buildCourseWithSubmittedStudent();
+        $admin = $this->createUserWithRole(UserRole::Admin);
+
+        ExamAttempt::where('student_id', $student->id)
+            ->update(['status' => ExamAttemptStatus::Published->value]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/dashboard')
+            ->assertStatus(200)
+            ->assertJsonPath('data.submitted_attempts_count', 1)
+            ->assertJsonPath('data.average_score', 100);
     }
 }

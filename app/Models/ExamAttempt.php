@@ -94,6 +94,65 @@ class ExamAttempt extends Model
     }
 
     /**
+     * Whether this attempt counts towards "how many times students sat the
+     * exam" in analytics.
+     *
+     * `in_progress` was never handed in and `expired` never completed, so both
+     * are excluded. `grading` and `published` are handed-in attempts and MUST
+     * count — filtering on `submitted` alone silently dropped every attempt
+     * that had been through essay grading, which understated every figure on
+     * every analytics screen.
+     */
+    public function countsAsAttempt(): bool
+    {
+        return in_array($this->status?->value, ExamAttemptStatus::submittedValues(), true);
+    }
+
+    /**
+     * Whether this attempt's score is final and therefore safe to average.
+     *
+     * While an attempt is still `grading`, CalculateExamResultAction counts
+     * ungraded essay points as zero against the full point total, so its
+     * percentage is a partial number that would drag every average down. It
+     * counts as an attempt but never as a score.
+     */
+    public function hasFinalScore(): bool
+    {
+        return in_array($this->status?->value, ExamAttemptStatus::scoredValues(), true)
+            && $this->percentage !== null;
+    }
+
+    /**
+     * Query-builder counterpart to countsAsAttempt().
+     */
+    public function scopeSubmittedForReporting($query)
+    {
+        return $query->whereIn('status', ExamAttemptStatus::submittedValues());
+    }
+
+    /**
+     * Query-builder counterpart to hasFinalScore().
+     */
+    public function scopeWithFinalScore($query)
+    {
+        return $query
+            ->whereIn('status', ExamAttemptStatus::scoredValues())
+            ->whereNotNull('percentage');
+    }
+
+    /**
+     * Whether this attempt's result has been released to the student.
+     *
+     * The score is written at submit time, but a student must not see it until
+     * the teacher publishes grades — the same gate ExamResultResource and
+     * ExamAttemptResource apply.
+     */
+    public function resultIsPublished(): bool
+    {
+        return $this->grades_published_at !== null;
+    }
+
+    /**
      * The backend is the source of truth for expiration.
      */
     public function isExpired(): bool

@@ -96,7 +96,9 @@ class StudentController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        return $this->success($this->buildAnalytics->execute($student), 'Student analytics retrieved.');
+        return $this->success(// Staff may see unpublished scores; the student's own endpoint does not.
+            $this->buildAnalytics->execute($student, revealUnpublishedScores: true),
+            'Student analytics retrieved.');
     }
 
     public function destroy(Request $request, User $student): JsonResponse

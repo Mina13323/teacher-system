@@ -23,6 +23,7 @@ use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
 use App\Http\Controllers\Teacher\IntegrityController as TeacherIntegrityController;
 use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
 use App\Http\Controllers\Teacher\ExamController as TeacherExamController;
+use App\Http\Controllers\Teacher\ExamTemplateController as TeacherExamTemplateController;
 use App\Http\Controllers\Teacher\LessonController as TeacherLessonController;
 use App\Http\Controllers\Teacher\OptionController as TeacherOptionController;
 use App\Http\Controllers\Teacher\QuestionController as TeacherQuestionController;
@@ -141,6 +142,17 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('questions/{question}/options', [TeacherOptionController::class, 'store']);
     Route::put('options/{option}', [TeacherOptionController::class, 'update']);
     Route::delete('options/{option}', [TeacherOptionController::class, 'destroy']);
+
+    // Bulk question authoring. A template can hand a teacher fifty blank
+    // questions, so the paper is saved in one request rather than one modal per
+    // row. PUT because it writes the whole set, not a single new question.
+    Route::put('exams/{exam}/questions', [TeacherQuestionController::class, 'bulk']);
+
+    // Exam templates — reusable question structures (counts and marks only)
+    Route::get('exam-templates', [TeacherExamTemplateController::class, 'index']);
+    Route::delete('exam-templates/{template}', [TeacherExamTemplateController::class, 'destroy']);
+    Route::post('exams/{exam}/apply-template', [TeacherExamTemplateController::class, 'apply']);
+    Route::post('exams/{exam}/save-as-template', [TeacherExamTemplateController::class, 'storeFromExam']);
 
     // Competitions (separate domain, owned by the creating teacher)
     Route::get('competitions', [TeacherCompetitionController::class, 'index']);

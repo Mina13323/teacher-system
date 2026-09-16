@@ -3,7 +3,6 @@
 namespace App\Actions\Analytics;
 
 use App\Enums\EnrollmentStatus;
-use App\Enums\ExamAttemptStatus;
 use App\Enums\IntegrityStatus;
 use App\Models\CompetitionResult;
 use App\Models\Enrollment;
@@ -19,7 +18,15 @@ use App\Models\User;
  */
 class BuildStudentAnalyticsAction
 {
-    public function execute(User $student): array
+    /**
+     * @param  bool  $revealUnpublishedScores  true only for staff viewers. A
+     *        student reading their own analytics must not see a score before
+     *        the teacher publishes grades — the same gate the attempt and
+     *        result resources apply.
+     *
+     * @return array<string, mixed>
+     */
+    public function execute(User $student, bool $revealUnpublishedScores = false): array
     {
         $enrollments = Enrollment::query()
             ->where('student_id', $student->getKey())
@@ -39,9 +46,22 @@ class BuildStudentAnalyticsAction
             ->with('exam')
             ->get();
 
-        $submitted = $attempts->where('status', ExamAttemptStatus::Submitted);
+        // Handed-in attempts (submitted, grading, published) drive the counts.
+        // The old `where('status', Submitted)` dropped every attempt that had
+        // been through essay grading, so a student who sat an essay exam saw an
+        // empty exam history even after their grade was published.
+        $handedIn = $attempts->filter(fn (ExamAttempt $a) => $a->countsAsAttempt());
 
-        $avgPercentage = $submitted->whereNotNull('percentage')->avg('percentage');
+        // Only a final score may be averaged; a `grading` attempt carries a
+        // partial percentage.
+        $scored = $handedIn->filter(fn (ExamAttempt $a) => $a->hasFinalScore());
+
+        // A student may only see the results that have actually been released.
+        $visibleScored = $revealUnpublishedScores
+            ? $scored
+            : $scored->filter(fn (ExamAttempt $a) => $a->resultIsPublished());
+
+        $avgPercentage = $visibleScored->avg('percentage');
 
         $flagged = $attempts->filter(fn (ExamAttempt $a) => in_array($a->integrity_status?->value, [
             IntegrityStatus::Flagged->value,
@@ -53,23 +73,31 @@ class BuildStudentAnalyticsAction
             ->with('competition')
             ->get();
 
-        $history = $attempts
-            ->where('status', ExamAttemptStatus::Submitted)
+        $history = $handedIn
             ->sortByDesc('submitted_at')
             ->values()
-            ->map(fn (ExamAttempt $a) => [
-                'attempt_id' => $a->id,
-                'exam_id' => $a->exam_id,
-                'exam_title' => $a->exam?->title,
-                'attempt_number' => $a->attempt_number,
-                'score' => $a->score,
-                'percentage' => $a->percentage,
-                'passed' => $a->percentage !== null && $a->pass_percentage !== null
-                    ? $a->percentage >= $a->pass_percentage
-                    : null,
-                'started_at' => $a->started_at?->toISOString(),
-                'submitted_at' => $a->submitted_at?->toISOString(),
-            ]);
+            ->map(function (ExamAttempt $a) use ($revealUnpublishedScores) {
+                // The score is written to the row at submit time, but it must
+                // not reach the student until grades are published.
+                $released = $revealUnpublishedScores || $a->resultIsPublished();
+                $percentage = $released && $a->hasFinalScore() ? $a->percentage : null;
+
+                return [
+                    'attempt_id' => $a->id,
+                    'exam_id' => $a->exam_id,
+                    'exam_title' => $a->exam?->title,
+                    'attempt_number' => $a->attempt_number,
+                    'status' => $a->status?->value,
+                    'grades_published' => $a->resultIsPublished(),
+                    'score' => $released ? $a->score : null,
+                    'percentage' => $percentage,
+                    'passed' => $percentage !== null && $a->pass_percentage !== null
+                        ? $percentage >= $a->pass_percentage
+                        : null,
+                    'started_at' => $a->started_at?->toISOString(),
+                    'submitted_at' => $a->submitted_at?->toISOString(),
+                ];
+            });
 
         return [
             'student' => [
@@ -86,9 +114,11 @@ class BuildStudentAnalyticsAction
                 'enrolled_at' => $e->enrolled_at?->toISOString(),
             ])->values(),
             'lessons_completed_count' => $progress->where('completed', true)->count(),
-            'attempts_count' => $submitted->count(),
+            'attempts_count' => $handedIn->count(),
+            'pending_grading_count' => $handedIn->filter(fn (ExamAttempt $a) => $a->status?->isGrading())->count(),
+            'awaiting_publication_count' => $handedIn->filter(fn (ExamAttempt $a) => ! $a->resultIsPublished())->count(),
             'average_score' => $avgPercentage !== null ? (int) round($avgPercentage) : null,
-            'best_score' => $submitted->whereNotNull('percentage')->max('percentage'),
+            'best_score' => $visibleScored->max('percentage'),
             'flagged_integrity_count' => $flagged->count(),
             'competition_results' => $competitionResults->map(fn (CompetitionResult $r) => [
                 'competition_id' => $r->competition_id,

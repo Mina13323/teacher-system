@@ -3,7 +3,6 @@
 namespace App\Actions\Analytics;
 
 use App\Enums\EnrollmentStatus;
-use App\Enums\ExamAttemptStatus;
 use App\Enums\IntegrityStatus;
 use App\Models\Course;
 use App\Models\Enrollment;
@@ -45,18 +44,26 @@ class BuildCourseAnalyticsAction
 
         $attempts = $examIds->isEmpty()
             ? collect()
-            : ExamAttempt::query()->whereIn('exam_id', $examIds)->get();
+            // Eager-load the student: top_performers resolves a display name per
+            // group, which is an N+1 query per course without it.
+            : ExamAttempt::query()->whereIn('exam_id', $examIds)->with('student')->get();
 
-        $submitted = $attempts->where('status', ExamAttemptStatus::Submitted);
-        $avgPercentage = $submitted->whereNotNull('percentage')->avg('percentage');
+        // `countsAsAttempt()` covers submitted, grading and published. The old
+        // `where('status', Submitted)` dropped every essay exam once it was
+        // graded, so a course full of essay exams reported zero attempts.
+        $handedIn = $attempts->filter(fn (ExamAttempt $a) => $a->countsAsAttempt());
+
+        // Only final scores feed averages, leaderboards and weak areas: a
+        // `grading` attempt carries a partial percentage.
+        $scored = $handedIn->filter(fn (ExamAttempt $a) => $a->hasFinalScore());
+        $avgPercentage = $scored->avg('percentage');
 
         $flagged = $attempts->filter(fn (ExamAttempt $a) => in_array($a->integrity_status?->value, [
             IntegrityStatus::Flagged->value,
             IntegrityStatus::Monitoring->value,
         ], true));
 
-        $topPerformers = $submitted
-            ->whereNotNull('percentage')
+        $topPerformers = $scored
             ->groupBy('student_id')
             ->map(fn (Collection $a) => [
                 'student_id' => (int) $a->first()->student_id,
@@ -69,8 +76,8 @@ class BuildCourseAnalyticsAction
             ->values();
 
         $weakAreas = $exams
-            ->map(function (Exam $exam) use ($submitted) {
-                $examSubmissions = $submitted->where('exam_id', $exam->getKey());
+            ->map(function (Exam $exam) use ($scored) {
+                $examSubmissions = $scored->where('exam_id', $exam->getKey());
 
                 return [
                     'exam_id' => $exam->getKey(),
@@ -97,7 +104,9 @@ class BuildCourseAnalyticsAction
             'lessons_count' => $lessons->count(),
             'average_lesson_completion' => $this->averageLessonCompletion($progress, $lessons, $studentIds),
             'exams_count' => $exams->count(),
-            'attempts_count' => $submitted->count(),
+            'attempts_count' => $handedIn->count(),
+            'scored_attempts_count' => $scored->count(),
+            'pending_grading_count' => $handedIn->filter(fn (ExamAttempt $a) => $a->status?->isGrading())->count(),
             'average_score' => $avgPercentage !== null ? (int) round($avgPercentage) : null,
             'flagged_integrity_count' => $flagged->count(),
             'top_performers' => $topPerformers,

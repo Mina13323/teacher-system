@@ -28,6 +28,14 @@ onMounted(() => run());
                 <StatCard :label="$t('analytics.averageScore')" :value="data.average_score ?? '—'" icon="chart" tone="amber" />
             </div>
 
+            <!-- Anything not yet released is called out rather than silently
+                 missing from the numbers above. -->
+            <div v-if="data.pending_grading_count || data.awaiting_publication_count" class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <Icon name="clock" :size="16" />
+                <span v-if="data.pending_grading_count">{{ $t('analytics.pendingGradingNotice', { n: data.pending_grading_count }) }}</span>
+                <span v-if="data.awaiting_publication_count">{{ $t('analytics.awaitingPublicationNotice', { n: data.awaiting_publication_count }) }}</span>
+            </div>
+
             <AppCard :title="$t('analytics.examHistory')">
                 <EmptyState v-if="!data.history?.length" icon="clipboard" :title="$t('analytics.noHistoryTitle')" :message="$t('analytics.noHistoryMessage')" />
                 <div v-else class="overflow-x-auto">
@@ -43,8 +51,18 @@ onMounted(() => run());
                         <tbody>
                             <tr v-for="h in data.history" :key="h.attempt_id" class="border-b border-ink-50">
                                 <td class="px-3 py-2.5 font-medium text-ink-800" dir="auto">{{ h.exam_title }}</td>
-                                <td class="px-3 py-2.5 text-ink-600">{{ h.percentage }}%</td>
-                                <td class="px-3 py-2.5"><AppBadge :tone="h.passed === true ? 'success' : h.passed === false ? 'danger' : 'neutral'">{{ h.passed === true ? $t('status.passed') : h.passed === false ? $t('status.failed') : '—' }}</AppBadge></td>
+                                <td class="px-3 py-2.5 text-ink-600">
+                                    <span v-if="h.percentage !== null" class="font-semibold">{{ h.percentage }}%</span>
+                                    <span v-else class="text-ink-400">{{ $t('analytics.pending') }}</span>
+                                </td>
+                                <td class="px-3 py-2.5">
+                                    <AppBadge :tone="h.passed === true ? 'success' : h.passed === false ? 'danger' : h.status === 'grading' ? 'warning' : 'neutral'">
+                                        {{ h.passed === true ? $t('status.passed')
+                                            : h.passed === false ? $t('status.failed')
+                                            : h.status === 'grading' ? $t('analytics.beingGraded')
+                                            : $t('analytics.awaitingPublication') }}
+                                    </AppBadge>
+                                </td>
                                 <td class="px-3 py-2.5 text-ink-500">{{ h.submitted_at ? new Date(h.submitted_at).toLocaleDateString() : '—' }}</td>
                             </tr>
                         </tbody>
