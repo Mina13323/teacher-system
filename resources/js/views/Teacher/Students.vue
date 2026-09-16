@@ -57,6 +57,29 @@ function closeWhatsApp() {
     whatsappCredentials.value = null;
 }
 
+// Explicit, staff-initiated reset so "Send Credentials" works even when no
+// one-time reveal is in hand. Not silent: the teacher pressed a button labelled
+// "Reset & send", and the modal shows the new password before anything is sent.
+const resettingWhatsApp = ref(false);
+async function whatsappResetAndSend() {
+    const student = whatsappStudent.value;
+    if (!student?.id) return;
+
+    resettingWhatsApp.value = true;
+    try {
+        const res = await teacher.resetStudentCredentials(student.id);
+        const data = res.data || res;
+        // The fresh reveal flows straight into the open modal, which then
+        // enables and selects the credentials template.
+        whatsappCredentials.value = data.credentials;
+        toast.success(t('students.passwordReset') || 'تم إعادة توليد كلمة المرور');
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        resettingWhatsApp.value = false;
+    }
+}
+
 const items = ref([]);
 const meta = ref(null);
 const page = ref(1);
@@ -766,53 +789,43 @@ onMounted(() => load(1));
                 </div>
 
                 <!-- Printable Content Area -->
-                <div class="printable-area space-y-8 p-4">
-                    <div
-                        v-for="st in printStudents"
-                        :key="st.id"
-                        class="print-card border-2 border-ink-900 rounded-xl p-6 bg-white max-w-md mx-auto space-y-4 shadow-sm page-break-after"
-                    >
-                        <div class="text-center border-b-2 border-ink-900 pb-3">
-                            <h2 class="text-2xl font-black text-ink-900 tracking-wide">{{ $t('students.printBrand') }}</h2>
-                            <p class="text-sm font-bold text-ink-600 mt-1">{{ $t('students.printCredentialsTitle') }}</p>
+                <div class="printable-area">
+                    <div v-for="st in printStudents" :key="st.id" class="print-card">
+                        <div class="print-card__head">
+                            <span class="print-card__brand">{{ $t('students.printBrand') }}</span>
+                            <span class="print-card__code" dir="ltr">{{ st.student_code }}</span>
                         </div>
 
-                        <div class="space-y-2 text-sm font-medium text-ink-900 dir-rtl">
-                            <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printNameLabel') }}</span>
-                                <span class="font-bold text-ink-900">{{ st.name }}</span>
+                        <div class="print-card__name" dir="rtl">{{ st.name }}</div>
+
+                        <div class="print-card__grid">
+                            <div class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printCodeLabel') }}</span>
+                                <span class="print-card__value print-card__value--mono" dir="ltr">{{ st.student_code }}</span>
                             </div>
-                            <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printCodeLabel') }}</span>
-                                <span class="font-mono font-bold text-terracotta-700">{{ st.student_code }}</span>
+                            <div class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printEmailLabel') }}</span>
+                                <span class="print-card__value print-card__value--mono" dir="ltr">{{ st.email }}</span>
                             </div>
-                            <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printEmailLabel') }}</span>
-                                <span class="font-mono">{{ st.email }}</span>
+                            <div class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printPasswordLabel') }}</span>
+                                <span class="print-card__value print-card__value--mono" dir="ltr">{{ st.revealed_password || $t('students.printPasswordUnavailable') }}</span>
                             </div>
-                            <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printPasswordLabel') }}</span>
-                                <span class="font-mono font-bold text-ink-900">
-                                    {{ st.revealed_password || $t('students.printPasswordUnavailable') }}
-                                </span>
+                            <div class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printYearLabel') }}</span>
+                                <span class="print-card__value">{{ getYearLabel(st) }}</span>
                             </div>
-                            <div class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printYearLabel') }}</span>
-                                <span>{{ getYearLabel(st) }}</span>
+                            <div v-if="st.academic_year === 'secondary_3'" class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printSubjectLabel') }}</span>
+                                <span class="print-card__value">{{ getSubjectLabel(st) }}</span>
                             </div>
-                            <div v-if="st.academic_year === 'secondary_3'" class="flex justify-between border-b border-ink-100 py-1">
-                                <span class="text-ink-500">{{ $t('students.printSubjectLabel') }}</span>
-                                <span class="font-bold text-terracotta-700">{{ getSubjectLabel(st) }}</span>
-                            </div>
-                            <div v-if="st.phone" class="flex justify-between py-1">
-                                <span class="text-ink-500">{{ $t('students.printPhoneLabel') }}</span>
-                                <span>{{ st.phone }}</span>
+                            <div v-if="st.phone" class="print-card__row">
+                                <span class="print-card__label">{{ $t('students.printPhoneLabel') }}</span>
+                                <span class="print-card__value" dir="ltr">{{ st.phone }}</span>
                             </div>
                         </div>
 
-                        <div class="text-center pt-3 border-t border-ink-200 text-xs text-ink-400">
-                            https://maherelmasry.com
-                        </div>
+                        <div class="print-card__foot">https://maherelmasry.com</div>
                     </div>
                 </div>
             </div>
@@ -832,30 +845,45 @@ onMounted(() => load(1));
             :open="Boolean(whatsappStudent)"
             :student="whatsappStudent"
             :credentials="whatsappCredentials"
+            :resetting="resettingWhatsApp"
+            @reset="whatsappResetAndSend"
             @close="closeWhatsApp"
         />
     </div>
 </template>
 
 <style>
+/* Compact credential cards so several fit on one printed page. The styles apply
+   on screen too, so the preview matches what actually prints. */
+.printable-area { display: flex; flex-direction: column; gap: 12px; padding: 8px; }
+
+.print-card {
+    border: 1.5px solid #1b2635;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    font-size: 11px;
+    line-height: 1.35;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.print-card__head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1.5px solid #1b2635; padding-bottom: 4px; margin-bottom: 6px; }
+.print-card__brand { font-weight: 800; font-size: 12px; letter-spacing: .02em; }
+.print-card__code { font-family: monospace; font-weight: 700; color: #c1461f; }
+.print-card__name { text-align: center; font-weight: 700; font-size: 12px; margin-bottom: 6px; }
+.print-card__grid { display: flex; flex-direction: column; gap: 2px; }
+.print-card__row { display: flex; justify-content: space-between; gap: 8px; }
+.print-card__label { color: #5c7496; }
+.print-card__value { font-weight: 600; text-align: right; }
+.print-card__value--mono { font-family: monospace; }
+.print-card__foot { text-align: center; margin-top: 6px; padding-top: 4px; border-top: 1px solid #c6cfdc; color: #7f93ad; font-size: 9px; }
+
 @media print {
-    body * {
-        visibility: hidden;
-    }
-    .printable-area, .printable-area * {
-        visibility: visible;
-    }
-    .printable-area {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-    }
-    .no-print {
-        display: none !important;
-    }
-    .page-break-after {
-        page-break-after: always;
-    }
+    body * { visibility: hidden; }
+    .printable-area, .printable-area * { visibility: visible; }
+    .printable-area { position: absolute; left: 0; top: 0; width: 100%; padding: 0; gap: 8px; }
+    .no-print { display: none !important; }
+    /* Let cards flow onto pages; only avoid splitting a single card mid-way. */
+    .print-card { page-break-inside: avoid; }
 }
 </style>

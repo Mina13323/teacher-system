@@ -50,6 +50,26 @@ const copied = ref(false);
 // WhatsApp contact modal. The credentials option is only enabled while a
 // one-time reveal payload is held in memory here — it is never refetched.
 const showWhatsApp = ref(false);
+const resettingWhatsApp = ref(false);
+
+// Explicit staff-initiated reset so the WhatsApp modal's "Send Credentials"
+// works even when no one-time reveal is in hand. The new password is shown in
+// the modal before anything is sent, so nothing happens silently.
+async function whatsappResetAndSend() {
+    if (!id.value) return;
+
+    resettingWhatsApp.value = true;
+    try {
+        const res = await teacher.resetStudentCredentials(id.value);
+        const data = res.data || res;
+        revealCredentials.value = data.credentials;
+        toast.success(t('students.passwordReset') || 'تم إعادة توليد كلمة المرور');
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        resettingWhatsApp.value = false;
+    }
+}
 
 async function loadCourses() {
     try {
@@ -447,6 +467,8 @@ onMounted(async () => {
             :open="showWhatsApp"
             :student="student"
             :credentials="revealCredentials"
+            :resetting="resettingWhatsApp"
+            @reset="whatsappResetAndSend"
             @close="showWhatsApp = false"
         />
     </div>

@@ -1022,6 +1022,8 @@ export default {
         mustSendYourself: 'The message will open in WhatsApp. You must press Send yourself — nothing is sent automatically.',
         noPhone: 'This student has no phone number on file.',
         invalidPhone: 'This phone number is not valid for WhatsApp. Please correct it on the student profile.',
+        resetAndSend: 'Reset password & send',
+        resetAndSendHint: 'Generates a new temporary password for this student so you can send it now. The student\'s old password stops working.',
         credentialsUnavailable: 'Reset credentials to generate a new temporary password.',
         opened: 'WhatsApp opened — review the message and press Send.',
         copied: 'Message copied',
