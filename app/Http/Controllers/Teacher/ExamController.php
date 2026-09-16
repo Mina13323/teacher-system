@@ -38,7 +38,7 @@ class ExamController extends Controller
             ->with(['course', 'creator'])
             ->withCount(['questions', 'attempts'])
             ->latest()
-            ->paginate($request->integer('per_page', 15));
+            ->paginate($this->perPage($request, 15));
 
         return $this->success(ExamResource::collection($exams), 'Exams retrieved.');
     }
@@ -115,7 +115,7 @@ class ExamController extends Controller
             ->with(['student', 'exam'])
             ->with('answers')
             ->latest('started_at')
-            ->paginate($request->integer('per_page', 15));
+            ->paginate($this->perPage($request, 15));
 
         return $this->success(
             ExamAttemptDetailResource::collection($attempts),

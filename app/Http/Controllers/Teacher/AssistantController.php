@@ -149,10 +149,4 @@ class AssistantController extends Controller
         );
     }
 
-    private function perPage(Request $request): int
-    {
-        return $request->integer('per_page', 20) > 0
-            ? min(100, $request->integer('per_page', 20))
-            : 20;
-    }
 }

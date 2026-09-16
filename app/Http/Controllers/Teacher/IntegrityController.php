@@ -16,6 +16,7 @@ use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Services\Integrity\IntegrityRiskConfig;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class IntegrityController extends Controller
 {
@@ -73,11 +74,15 @@ class IntegrityController extends Controller
         return $this->success(new ExamAttemptIntegrityResource($attempt), 'Attempt integrity retrieved.');
     }
 
-    public function indexAttemptEvents(ExamAttempt $attempt): JsonResponse
+    public function indexAttemptEvents(Request $request, ExamAttempt $attempt): JsonResponse
     {
         $this->authorize('viewIntegrity', $attempt);
 
-        $events = $attempt->integrityEvents()->latest('occurred_at')->get();
+        // A heavily proctored attempt can log hundreds of events, so the log is
+        // paged rather than returned in one unbounded payload.
+        $events = $attempt->integrityEvents()
+            ->latest('occurred_at')
+            ->paginate($this->perPage($request));
 
         return $this->success(IntegrityEventResource::collection($events), 'Integrity events retrieved.');
     }

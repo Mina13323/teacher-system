@@ -241,4 +241,81 @@ class AnalyticsTest extends ApiTestCase
             ->assertJsonPath('data.submitted_attempts_count', 1)
             ->assertJsonPath('data.average_score', 100);
     }
+
+    /**
+     * The course-level groupings — top performers, weak areas, cohort lesson
+     * completion — are computed with SQL GROUP BY and a LIMIT. Every other test
+     * here uses a single student with a single attempt, which would exercise
+     * none of that, so this builds a real cohort with distinct scores.
+     */
+    public function test_course_analytics_groups_a_multi_student_cohort_correctly(): void
+    {
+        $teacher = $this->makeTeacher();
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makePublishedExam($teacher, $course);
+
+        foreach ([100, 60, 20] as $percentage) {
+            $student = $this->makeStudent();
+
+            $this->actingAs($student, 'sanctum')
+                ->postJson("/api/v1/student/courses/{$course->id}/enroll")
+                ->assertStatus(201);
+
+            $this->actingAs($student, 'sanctum')
+                ->postJson("/api/v1/student/exams/{$exam->id}/start")
+                ->assertStatus(201);
+
+            ExamAttempt::where('student_id', $student->id)
+                ->where('exam_id', $exam->id)
+                ->update([
+                    'status' => ExamAttemptStatus::Submitted->value,
+                    'percentage' => $percentage,
+                ]);
+        }
+
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/analytics/courses/{$course->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.enrollments_count', 3)
+            ->assertJsonPath('data.students_count', 3)
+            ->assertJsonPath('data.attempts_count', 3)
+            ->assertJsonPath('data.scored_attempts_count', 3)
+            // (100 + 60 + 20) / 3
+            ->assertJsonPath('data.average_score', 60)
+            // Ordered best-first by the SQL ORDER BY, capped at five.
+            ->assertJsonPath('data.top_performers.0.average', 100)
+            ->assertJsonPath('data.top_performers.1.average', 60)
+            ->assertJsonPath('data.top_performers.2.average', 20)
+            ->assertJsonCount(3, 'data.top_performers')
+            // The single exam carries the cohort mean.
+            ->assertJsonPath('data.weak_areas.0.average', 60)
+            ->assertJsonPath('data.weak_areas.0.attempts', 3)
+            // No lessons in this course, so completion is zero rather than null.
+            ->assertJsonPath('data.average_lesson_completion', 0);
+    }
+
+    /**
+     * A distinct student count must not double-count a student enrolled in
+     * several of the teacher's courses.
+     */
+    public function test_overview_counts_a_student_once_across_multiple_courses(): void
+    {
+        $teacher = $this->makeTeacher();
+        $courseA = $this->createCourse($teacher, ['status' => 'published']);
+        $courseB = $this->createCourse($teacher, ['status' => 'published']);
+        $student = $this->makeStudent();
+
+        foreach ([$courseA, $courseB] as $course) {
+            $this->actingAs($student, 'sanctum')
+                ->postJson("/api/v1/student/courses/{$course->id}/enroll")
+                ->assertStatus(201);
+        }
+
+        $this->actingAs($teacher, 'sanctum')
+            ->getJson('/api/v1/teacher/analytics/overview')
+            ->assertStatus(200)
+            ->assertJsonPath('data.courses_count', 2)
+            ->assertJsonPath('data.enrollments_count', 2)
+            ->assertJsonPath('data.students_count', 1);
+    }
 }

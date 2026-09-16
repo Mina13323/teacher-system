@@ -2,7 +2,9 @@
 
 namespace App\Actions\Analytics;
 
+use App\Enums\CourseStatus;
 use App\Enums\EnrollmentStatus;
+use App\Enums\ExamAttemptStatus;
 use App\Enums\IntegrityStatus;
 use App\Models\Competition;
 use App\Models\Course;
@@ -10,11 +12,17 @@ use App\Models\Enrollment;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\User;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Teacher/USER overview analytics. A teacher sees only their own courses and any
- * data that flows from them; an admin sees the whole platform.
+ * Teacher/staff overview analytics. A teacher sees only their own courses and
+ * the data that flows from them; an admin sees the whole platform.
+ *
+ * Every figure is aggregated in the database. This used to hydrate every
+ * enrollment, exam and attempt belonging to the teacher into PHP models and
+ * then count them in memory — correct, but on a production dataset it meant
+ * loading tens of thousands of rows to render a handful of numbers on the
+ * dashboard.
  *
  * @return array<string, mixed>
  */
@@ -22,120 +30,117 @@ class BuildTeacherOverviewAction
 {
     public function execute(User $user): array
     {
-        $courses = $this->scopedCourses($user);
-        $courseIds = $courses->pluck('id');
+        $courseQuery = $this->scopedCourseQuery($user);
+        $courseIds = (clone $courseQuery)->pluck('id');
 
-        $enrollments = $this->scopedEnrollments($user, $courseIds);
-        $studentIds = $enrollments->pluck('student_id')->unique()->values();
+        $examIds = $courseIds->isEmpty()
+            ? collect()
+            : Exam::query()->whereIn('course_id', $courseIds)->pluck('id');
 
-        $exams = $this->scopedExams($user, $courseIds);
-        $examIds = $exams->pluck('id');
+        $enrollmentQuery = $courseIds->isEmpty()
+            ? null
+            : Enrollment::query()
+                ->whereIn('course_id', $courseIds)
+                ->where('status', EnrollmentStatus::Active->value);
 
-        $attempts = $this->scopedAttempts($user, $examIds);
+        $attemptsQuery = $examIds->isEmpty()
+            ? null
+            : ExamAttempt::query()->whereIn('exam_id', $examIds);
 
-        // A handed-in attempt is submitted, grading, OR published. Filtering on
-        // `submitted` alone silently dropped every attempt that had been
-        // through essay grading — which understated every number below.
-        $handedIn = $attempts->filter(fn (ExamAttempt $a) => $a->countsAsAttempt());
+        // A handed-in attempt is submitted, grading OR published. Filtering on
+        // `submitted` alone silently dropped every attempt that had been through
+        // essay grading — which understated every number below.
+        $attemptsCount = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)->submittedForReporting()->count();
 
-        // Only a final score may be averaged. A `grading` attempt carries a
-        // partial percentage (ungraded essays count as zero), which would drag
-        // the average down and misreport the cohort.
-        $scored = $handedIn->filter(fn (ExamAttempt $a) => $a->hasFinalScore());
+        // Only a final score may be averaged: a `grading` attempt carries a
+        // partial percentage, because ungraded essays count as zero against the
+        // full point total. Including it would misreport the cohort.
+        $scoredCount = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)->withFinalScore()->count();
 
-        $avgPercentage = $scored->avg('percentage');
-        $passRate = $this->passRate($scored);
-        $pendingGrading = $handedIn->filter(fn (ExamAttempt $a) => $a->status?->isGrading());
+        $averageScore = $scoredCount === 0
+            ? null
+            : (clone $attemptsQuery)->withFinalScore()->avg('percentage');
 
-        $competitions = $this->scopedCompetitions($user, $examIds);
+        $pendingGrading = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)->where('status', ExamAttemptStatus::Grading->value)->count();
 
-        $flagged = $attempts->filter(fn (ExamAttempt $a) => in_array($a->integrity_status?->value, [
-            IntegrityStatus::Flagged->value,
-            IntegrityStatus::Monitoring->value,
-        ], true));
+        $flagged = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)
+                ->whereIn('integrity_status', [
+                    IntegrityStatus::Flagged->value,
+                    IntegrityStatus::Monitoring->value,
+                ])
+                ->count();
 
         return [
-            'courses_count' => $courses->count(),
-            'published_courses_count' => $courses->where('status', \App\Enums\CourseStatus::Published)->count(),
-            'enrollments_count' => $enrollments->count(),
-            'students_count' => $studentIds->count(),
-            'exam_count' => $exams->count(),
-            'attempts_count' => $handedIn->count(),
-            'scored_attempts_count' => $scored->count(),
-            'pending_grading_count' => $pendingGrading->count(),
-            'average_score' => $avgPercentage !== null ? (int) round($avgPercentage) : null,
-            'pass_rate' => $passRate !== null ? (int) round($passRate) : null,
-            'competitions_count' => $competitions->count(),
-            'flagged_integrity_count' => $flagged->count(),
+            'courses_count' => (clone $courseQuery)->count(),
+            'published_courses_count' => (clone $courseQuery)
+                ->where('status', CourseStatus::Published->value)
+                ->count(),
+            'enrollments_count' => $enrollmentQuery === null ? 0 : (clone $enrollmentQuery)->count(),
+            // Distinct students, not enrollment rows: a student in three courses
+            // is one student.
+            'students_count' => $enrollmentQuery === null
+                ? 0
+                : (clone $enrollmentQuery)->distinct()->count('student_id'),
+            'exam_count' => $examIds->count(),
+            'attempts_count' => $attemptsCount,
+            'scored_attempts_count' => $scoredCount,
+            'pending_grading_count' => $pendingGrading,
+            'average_score' => $averageScore !== null ? (int) round($averageScore) : null,
+            'pass_rate' => $this->passRate($attemptsQuery, $scoredCount),
+            'competitions_count' => $examIds->isEmpty()
+                ? 0
+                : Competition::query()->whereIn('exam_id', $examIds)->count(),
+            'flagged_integrity_count' => $flagged,
         ];
     }
 
-    protected function scopedCourses(User $user): Collection
+    /**
+     * Courses this user's analytics cover. An admin sees everything; an
+     * assistant's analytics cover the teacher's courses, matching what the
+     * policies let them see.
+     *
+     * @return Builder<Course>
+     */
+    protected function scopedCourseQuery(User $user): Builder
     {
         $ownerIds = $user->staffOwnerIds();
 
         if ($ownerIds === null) {
-            return Course::query()->get();
+            return Course::query();
         }
 
-        // An Assistant's analytics cover the Teacher's courses, matching what
-        // the policies let them see.
-        return Course::query()->whereIn('created_by', $ownerIds)->get();
+        return Course::query()->whereIn('created_by', $ownerIds);
     }
 
-    protected function scopedEnrollments(User $user, Collection $courseIds): Collection
+    /**
+     * Share of scored attempts that met their pass threshold.
+     *
+     * The denominator is attempts with a final score, not every attempt handed
+     * in: an attempt still awaiting essay grading has no outcome to pass or
+     * fail, and counting it as a failure would understate the rate.
+     *
+     * @param  Builder<ExamAttempt>|null  $attemptsQuery
+     */
+    protected function passRate(?Builder $attemptsQuery, int $scoredCount): ?int
     {
-        if ($courseIds->isEmpty()) {
-            return collect();
-        }
-
-        return Enrollment::query()
-            ->whereIn('course_id', $courseIds)
-            ->where('status', EnrollmentStatus::Active->value)
-            ->get();
-    }
-
-    protected function scopedExams(User $user, Collection $courseIds): Collection
-    {
-        if ($courseIds->isEmpty()) {
-            return collect();
-        }
-
-        return Exam::query()->whereIn('course_id', $courseIds)->get();
-    }
-
-    protected function scopedAttempts(User $user, Collection $examIds): Collection
-    {
-        if ($examIds->isEmpty()) {
-            return collect();
-        }
-
-        return ExamAttempt::query()->whereIn('exam_id', $examIds)->get();
-    }
-
-    protected function scopedCompetitions(User $user, Collection $examIds): Collection
-    {
-        if ($examIds->isEmpty()) {
-            return collect();
-        }
-
-        return Competition::query()->whereIn('exam_id', $examIds)->get();
-    }
-
-    protected function passRate(Collection $scored): ?float
-    {
-        if ($scored->isEmpty()) {
+        if ($attemptsQuery === null || $scoredCount === 0) {
             return null;
         }
 
-        // The denominator is attempts with a final score, not every attempt
-        // handed in: an attempt still awaiting essay grading has no outcome to
-        // pass or fail, and counting it as a failure would understate the rate.
-        $passed = $scored->filter(function (ExamAttempt $attempt) {
-            return $attempt->pass_percentage !== null
-                && $attempt->percentage >= $attempt->pass_percentage;
-        })->count();
+        $passed = (clone $attemptsQuery)
+            ->withFinalScore()
+            ->whereNotNull('pass_percentage')
+            ->whereColumn('percentage', '>=', 'pass_percentage')
+            ->count();
 
-        return $passed / $scored->count() * 100;
+        return (int) round($passed / $scoredCount * 100);
     }
 }

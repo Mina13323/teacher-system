@@ -6,6 +6,10 @@ use App\Enums\CourseStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CourseResource;
 use App\Models\Course;
+use App\Models\Enrollment;
+use App\Models\Lesson;
+use App\Models\Unit;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,37 +19,48 @@ class DashboardController extends Controller
     {
         $this->authorize('viewAny', Course::class);
 
-        $query = Course::query()->withCount(['units', 'lessons', 'enrollments']);
-
         // Staff scoping so an Assistant's dashboard reflects the Teacher's LMS.
         $ownerIds = $request->user()->staffOwnerIds();
 
-        if ($ownerIds !== null) {
-            $query->whereIn('created_by', $ownerIds);
-        }
+        /** @return Builder<Course> */
+        $courses = function () use ($ownerIds): Builder {
+            $query = Course::query();
 
-        $stats = $query->get();
+            if ($ownerIds !== null) {
+                $query->whereIn('created_by', $ownerIds);
+            }
 
-        $totalEnrollments = $stats->sum('enrollments_count');
-        $totalUnits = $stats->sum('units_count');
-        $totalLessons = $stats->sum('lessons_count');
+            return $query;
+        };
 
-        $recent = Course::query()
-            ->whereIn('id', $stats->pluck('id'))
-            ->with('creator')
-            ->withCount(['units', 'lessons', 'enrollments'])
-            ->latest()
-            ->limit(5)
-            ->get();
+        $courseIds = $courses()->pluck('id');
 
+        // Every figure is one aggregate query. This used to load every course the
+        // teacher owns — with three withCount subqueries attached to each — and
+        // then sum the results in PHP, purely to render five numbers.
         return $this->success([
-            'courses_count' => $stats->count(),
-            'published_count' => $stats->where('status', CourseStatus::Published)->count(),
-            'draft_count' => $stats->where('status', CourseStatus::Draft)->count(),
-            'total_enrollments' => $totalEnrollments,
-            'total_units' => $totalUnits,
-            'total_lessons' => $totalLessons,
-            'recent_courses' => CourseResource::collection($recent),
+            'courses_count' => $courses()->count(),
+            'published_count' => $courses()->where('status', CourseStatus::Published->value)->count(),
+            'draft_count' => $courses()->where('status', CourseStatus::Draft->value)->count(),
+            'total_enrollments' => $courseIds->isEmpty()
+                ? 0
+                : Enrollment::query()->whereIn('course_id', $courseIds)->count(),
+            'total_units' => $courseIds->isEmpty()
+                ? 0
+                : Unit::query()->whereIn('course_id', $courseIds)->count(),
+            'total_lessons' => $courseIds->isEmpty()
+                ? 0
+                : Lesson::query()
+                    ->whereHas('unit', fn ($q) => $q->whereIn('course_id', $courseIds))
+                    ->count(),
+            'recent_courses' => CourseResource::collection(
+                $courses()
+                    ->with('creator')
+                    ->withCount(['units', 'lessons', 'enrollments'])
+                    ->latest()
+                    ->limit(5)
+                    ->get()
+            ),
         ], 'Dashboard retrieved.');
     }
 }

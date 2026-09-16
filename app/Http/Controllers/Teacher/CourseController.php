@@ -46,7 +46,7 @@ class CourseController extends Controller
         }
 
         return $this->success(
-            CourseResource::collection($query->latest()->paginate($request->integer('per_page', 15))),
+            CourseResource::collection($query->latest()->paginate($this->perPage($request, 15))),
             'Courses retrieved.'
         );
     }

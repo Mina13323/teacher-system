@@ -21,7 +21,7 @@ class CourseController extends Controller
             ->with('creator')
             ->withCount(['units', 'lessons'])
             ->latest()
-            ->paginate($request->integer('per_page', 15));
+            ->paginate($this->perPage($request, 15));
 
         return $this->success(CourseResource::collection($courses), 'Courses retrieved.');
     }

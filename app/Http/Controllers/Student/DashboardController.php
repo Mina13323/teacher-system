@@ -40,21 +40,30 @@ class DashboardController extends Controller
             $course->progress = $courseProgress[$course->getKey()]['percentage'] ?? 0;
         });
 
-        $allProgress = LessonProgress::query()
+        // Scoped once, reused for every figure below.
+        $courseIds = $enrollments->pluck('course_id');
+        $progress = fn () => LessonProgress::query()
             ->where('student_id', $userId)
-            ->whereHas('lesson.unit', fn ($q) => $q->whereIn('course_id', $enrollments->pluck('course_id')))
-            ->with(['lesson' => fn ($q) => $q->with('videos')])
-            ->orderByDesc('updated_at')
-            ->get();
+            ->whereHas('lesson.unit', fn ($q) => $q->whereIn('course_id', $courseIds));
 
+        // The counts are aggregates and the recent list is capped at five, so
+        // only those five rows ever hydrate their lesson and videos. This used
+        // to load every progress row the student had ever touched, each with its
+        // full video list, purely to count them.
         return $this->success([
             'enrolled_courses_count' => $courses->count(),
-            'completed_lessons_count' => $allProgress->where('completed', true)->count(),
-            'in_progress_lessons_count' => $allProgress
+            'completed_lessons_count' => $progress()->where('completed', true)->count(),
+            'in_progress_lessons_count' => $progress()
                 ->where('completed', false)
                 ->where('progress_percentage', '>', 0)
                 ->count(),
-            'recently_accessed_lessons' => LessonProgressResource::collection($allProgress->take(5)),
+            'recently_accessed_lessons' => LessonProgressResource::collection(
+                $progress()
+                    ->with(['lesson' => fn ($q) => $q->with('videos')])
+                    ->orderByDesc('updated_at')
+                    ->limit(5)
+                    ->get()
+            ),
             'courses' => StudentCourseResource::collection($courses),
         ], 'Dashboard retrieved.');
     }

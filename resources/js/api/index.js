@@ -163,7 +163,7 @@ export const teacher = {
     integritySettings: (examId) => api.get(`/teacher/exams/${examId}/integrity`),
     updateIntegritySettings: (examId, payload) => api.put(`/teacher/exams/${examId}/integrity`, payload),
     attemptIntegrity: (attemptId) => api.get(`/teacher/attempts/${attemptId}/integrity`),
-    attemptIntegrityEvents: (attemptId) => api.get(`/teacher/attempts/${attemptId}/integrity-events`),
+    attemptIntegrityEvents: (attemptId, params) => api.get(`/teacher/attempts/${attemptId}/integrity-events`, params),
     reviewAttempt: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/integrity/review`, payload),
 
     competitions: (params) => api.get('/teacher/competitions', params),

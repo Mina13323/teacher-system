@@ -3,6 +3,7 @@
 namespace App\Actions\Analytics;
 
 use App\Enums\EnrollmentStatus;
+use App\Enums\ExamAttemptStatus;
 use App\Enums\IntegrityStatus;
 use App\Models\Course;
 use App\Models\Enrollment;
@@ -10,11 +11,16 @@ use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\LessonProgress;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
  * Per-course analytics for a teacher (or admin). Aggregates enrollment,
  * progress, performance and competition activity for a single course.
+ *
+ * Averages, groupings and counts are pushed into SQL. The previous version
+ * loaded every attempt, enrollment and progress row for the course into PHP and
+ * aggregated there, which does not scale once a course has a real cohort.
  *
  * @return array<string, mixed>
  */
@@ -22,76 +28,37 @@ class BuildCourseAnalyticsAction
 {
     public function execute(User $user, Course $course): array
     {
-        $enrollments = Enrollment::query()
+        $enrollmentQuery = Enrollment::query()
             ->where('course_id', $course->getKey())
-            ->where('status', EnrollmentStatus::Active->value)
-            ->with('student')
-            ->get();
+            ->where('status', EnrollmentStatus::Active->value);
 
-        $studentIds = $enrollments->pluck('student_id');
-
+        $studentIds = (clone $enrollmentQuery)->distinct()->pluck('student_id');
         $lessons = $course->lessons()->get();
-
-        $progress = $studentIds->isEmpty()
-            ? collect()
-            : LessonProgress::query()
-                ->whereIn('student_id', $studentIds)
-                ->whereIn('lesson_id', $lessons->pluck('id'))
-                ->get();
+        $lessonIds = $lessons->pluck('id');
 
         $exams = Exam::query()->where('course_id', $course->getKey())->get();
         $examIds = $exams->pluck('id');
 
-        $attempts = $examIds->isEmpty()
-            ? collect()
-            // Eager-load the student: top_performers resolves a display name per
-            // group, which is an N+1 query per course without it.
-            : ExamAttempt::query()->whereIn('exam_id', $examIds)->with('student')->get();
+        $attemptsQuery = $examIds->isEmpty()
+            ? null
+            : ExamAttempt::query()->whereIn('exam_id', $examIds);
 
-        // `countsAsAttempt()` covers submitted, grading and published. The old
+        // Handed-in = submitted, grading or published. The old
         // `where('status', Submitted)` dropped every essay exam once it was
         // graded, so a course full of essay exams reported zero attempts.
-        $handedIn = $attempts->filter(fn (ExamAttempt $a) => $a->countsAsAttempt());
+        $attemptsCount = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)->submittedForReporting()->count();
 
-        // Only final scores feed averages, leaderboards and weak areas: a
+        // Only a final score feeds averages, leaderboards and weak areas: a
         // `grading` attempt carries a partial percentage.
-        $scored = $handedIn->filter(fn (ExamAttempt $a) => $a->hasFinalScore());
-        $avgPercentage = $scored->avg('percentage');
+        $scoredCount = $attemptsQuery === null
+            ? 0
+            : (clone $attemptsQuery)->withFinalScore()->count();
 
-        $flagged = $attempts->filter(fn (ExamAttempt $a) => in_array($a->integrity_status?->value, [
-            IntegrityStatus::Flagged->value,
-            IntegrityStatus::Monitoring->value,
-        ], true));
-
-        $topPerformers = $scored
-            ->groupBy('student_id')
-            ->map(fn (Collection $a) => [
-                'student_id' => (int) $a->first()->student_id,
-                'display_name' => $a->first()->student?->publicDisplayName() ?? 'Student',
-                'average' => (int) round($a->whereNotNull('percentage')->avg('percentage')),
-                'attempts' => $a->count(),
-            ])
-            ->sortByDesc('average')
-            ->take(5)
-            ->values();
-
-        $weakAreas = $exams
-            ->map(function (Exam $exam) use ($scored) {
-                $examSubmissions = $scored->where('exam_id', $exam->getKey());
-
-                return [
-                    'exam_id' => $exam->getKey(),
-                    'title' => $exam->title,
-                    'attempts' => $examSubmissions->count(),
-                    'average' => $examSubmissions->whereNotNull('percentage')->isEmpty()
-                        ? null
-                        : (int) round($examSubmissions->whereNotNull('percentage')->avg('percentage')),
-                ];
-            })
-            ->filter(fn ($row) => $row['attempts'] > 0)
-            ->sortBy('average')
-            ->take(5)
-            ->values();
+        $averageScore = $scoredCount === 0
+            ? null
+            : (clone $attemptsQuery)->withFinalScore()->avg('percentage');
 
         return [
             'course' => [
@@ -99,34 +66,142 @@ class BuildCourseAnalyticsAction
                 'title' => $course->title,
                 'status' => $course->status?->value,
             ],
-            'enrollments_count' => $enrollments->count(),
-            'students_count' => $studentIds->unique()->count(),
+            'enrollments_count' => (clone $enrollmentQuery)->count(),
+            'students_count' => $studentIds->count(),
             'lessons_count' => $lessons->count(),
-            'average_lesson_completion' => $this->averageLessonCompletion($progress, $lessons, $studentIds),
+            'average_lesson_completion' => $this->averageLessonCompletion($studentIds, $lessonIds),
             'exams_count' => $exams->count(),
-            'attempts_count' => $handedIn->count(),
-            'scored_attempts_count' => $scored->count(),
-            'pending_grading_count' => $handedIn->filter(fn (ExamAttempt $a) => $a->status?->isGrading())->count(),
-            'average_score' => $avgPercentage !== null ? (int) round($avgPercentage) : null,
-            'flagged_integrity_count' => $flagged->count(),
-            'top_performers' => $topPerformers,
-            'weak_areas' => $weakAreas,
+            'attempts_count' => $attemptsCount,
+            'scored_attempts_count' => $scoredCount,
+            'pending_grading_count' => $attemptsQuery === null
+                ? 0
+                : (clone $attemptsQuery)->where('status', ExamAttemptStatus::Grading->value)->count(),
+            'average_score' => $averageScore !== null ? (int) round($averageScore) : null,
+            'flagged_integrity_count' => $attemptsQuery === null
+                ? 0
+                : (clone $attemptsQuery)
+                    ->whereIn('integrity_status', [
+                        IntegrityStatus::Flagged->value,
+                        IntegrityStatus::Monitoring->value,
+                    ])
+                    ->count(),
+            'top_performers' => $this->topPerformers($attemptsQuery),
+            'weak_areas' => $this->weakAreas($exams, $attemptsQuery),
         ];
     }
 
-    private function averageLessonCompletion(Collection $progress, Collection $lessons, Collection $studentIds): ?int
+    /**
+     * Five highest-scoring students in the course.
+     *
+     * Grouped and limited in SQL, so a course of a thousand students does not
+     * hydrate a thousand attempts to pick five names.
+     *
+     * @param  Builder<ExamAttempt>|null  $attemptsQuery
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function topPerformers(?Builder $attemptsQuery): Collection
     {
-        $lessonCount = $lessons->count();
-        $studentCount = $studentIds->unique()->count();
+        if ($attemptsQuery === null) {
+            return collect();
+        }
+
+        $rows = (clone $attemptsQuery)
+            ->withFinalScore()
+            ->selectRaw('student_id, AVG(percentage) as average, COUNT(*) as attempts')
+            ->groupBy('student_id')
+            ->orderByDesc('average')
+            ->limit(5)
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        // Resolve display names only for the rows actually shown.
+        $students = User::query()
+            ->whereIn('id', $rows->pluck('student_id'))
+            ->get()
+            ->keyBy('id');
+
+        return $rows->map(function ($row) use ($students) {
+            $student = $students->get((int) $row->student_id);
+
+            return [
+                'student_id' => (int) $row->student_id,
+                'display_name' => $student?->publicDisplayName() ?? 'Student',
+                'average' => (int) round((float) $row->average),
+                'attempts' => (int) $row->attempts,
+            ];
+        })->values();
+    }
+
+    /**
+     * The five exams the cohort performs worst on.
+     *
+     * @param  Collection<int, Exam>  $exams
+     * @param  Builder<ExamAttempt>|null  $attemptsQuery
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function weakAreas(Collection $exams, ?Builder $attemptsQuery): Collection
+    {
+        if ($attemptsQuery === null) {
+            return collect();
+        }
+
+        $perExam = (clone $attemptsQuery)
+            ->withFinalScore()
+            ->selectRaw('exam_id, AVG(percentage) as average, COUNT(*) as attempts')
+            ->groupBy('exam_id')
+            ->get()
+            ->keyBy('exam_id');
+
+        return $exams
+            ->map(function (Exam $exam) use ($perExam) {
+                $row = $perExam->get($exam->getKey());
+
+                return [
+                    'exam_id' => $exam->getKey(),
+                    'title' => $exam->title,
+                    'attempts' => $row === null ? 0 : (int) $row->attempts,
+                    'average' => $row === null ? null : (int) round((float) $row->average),
+                ];
+            })
+            ->filter(fn (array $row) => $row['attempts'] > 0)
+            ->sortBy('average')
+            ->take(5)
+            ->values();
+    }
+
+    /**
+     * Mean lesson completion across the enrolled cohort.
+     *
+     * Each student's completion is rounded to a whole percentage before the
+     * cohort mean is taken, matching how the figure has always been reported.
+     *
+     * @param  Collection<int, int>  $studentIds
+     * @param  Collection<int, int>  $lessonIds
+     */
+    private function averageLessonCompletion(Collection $studentIds, Collection $lessonIds): int
+    {
+        $lessonCount = $lessonIds->count();
+        $studentCount = $studentIds->count();
 
         if ($lessonCount === 0 || $studentCount === 0) {
             return 0;
         }
 
+        // One grouped query instead of loading every progress row.
+        $completedPerStudent = LessonProgress::query()
+            ->whereIn('student_id', $studentIds)
+            ->whereIn('lesson_id', $lessonIds)
+            ->where('completed', true)
+            ->selectRaw('student_id, COUNT(*) as completed')
+            ->groupBy('student_id')
+            ->pluck('completed', 'student_id');
+
         $sum = 0;
-        foreach ($studentIds->unique() as $studentId) {
-            $studentProgress = $progress->where('student_id', $studentId);
-            $completed = $studentProgress->where('completed', true)->count();
+        foreach ($studentIds as $studentId) {
+            $completed = (int) $completedPerStudent->get($studentId, 0);
             $sum += (int) round($completed / $lessonCount * 100);
         }
 

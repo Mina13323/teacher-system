@@ -120,10 +120,4 @@ class StudentController extends Controller
         abort_unless($request->user()->isAdmin(), 403, 'Admin access required.');
     }
 
-    private function perPage(Request $request): int
-    {
-        return $request->integer('per_page', 20) > 0
-            ? min(100, $request->integer('per_page', 20))
-            : 20;
-    }
 }
