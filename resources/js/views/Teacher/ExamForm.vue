@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue';
+import { formatDateTime } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
@@ -128,7 +129,7 @@ async function submit() {
                         <p class="text-xs text-ink-500">{{ $t('exams.windowHint') }}</p>
                         <p v-if="effectiveDeadline" class="text-xs font-medium text-ink-700">
                             {{ $t('exams.effectiveDeadline') }}:
-                            {{ effectiveDeadline.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }}
+                            {{ formatDateTime(effectiveDeadline) }}
                         </p>
                     </div>
                     <div class="flex flex-wrap gap-4 text-sm text-ink-700">

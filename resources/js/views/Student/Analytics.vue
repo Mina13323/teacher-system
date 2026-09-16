@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -63,7 +64,7 @@ onMounted(() => run());
                                             : $t('analytics.awaitingPublication') }}
                                     </AppBadge>
                                 </td>
-                                <td class="px-3 py-2.5 text-ink-500">{{ h.submitted_at ? new Date(h.submitted_at).toLocaleDateString() : '—' }}</td>
+                                <td class="px-3 py-2.5 text-ink-500">{{ formatDate(h.submitted_at) }}</td>
                             </tr>
                         </tbody>
                     </table>

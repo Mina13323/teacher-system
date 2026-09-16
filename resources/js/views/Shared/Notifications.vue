@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
+import { formatDateTime } from '@/utils/format';
 import { storeToRefs } from 'pinia';
 import { useNotificationsStore } from '@/stores/notifications';
 import { useToast } from '@/composables/toast';
@@ -97,7 +98,7 @@ onMounted(() => store.fetch());
                         <AppBadge v-if="!n.read_at" tone="primary">{{ $t('notifications.new') }}</AppBadge>
                     </div>
                     <p class="mt-0.5 text-sm text-ink-600" dir="auto">{{ n.data?.message }}</p>
-                    <p class="mt-1 text-xs text-ink-400">{{ new Date(n.created_at).toLocaleString() }}</p>
+                    <p class="mt-1 text-xs text-ink-400">{{ formatDateTime(n.created_at) }}</p>
                     <router-link
                         v-if="linkFor(n)"
                         :to="linkFor(n)"

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useRoute } from 'vue-router';
 import { admin } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -56,7 +57,7 @@ onMounted(load);
                 <div class="space-y-2">
                     <div v-for="(e, idx) in analytics.courses" :key="idx" class="flex items-center gap-3 rounded-lg bg-ink-50 px-4 py-2.5 text-sm">
                         <span class="flex-1 font-medium text-ink-800" dir="auto">{{ e.title }}</span>
-                        <span class="text-xs text-ink-400">{{ $t('common.enrolledAt', { date: e.enrolled_at ? new Date(e.enrolled_at).toLocaleDateString() : '—' }) }}</span>
+                        <span class="text-xs text-ink-400">{{ $t('common.enrolledAt', { date: formatDate(e.enrolled_at) }) }}</span>
                     </div>
                 </div>
             </AppCard>
@@ -71,7 +72,7 @@ onMounted(load);
                                 <td class="px-3 py-2.5 font-medium text-ink-800" dir="auto">{{ h.exam_title }}</td>
                                 <td class="px-3 py-2.5 text-ink-600">{{ h.percentage }}%</td>
                                 <td class="px-3 py-2.5"><AppBadge :tone="h.passed === true ? 'success' : h.passed === false ? 'danger' : 'neutral'">{{ h.passed === true ? $t('status.passed') : h.passed === false ? $t('status.failed') : '—' }}</AppBadge></td>
-                                <td class="px-3 py-2.5 text-ink-500">{{ h.submitted_at ? new Date(h.submitted_at).toLocaleDateString() : '—' }}</td>
+                                <td class="px-3 py-2.5 text-ink-500">{{ formatDate(h.submitted_at) }}</td>
                             </tr>
                         </tbody>
                     </table>

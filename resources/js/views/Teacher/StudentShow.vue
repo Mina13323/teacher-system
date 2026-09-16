@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
@@ -268,7 +269,7 @@ onMounted(async () => {
 
                 <AppCard>
                     <p class="text-xs font-medium text-ink-500 uppercase">{{ $t('students.joined') }}</p>
-                    <p class="mt-2 text-sm font-medium text-ink-800">{{ student.created_at ? new Date(student.created_at).toLocaleDateString() : '—' }}</p>
+                    <p class="mt-2 text-sm font-medium text-ink-800">{{ formatDate(student.created_at) }}</p>
                 </AppCard>
             </div>
 
@@ -332,7 +333,7 @@ onMounted(async () => {
                         <div v-for="e in student.enrollments" :key="e.id" class="flex items-center justify-between p-3">
                             <div>
                                 <p class="text-sm font-medium text-ink-900" dir="auto">{{ e.course?.title || e.course_title || '—' }}</p>
-                                <p class="text-xs text-ink-500">{{ $t('students.enrolledAt') }}: {{ e.enrolled_at ? new Date(e.enrolled_at).toLocaleDateString() : '—' }}</p>
+                                <p class="text-xs text-ink-500">{{ $t('students.enrolledAt') }}: {{ formatDate(e.enrolled_at) }}</p>
                             </div>
                             <AppButton variant="ghost" size="sm" class="text-rose-600 hover:bg-rose-50" @click="unenroll(e.course_id || e.course?.id)">
                                 {{ $t('students.unenroll') }}

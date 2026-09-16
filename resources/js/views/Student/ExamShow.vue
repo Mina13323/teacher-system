@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue';
+import { formatDateTime } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
@@ -54,7 +55,7 @@ async function start() {
 }
 
 function fmtWhen(iso) {
-    return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    return formatDateTime(iso);
 }
 
 function attemptTone(status) {
@@ -107,7 +108,7 @@ function statusLabel(status) {
                         <span class="text-sm font-semibold text-ink-700">{{ $t('common.attemptN', { n: a.attempt_number }) }}</span>
                         <AppBadge :tone="attemptTone(a.status)">{{ statusLabel(a.status) }}</AppBadge>
                         <span v-if="a.percentage !== null" class="text-sm text-ink-600">{{ a.percentage }}%</span>
-                        <span class="ms-auto text-xs text-ink-400">{{ a.submitted_at ? new Date(a.submitted_at).toLocaleString() : new Date(a.started_at).toLocaleString() }}</span>
+                        <span class="ms-auto text-xs text-ink-400">{{ formatDateTime(a.submitted_at || a.started_at) }}</span>
                     </div>
                 </div>
             </AppCard>

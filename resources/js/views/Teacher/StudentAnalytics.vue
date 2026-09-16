@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useRoute } from 'vue-router';
 import { useAsync } from '@/composables/useAsync';
 import { teacher } from '@/api';
@@ -42,7 +43,7 @@ onMounted(() => run());
                                 <td class="px-3 py-2.5 font-medium text-ink-800" dir="auto">{{ h.exam_title }}</td>
                                 <td class="px-3 py-2.5 text-ink-600">{{ h.percentage }}%</td>
                                 <td class="px-3 py-2.5"><AppBadge :tone="h.passed === true ? 'success' : h.passed === false ? 'danger' : 'neutral'">{{ h.passed === true ? $t('status.passed') : h.passed === false ? $t('status.failed') : '—' }}</AppBadge></td>
-                                <td class="px-3 py-2.5 text-ink-500">{{ h.submitted_at ? new Date(h.submitted_at).toLocaleDateString() : '—' }}</td>
+                                <td class="px-3 py-2.5 text-ink-500">{{ formatDate(h.submitted_at) }}</td>
                             </tr>
                         </tbody>
                     </table>

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { formatDateTime } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
@@ -43,7 +44,7 @@ function statusTone(s) {
     return { flagged: 'danger', monitoring: 'warning', cleared: 'success', reviewed: 'info' }[s] || 'neutral';
 }
 function dateOf(iso) {
-    return iso ? new Date(iso).toLocaleString() : '—';
+    return formatDateTime(iso);
 }
 
 async function load() {

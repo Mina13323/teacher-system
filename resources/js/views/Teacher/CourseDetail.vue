@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
@@ -407,7 +408,7 @@ onMounted(async () => { await run(); });
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (s.student?.name || 'U').slice(0, 1) }}</div>
                             <div class="min-w-0 flex-1">
                                 <p class="font-medium text-ink-800" dir="auto">{{ s.student?.name }}</p>
-                                <p class="text-xs text-ink-400">{{ s.student?.email }} · {{ $t('common.enrolledAt', { date: s.enrolled_at ? new Date(s.enrolled_at).toLocaleDateString() : '—' }) }}</p>
+                                <p class="text-xs text-ink-400">{{ s.student?.email }} · {{ $t('common.enrolledAt', { date: formatDate(s.enrolled_at) }) }}</p>
                             </div>
                             <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="askDelete(s, 'enrollment')">{{ $t('students.unenroll') }}</button>
                         </div>

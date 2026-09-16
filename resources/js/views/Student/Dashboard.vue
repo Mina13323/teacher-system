@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
+import { formatDate } from '@/utils/format';
 import { useAsync } from '@/composables/useAsync';
 import { student, toList } from '@/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -23,7 +24,7 @@ const { loading, error, data, run } = useAsync(async () => {
 onMounted(() => run());
 
 function fmtDate(iso) {
-    return iso ? new Date(iso).toLocaleDateString() : '';
+    return formatDate(iso);
 }
 </script>
 
