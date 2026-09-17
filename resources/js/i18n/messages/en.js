@@ -845,6 +845,7 @@ export default {
         courses: 'Courses',
         myAnalytics: 'My analytics',
         subtitle: "Insights into your students' learning and performance.",
+        adminSubtitle: 'Platform-wide insights across every teacher, course and student.',
         lessonsCompleted: 'Lessons completed',
         examsTaken: 'Exams taken',
         averageScore: 'Average score',

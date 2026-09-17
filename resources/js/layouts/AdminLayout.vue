@@ -9,6 +9,7 @@ const nav = computed(() => [
     { label: t('nav.dashboard'), to: '/admin', icon: 'home' },
     { label: t('dashboard.teachers'), to: '/admin/teachers', icon: 'user' },
     { label: t('nav.students'), to: '/admin/students', icon: 'users' },
+    { label: t('nav.analytics'), to: '/admin/analytics', icon: 'chart' },
     { label: t('nav.notifications'), to: '/admin/notifications', icon: 'bell' },
     { label: t('nav.profile'), to: '/admin/profile', icon: 'user' },
 ]);

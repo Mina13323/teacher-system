@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
+import { useAuthStore } from '@/stores/auth';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import AppCard from '@/components/ui/AppCard.vue';
@@ -11,6 +12,15 @@ import AppButton from '@/components/ui/AppButton.vue';
 
 const { t } = useI18n();
 const toast = useToast();
+
+// This view serves both portals: a teacher reads their own cohort, an admin
+// reads the whole platform (staffOwnerIds() is null for admins, so the same
+// endpoints return fleet-wide data). The subtitle must not claim "your
+// students" when the reader is an admin.
+const auth = useAuthStore();
+const subtitle = computed(() =>
+    auth.isAdmin ? t('analytics.adminSubtitle') : t('analytics.subtitle')
+);
 const overview = ref(null);
 const loading = ref(true);
 const error = ref('');
@@ -56,7 +66,7 @@ onMounted(loadOverview);
     <div class="space-y-6">
         <div>
             <h1 class="text-2xl font-bold text-ink-900">{{ $t('analytics.title') }}</h1>
-            <p class="text-sm text-ink-500">{{ $t('analytics.subtitle') }}</p>
+            <p class="text-sm text-ink-500">{{ subtitle }}</p>
         </div>
 
         <LoadingSpinner v-if="loading" />

@@ -845,6 +845,7 @@ export default {
         courses: 'الدورات',
         myAnalytics: 'تحليلاتي',
         subtitle: 'رؤى حول تعلّم طلابك وأدائهم.',
+        adminSubtitle: 'رؤى شاملة للمنصة عبر جميع المعلمين والدورات والطلاب.',
         lessonsCompleted: 'الدروس المُنجزة',
         examsTaken: 'الاختبارات المُؤدّاة',
         averageScore: 'متوسط الدرجات',

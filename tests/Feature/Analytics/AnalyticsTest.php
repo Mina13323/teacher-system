@@ -318,4 +318,39 @@ class AnalyticsTest extends ApiTestCase
             ->assertJsonPath('data.enrollments_count', 2)
             ->assertJsonPath('data.students_count', 1);
     }
+
+    /**
+     * The admin analytics screen reuses these endpoints. An admin's
+     * staffOwnerIds() is null, so the same overview must aggregate every
+     * teacher's data rather than returning the empty set a scoped query would.
+     */
+    public function test_an_admin_overview_is_fleet_wide_not_scoped_to_one_teacher(): void
+    {
+        $this->buildCourseWithSubmittedStudent();
+        $this->buildCourseWithSubmittedStudent();
+
+        $admin = $this->createUserWithRole(UserRole::Admin);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/teacher/analytics/overview')
+            ->assertStatus(200)
+            ->assertJsonPath('data.courses_count', 2)
+            ->assertJsonPath('data.enrollments_count', 2)
+            ->assertJsonPath('data.attempts_count', 2);
+    }
+
+    /**
+     * An admin may also drill into a course they do not own, which is what the
+     * admin course selector depends on.
+     */
+    public function test_an_admin_can_read_course_analytics_for_another_teachers_course(): void
+    {
+        [, $course, , ] = $this->buildCourseWithSubmittedStudent();
+
+        $admin = $this->createUserWithRole(UserRole::Admin);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/v1/teacher/analytics/courses/{$course->id}")
+            ->assertStatus(200);
+    }
 }

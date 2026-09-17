@@ -98,6 +98,10 @@ const routes = [
             { path: 'teachers/:id/edit', name: 'admin.teachers.edit', component: () => import('@/views/Admin/TeacherForm.vue') },
             { path: 'students', name: 'admin.students', component: () => import('@/views/Admin/Students.vue') },
             { path: 'students/:id', name: 'admin.student', component: () => import('@/views/Admin/StudentShow.vue') },
+            // Admins are authorized on the staff analytics endpoints (role:teacher|assistant|admin
+            // plus the Gate::before admin hook), and staffOwnerIds() is null for them, so the same
+            // view returns fleet-wide data. Reused rather than forked to avoid drift.
+            { path: 'analytics', name: 'admin.analytics', component: () => import('@/views/Teacher/Analytics.vue') },
             { path: 'notifications', name: 'admin.notifications', component: () => import('@/views/Shared/Notifications.vue') },
             { path: 'profile', name: 'admin.profile', component: () => import('@/views/Shared/Profile.vue') },
         ],
