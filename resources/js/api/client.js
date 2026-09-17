@@ -95,10 +95,25 @@ async function request(config) {
             status = 0;
         }
 
-        const message =
+        let message =
             errors && status === 422
                 ? ApiError.friendly(422)
                 : serverMessage || ApiError.friendly(status);
+
+        // Clean any leaking raw SQL/database error strings defensively
+        if (typeof message === 'string' && (message.includes('SQLSTATE') || message.includes('Integrity constraint violation') || message.includes('PDOException'))) {
+            if (message.includes('NOT NULL constraint failed') || message.includes('cannot be null')) {
+                const match = message.match(/NOT NULL constraint failed:\s*([\w\.]+)/i) || message.match(/Column '(\w+)' cannot be null/i);
+                const field = match ? match[1].split('.').pop().replace(/_/g, ' ') : '';
+                message = field ? `The field "${field}" is required and cannot be empty.` : 'A required field was left empty.';
+            } else if (message.includes('UNIQUE constraint failed') || message.includes('Duplicate entry')) {
+                message = 'A conflicting record already exists with this information.';
+            } else if (message.includes('FOREIGN KEY constraint failed') || message.includes('foreign key constraint fails')) {
+                message = 'This operation cannot be completed because the item is referenced by other records.';
+            } else {
+                message = 'A database error occurred. Please verify your submitted data.';
+            }
+        }
 
         throw new ApiError(message, { status, errors, data: error.response?.data });
     }

@@ -315,6 +315,46 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
+        $exceptions->render(function (\Illuminate\Database\QueryException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                $raw = $e->getMessage();
+                $message = 'A database error occurred while processing your request.';
+
+                if (str_contains($raw, 'NOT NULL constraint failed') || str_contains($raw, 'cannot be null')) {
+                    if (preg_match('/NOT NULL constraint failed:\s*([\w\.]+)/i', $raw, $m) || preg_match('/Column \'(\w+)\' cannot be null/i', $raw, $m)) {
+                        $field = str_replace('_', ' ', last(explode('.', $m[1])));
+                        $message = 'The field "'.ucfirst($field).'" is required and cannot be empty.';
+                    } else {
+                        $message = 'Required information is missing or empty.';
+                    }
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => $message,
+                    ], 422);
+                }
+
+                if (str_contains($raw, 'UNIQUE constraint failed') || str_contains($raw, 'Duplicate entry') || $e->getCode() === '23000' || $e->getCode() === 23000) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'A conflicting record with this information already exists.',
+                    ], 409);
+                }
+
+                if (str_contains($raw, 'FOREIGN KEY constraint failed') || str_contains($raw, 'foreign key constraint fails')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This operation cannot be completed because the item is linked to other records.',
+                    ], 409);
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => config('app.debug') ? $e->getMessage() : $message,
+                ], 500);
+            }
+        });
+
         // Suppress internal exception detail outside of local/debug environments.
         $exceptions->render(function (Throwable $e, Request $request) {
             if (($request->is('api/*') || $request->expectsJson()) && ! config('app.debug')) {

@@ -64,7 +64,7 @@ class SyncExamQuestionsAction
 
                 $question->fill([
                     'exam_id' => $exam->getKey(),
-                    'question_text' => $payload['question_text'],
+                    'question_text' => (string) ($payload['question_text'] ?? ''),
                     'type' => $type->value,
                     'points' => (int) $payload['points'],
                     // The paper's order is the order the teacher sees on screen.
@@ -114,7 +114,7 @@ class SyncExamQuestionsAction
 
             $model->fill([
                 'question_id' => $question->getKey(),
-                'option_text' => $option['option_text'],
+                'option_text' => (string) ($option['option_text'] ?? ''),
                 'is_correct' => (bool) ($option['is_correct'] ?? false),
                 'position' => $position + 1,
             ]);

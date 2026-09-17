@@ -192,7 +192,7 @@ async function saveAll() {
     try {
         const payload = questions.value.map((q) => {
             const row = {
-                question_text: String(q.question_text || '').trim() || null,
+                question_text: String(q.question_text || '').trim(),
                 type: q.type,
                 points: Number(q.points) || 1,
                 reference_answer: String(q.reference_answer || '').trim() || null,
@@ -202,7 +202,7 @@ async function saveAll() {
 
             row.options = isEssay(q) ? [] : q.options.map((o) => {
                 const opt = {
-                    option_text: String(o.option_text || '').trim() || null,
+                    option_text: String(o.option_text || '').trim(),
                     is_correct: Boolean(o.is_correct),
                 };
                 if (o.id > 0) opt.id = o.id;
