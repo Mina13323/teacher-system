@@ -363,7 +363,16 @@ function attemptTone(status) {
                     </div>
                 </div>
                 <EmptyState v-if="!questions.length" icon="clipboard" :title="$t('exams.noQuestionsTitle')" :message="$t('exams.noQuestionsMessage')">
-                    <AppButton @click="openQuestion()">{{ $t('exams.addQuestion') }}</AppButton>
+                    <div class="mt-2 flex flex-wrap items-center justify-center gap-2">
+                        <AppButton @click="openQuestion()">
+                            <Icon name="plus" :size="15" class="me-1" />
+                            {{ $t('exams.addQuestion') }}
+                        </AppButton>
+                        <AppButton variant="secondary" @click="router.push(`/teacher/exams/${examId}/questions`)">
+                            <Icon name="layers" :size="15" class="me-1" />
+                            {{ $t('examQuestions.bulkEditor') }}
+                        </AppButton>
+                    </div>
                 </EmptyState>
                 <div v-else class="space-y-4">
                     <div v-for="(q, qi) in questions" :key="q.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm space-y-3">
