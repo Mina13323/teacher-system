@@ -8,3 +8,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 \Illuminate\Support\Facades\Schedule::command('students:check-renewals')->daily();
+
+// Nightly rotating database backup. withoutOverlapping() stops a slow dump from
+// being stacked by the next run; runFor() bounds a hung mysqldump.
+\Illuminate\Support\Facades\Schedule::command('db:backup')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->runFor(30 * 60);

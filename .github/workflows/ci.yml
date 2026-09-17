@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+
+# A push that only changes docs does not need a full build.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # composer.json requires ^8.2; verify the floor and a current release.
+        php: ['8.2', '8.3']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          # pdo_sqlite/sqlite3: phpunit.xml uses an in-memory sqlite database, so
+          # no database service container is needed.
+          extensions: dom, fileinfo, mbstring, pdo, pdo_sqlite, sqlite3, bcmath, intl
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run tests
+        run: php artisan test
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  guards:
+    # Cheap checks that do not need a runtime. Each one exists because it has
+    # already been violated once in this repository's history.
+    name: Repo guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No environment file is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env(\.[a-z]+)?$' | grep -v '\.example$'; then
+            echo "::error::An .env file is tracked in git. Remove it from the index."
+            exit 1
+          fi
+
+      - name: No plaintext provisioning credential
+        run: |
+          if grep -rn "Mr\.Maher@systemforStudents" \
+               --include='*.php' --include='*.md' --include='*.js' --include='*.vue' . ; then
+            echo "::error::A previously committed plaintext credential reappeared."
+            exit 1
+          fi
+          echo "No known plaintext credential present."
+
+      - name: Pagination is capped
+        run: |
+          # per_page arrives from the client. Reading it directly bypasses
+          # MAX_PER_PAGE, so every list endpoint must resolve it through
+          # perPage() in the base Controller.
+          raw=$(grep -rn --include='*.php' 'per_page' app/Http/Controllers \
+            | grep -v 'Controllers/Controller.php' || true)
+          if [ -n "$raw" ]; then
+            echo "::error::per_page is read outside the base Controller:"
+            echo "$raw"
+            exit 1
+          fi
+
+          # And every paginate() call must actually use that helper.
+          uncapped=$(grep -rn --include='*.php' 'paginate(' app/Http/Controllers \
+            | grep -v 'perPage(' || true)
+          if [ -n "$uncapped" ]; then
+            echo "::error::paginate() called without perPage():"
+            echo "$uncapped"
+            exit 1
+          fi
+          echo "All paginated endpoints resolve their page size through perPage()."
