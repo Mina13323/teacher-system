@@ -686,6 +686,8 @@ export default {
         gradingModalTitle: 'تصحيح محاولة الطالب: ',
     },
     examTemplates: {
+        empty: 'لا توجد قوالب بعد. احفظ هذا الاختبار كقالب، أو نفّذ: php artisan db:seed --class=ExamTemplateSeeder لتحميل القوالب الجاهزة.',
+        loadError: 'تعذّر تحميل القوالب ({message}). تأكد من تشغيل ترحيل exam_templates وراجع سجل الخادم لمعرفة الخطأ.',
         title: 'قوالب الامتحانات',
         choose: 'اختر قالبًا',
         selectPlaceholder: 'اختر قالبًا…',

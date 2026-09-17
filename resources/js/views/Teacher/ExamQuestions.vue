@@ -224,6 +224,7 @@ async function saveAll() {
 
 // ---- Templates -------------------------------------------------------------
 const templates = ref([]);
+const templatesError = ref('');
 const selectedTemplate = ref('');
 const applyBusy = ref(false);
 
@@ -248,14 +249,19 @@ function templateDescription(tpl) {
 }
 
 async function loadTemplates() {
+    templatesError.value = '';
     try {
         const res = await teacher.examTemplates();
         // The catalog is paginated: rows may arrive as a bare array or nested
         // under data.data, so unwrap defensively instead of assuming a shape.
         const payload = res?.data ?? res;
         templates.value = Array.isArray(payload) ? payload : (payload?.data || []);
-    } catch {
+    } catch (e) {
+        // Never present a silently-empty picker. Surface the real reason
+        // (403 / 500 / missing migration) so the cause is visible instead of
+        // looking like "there are just no templates".
         templates.value = [];
+        templatesError.value = e?.message || '';
     }
 }
 
@@ -401,6 +407,13 @@ const isPublished = computed(() => exam.value?.status === 'published');
                         {{ $t('examTemplates.saveAsTemplate') }}
                     </AppButton>
                 </div>
+
+                <p v-if="templatesError" class="mt-2 text-xs font-medium text-rose-600" dir="auto">
+                    {{ $t('examTemplates.loadError', { message: templatesError }) }}
+                </p>
+                <p v-else-if="!templates.length" class="mt-2 text-xs text-ink-400" dir="auto">
+                    {{ $t('examTemplates.empty') }}
+                </p>
 
                 <p v-if="selectedTemplate" class="mt-3 text-sm text-ink-500" dir="auto">
                     {{ templateDescription(templates.find((tp) => tp.id === Number(selectedTemplate))) }}
