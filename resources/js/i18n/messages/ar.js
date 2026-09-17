@@ -16,6 +16,8 @@ export default {
         openMenu: 'فتح القائمة',
         close: 'إغلاق',
         home: 'الرئيسية',
+        menu: 'القائمة',
+        more: 'المزيد',
     },
     nav: {
         dashboard: 'لوحة التحكم',

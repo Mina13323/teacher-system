@@ -16,6 +16,8 @@ export default {
         openMenu: 'Open menu',
         close: 'Close',
         home: 'Home',
+        menu: 'Menu',
+        more: 'More',
     },
     nav: {
         dashboard: 'Dashboard',

@@ -34,15 +34,15 @@ const units = computed(() => {
 
 <template>
     <div class="min-h-screen bg-parchment-50">
-        <header class="sticky top-0 z-20 border-b border-ink-100 bg-parchment-50/90 backdrop-blur">
-            <div class="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-                <div class="flex items-center gap-2">
-                    <Icon name="compass" :size="22" class="text-terracotta-600" />
-                    <span class="font-display text-lg font-semibold text-ink-900">{{ $t('app.brand') }}</span>
+        <header class="sticky top-0 z-20 border-b border-ink-100 bg-parchment-50/95 pt-safe backdrop-blur">
+            <div class="mx-auto flex h-16 max-w-5xl items-center justify-between px-3 sm:px-4">
+                <div class="flex items-center gap-2 min-w-0">
+                    <Icon name="compass" :size="22" class="text-terracotta-600 shrink-0" />
+                    <span class="truncate font-display text-base sm:text-lg font-semibold text-ink-900">{{ $t('app.brand') }}</span>
                 </div>
-                <nav class="flex items-center gap-3">
-                    <LanguageSwitcher />
-                    <router-link to="/courses" class="text-sm font-medium text-ink-600 hover:text-ink-900">{{ $t('nav.courses') }}</router-link>
+                <nav class="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <LanguageSwitcher class="scale-90 sm:scale-100" />
+                    <router-link to="/courses" class="text-xs sm:text-sm font-medium text-ink-600 hover:text-ink-900">{{ $t('nav.courses') }}</router-link>
                     <router-link to="/login"><AppButton size="sm">{{ $t('auth.signIn') }}</AppButton></router-link>
                 </nav>
             </div>
