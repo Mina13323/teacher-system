@@ -47,13 +47,12 @@ class ExamTemplateController extends Controller
                 }
             })
             // Seeded presets first, then the teacher's own, alphabetically.
+            // The catalog is deliberately small (a handful of system presets
+            // plus a teacher's own saves) and the picker needs every row, so it
+            // is returned as a plain collection rather than paginated.
             ->orderByDesc('is_system')
             ->orderBy('name')
-            // Bounded: without this a long-lived account accumulates an
-            // ever-growing catalog returned in one payload. The default is the
-            // ceiling so a realistic catalog still arrives in a single page
-            // while the endpoint can no longer return an unbounded set.
-            ->paginate($this->perPage($request, self::MAX_PER_PAGE));
+            ->get();
 
         return $this->success(ExamTemplateResource::collection($templates), 'Exam templates retrieved.');
     }
