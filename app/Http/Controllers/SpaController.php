@@ -14,7 +14,11 @@ class SpaController extends Controller
     {
         $path = public_path('index.html');
         if (file_exists($path)) {
-            return response()->file($path);
+            return response()->file($path, [
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                'Pragma' => 'no-cache',
+                'Expires' => '0',
+            ]);
         }
 
         return response()->json(['message' => 'Single Page Application entrypoint not built.'], 404);
