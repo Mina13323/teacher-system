@@ -686,6 +686,7 @@ export default {
         gradingModalTitle: 'Grade student attempt: ',
     },
     examTemplates: {
+        publishedLocked: 'This exam is published, so its structure is locked. To use a template, create a new draft exam and apply it there before publishing.',
         empty: 'No templates yet. Save this paper as a template, or run: php artisan db:seed --class=ExamTemplateSeeder to load the built-in presets.',
         loadError: 'Templates could not be loaded ({message}). Check that the exam_templates migration has run and see the server log for the exact error.',
         title: 'Exam Templates',

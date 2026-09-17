@@ -408,6 +408,10 @@ const isPublished = computed(() => exam.value?.status === 'published');
                     </AppButton>
                 </div>
 
+                <p v-if="isPublished" class="mt-2 text-xs font-medium text-amber-700" dir="auto">
+                    {{ $t('examTemplates.publishedLocked') }}
+                </p>
+
                 <p v-if="templatesError" class="mt-2 text-xs font-medium text-rose-600" dir="auto">
                     {{ $t('examTemplates.loadError', { message: templatesError }) }}
                 </p>
