@@ -30,7 +30,7 @@
 | الدور | البريد الإلكتروني | كلمة المرور | المصدر |
 |---|---|---|---|
 | مدير النظام | `admin@example.com` | `password` | `DeveloperUserSeeder` |
-| المعلم (حساب البذر) | `maherelmasry@teacher.com` | `Mr.Maher@systemforStudents` | `TeacherAccountSeeder` |
+| المعلم (حساب البذر) | `maherelmasry@teacher.com` | من المتغير `TEACHER_ACCOUNT_PASSWORD` (أو `change-me-locally` محليًا/في الاختبارات فقط) | `TeacherAccountSeeder` |
 | مساعد | يُنشأ أثناء السيناريو `TCH-14` | — | — |
 | طالب | `ELM-1001` أو `elm-1001@student.com` | `ELM@#####` (خمس أرقام عشوائية) | يُنشأ أثناء `TCH-12` |
 

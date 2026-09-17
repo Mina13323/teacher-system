@@ -46,6 +46,12 @@ return Application::configure(basePath: dirname(__DIR__))
             ForceJsonResponse::class,
         ]);
 
+        // Attach the "api" rate limiter to the whole api group. Laravel 11 only
+        // throttles api routes when this is called; without it the limiter
+        // defined in AppServiceProvider never runs. The login route tightens
+        // this further with "throttle:login".
+        $middleware->throttleApi();
+
         // Spatie Laravel Permission authorization middleware aliases.
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,

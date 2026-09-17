@@ -31,7 +31,7 @@ class TeacherAccountSeederTest extends ApiTestCase
 
         $this->postJson('/api/v1/auth/login', [
             'email' => TeacherAccountSeeder::DEFAULT_EMAIL,
-            'password' => TeacherAccountSeeder::DEFAULT_PASSWORD,
+            'password' => TeacherAccountSeeder::LOCAL_FALLBACK_PASSWORD,
         ])
             ->assertStatus(200)
             ->assertJson(['success' => true])

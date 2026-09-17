@@ -47,10 +47,26 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // API rate limiter used by the "throttle:api" middleware.
+        // API rate limiter used by the "throttle:api" middleware, which is
+        // attached to the api group in bootstrap/app.php via throttleApi().
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute((int) config('api.rate_limit.default'))
                 ->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Dedicated limiter for credential submission. Login is the one
+        // endpoint an unauthenticated attacker can hammer to guess passwords,
+        // so it gets its own tight budget. Two independent keys are enforced:
+        // per-IP, so a rotating-email attacker is still capped, and per-email,
+        // so a distributed attack cannot target one account.
+        RateLimiter::for('login', function (Request $request) {
+            $email = strtolower(trim((string) $request->input('email', '')));
+            $ip = (string) $request->ip();
+
+            return [
+                Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|ip|'.$ip),
+                Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|email|'.$email),
+            ];
         });
 
         // Dedicated rate limiter for the student integrity-event endpoint. It
