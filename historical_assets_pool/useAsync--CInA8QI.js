@@ -1,0 +1,1 @@
+import{j as n}from"./index-DjBFOKo_.js";function v(o,{immediate:s=!1}={}){const l=n(!0),u=n(null),a=n(null);async function r(...e){l.value=!0,u.value=null;try{return a.value=await o(...e),a.value}catch(t){throw u.value=t,t}finally{l.value=!1}}return s&&r(),{loading:l,error:u,data:a,is:e=>l.value===e,run:r,clear:()=>{a.value=null,u.value=null}}}export{v as u};

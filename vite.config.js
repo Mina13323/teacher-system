@@ -7,7 +7,7 @@ export default defineConfig({
     plugins: [
         vue(),
         VitePWA({
-            registerType: 'prompt',
+            registerType: 'autoUpdate',
             includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png'],
             manifest: {
                 name: 'El Masry — Geography & History',
@@ -49,6 +49,9 @@ export default defineConfig({
                 ],
             },
             workbox: {
+                skipWaiting: true,
+                clientsClaim: true,
+                cleanupOutdatedCaches: true,
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
                 navigateFallback: '/index.html',
                 navigateFallbackDenylist: [/^\/api\/.*/, /^\/storage\/.*/],
