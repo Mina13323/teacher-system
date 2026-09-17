@@ -250,7 +250,10 @@ function templateDescription(tpl) {
 async function loadTemplates() {
     try {
         const res = await teacher.examTemplates();
-        templates.value = Array.isArray(res) ? res : (res?.data || []);
+        // The catalog is paginated: rows may arrive as a bare array or nested
+        // under data.data, so unwrap defensively instead of assuming a shape.
+        const payload = res?.data ?? res;
+        templates.value = Array.isArray(payload) ? payload : (payload?.data || []);
     } catch {
         templates.value = [];
     }

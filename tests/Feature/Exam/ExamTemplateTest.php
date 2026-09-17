@@ -89,7 +89,10 @@ class ExamTemplateTest extends ApiTestCase
             ->getJson('/api/v1/teacher/exam-templates')
             ->assertStatus(200);
 
-        $names = collect($response->json('data'))->pluck('name');
+        // The list is paginated, so the rows sit under data.data.
+        $response->assertJsonPath('data.meta.per_page', 100);
+
+        $names = collect($response->json('data.data'))->pluck('name');
 
         $this->assertTrue($names->contains('Mine'));
         $this->assertFalse($names->contains('Theirs'));

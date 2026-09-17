@@ -3,8 +3,10 @@
 namespace Tests\Feature\Exam;
 
 use App\Enums\QuestionType;
+use App\Http\Controllers\Teacher\QuestionController;
 use App\Enums\UserRole;
 use App\Models\Option;
+use App\Models\Question;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Exam\Concerns\InteractsWithExams;
 
@@ -118,5 +120,43 @@ class QuestionManagementTest extends ApiTestCase
 
         $response->assertStatus(200);
         $response->assertJsonStructure(['data' => [['options' => [['is_correct']]]]]);
+    }
+
+    public function test_an_exam_cannot_grow_past_the_question_ceiling(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makeExam($teacher, $course);
+
+        // Fill straight to the ceiling. Going through HTTP 200 times would only
+        // measure the framework's request throughput, not the guard.
+        Question::factory()
+            ->count(QuestionController::MAX_QUESTIONS_PER_EXAM)
+            ->create(['exam_id' => $exam->id]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/exams/{$exam->id}/questions", [
+                'question_text' => 'One question too many?',
+                'points' => 1,
+            ])->assertStatus(422)
+            ->assertJson(['success' => false]);
+
+        $this->assertSame(
+            QuestionController::MAX_QUESTIONS_PER_EXAM,
+            $exam->questions()->count(),
+            'A single-question create must not push the exam past its ceiling.'
+        );
+    }
+
+    public function test_the_ceiling_matches_the_bulk_editor_contract(): void
+    {
+        // The bulk sync request validates `questions` at max:200. If the two
+        // limits ever drift apart, one write path would allow what the other
+        // refuses, and the question list would no longer be a real bound.
+        $this->assertSame(200, QuestionController::MAX_QUESTIONS_PER_EXAM);
+
+        $rules = (new \App\Http\Requests\SyncExamQuestionsRequest())->rules();
+
+        $this->assertContains('max:200', $rules['questions']);
     }
 }

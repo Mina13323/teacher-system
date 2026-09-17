@@ -49,7 +49,11 @@ class ExamTemplateController extends Controller
             // Seeded presets first, then the teacher's own, alphabetically.
             ->orderByDesc('is_system')
             ->orderBy('name')
-            ->get();
+            // Bounded: without this a long-lived account accumulates an
+            // ever-growing catalog returned in one payload. The default is the
+            // ceiling so a realistic catalog still arrives in a single page
+            // while the endpoint can no longer return an unbounded set.
+            ->paginate($this->perPage($request, self::MAX_PER_PAGE));
 
         return $this->success(ExamTemplateResource::collection($templates), 'Exam templates retrieved.');
     }

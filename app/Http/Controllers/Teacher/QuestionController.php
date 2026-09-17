@@ -16,6 +16,17 @@ use Illuminate\Http\Request;
 
 class QuestionController extends Controller
 {
+    /**
+     * Hard ceiling on questions per exam.
+     *
+     * The bulk editor already validates its payload at max:200
+     * (SyncExamQuestionsRequest), so single-question creation was the only way
+     * to grow past it. Enforcing the same ceiling here keeps
+     * GET .../questions — an editor payload that must return every row so the
+     * teacher can reorder the paper — genuinely bounded, rather than bounded by
+     * silently truncating rows the teacher can no longer see.
+     */
+    public const MAX_QUESTIONS_PER_EXAM = 200;
     public function __construct(private readonly SyncExamQuestionsAction $syncQuestions)
     {
     }
@@ -31,6 +42,13 @@ class QuestionController extends Controller
 
     public function store(CreateQuestionRequest $request, Exam $exam): JsonResponse
     {
+        if ($exam->questions()->count() >= self::MAX_QUESTIONS_PER_EXAM) {
+            return $this->error(
+                'An exam cannot contain more than '.self::MAX_QUESTIONS_PER_EXAM.' questions.',
+                422
+            );
+        }
+
         $question = Question::create([
             'exam_id' => $exam->getKey(),
             'question_text' => $request->validated('question_text'),
