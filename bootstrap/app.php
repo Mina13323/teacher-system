@@ -311,7 +311,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'success' => false,
                     'message' => $e->getMessage() ?: 'Request failed.',
-                ], $e->getStatusCode());
+                ], $e->getStatusCode(), $e->getHeaders());
             }
         });
 

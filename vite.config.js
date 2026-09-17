@@ -88,7 +88,7 @@ export default defineConfig({
         // same `/api/v1/...` contracts it will use in production (same-origin).
         proxy: {
             '/api': {
-                target: process.env.VITE_API_PROXY || 'http://127.0.0.1:8000',
+                target: process.env.VITE_API_PROXY || 'http://127.0.0.1:8001',
                 changeOrigin: true,
             },
         },

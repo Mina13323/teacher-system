@@ -267,7 +267,7 @@ class TemporaryCredentialSecurityTest extends ApiTestCase
      */
     public function test_print_sheet_consumes_the_revealed_password_only(): void
     {
-        $source = (string) file_get_contents(base_path('resources/js/views/Teacher/Students.vue'));
+        $source = (string) file_get_contents(base_path('resources/js/components/students/PrintCredentialsSheet.vue'));
 
         $this->assertStringContainsString('st.revealed_password', $source);
         $this->assertStringContainsString('printPasswordUnavailable', $source);

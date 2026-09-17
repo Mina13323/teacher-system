@@ -22,58 +22,68 @@ class PaginationTest extends ApiTestCase
     public function test_page_size_is_capped_on_the_course_catalog(): void
     {
         $user = $this->createUserWithRole(UserRole::Student);
-        Course::factory()->count(3)->create(['status' => 'published']);
+        Course::factory()->count(105)->create(['status' => 'published']);
 
-        $this->actingAs($user, 'sanctum')
+        $response = $this->actingAs($user, 'sanctum')
             ->getJson('/api/v1/courses?per_page=1000000')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 100);
+            ->assertStatus(200);
+
+        $this->assertCount(100, $response->json('data'));
     }
 
     public function test_page_size_is_capped_on_a_teacher_endpoint(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
+        for ($i = 0; $i < 105; $i++) {
+            $st = $this->createUserWithRole(UserRole::Student, ['created_by' => $teacher->id]);
+        }
 
-        $this->actingAs($teacher, 'sanctum')
+        $response = $this->actingAs($teacher, 'sanctum')
             ->getJson('/api/v1/teacher/students?per_page=5000')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 100);
+            ->assertStatus(200);
+
+        $this->assertCount(100, $response->json('data'));
     }
 
     public function test_a_zero_or_negative_page_size_falls_back_to_the_default(): void
     {
         $user = $this->createUserWithRole(UserRole::Student);
+        Course::factory()->count(20)->create(['status' => 'published']);
 
         // Laravel would otherwise pass 0 straight through to the paginator.
-        $this->actingAs($user, 'sanctum')
+        $res0 = $this->actingAs($user, 'sanctum')
             ->getJson('/api/v1/courses?per_page=0')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 15);
+            ->assertStatus(200);
+        $this->assertCount(15, $res0->json('data'));
 
-        $this->actingAs($user, 'sanctum')
+        $resNeg = $this->actingAs($user, 'sanctum')
             ->getJson('/api/v1/courses?per_page=-5')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 15);
+            ->assertStatus(200);
+        $this->assertCount(15, $resNeg->json('data'));
     }
 
     public function test_a_legitimate_page_size_is_honoured(): void
     {
         $user = $this->createUserWithRole(UserRole::Student);
+        Course::factory()->count(10)->create(['status' => 'published']);
 
-        $this->actingAs($user, 'sanctum')
+        $response = $this->actingAs($user, 'sanctum')
             ->getJson('/api/v1/courses?per_page=7')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 7);
+            ->assertStatus(200);
+
+        $this->assertCount(7, $response->json('data'));
     }
 
     public function test_the_default_page_size_applies_when_none_is_requested(): void
     {
         $user = $this->createUserWithRole(UserRole::Student);
+        Course::factory()->count(20)->create(['status' => 'published']);
 
-        $this->actingAs($user, 'sanctum')
+        $response = $this->actingAs($user, 'sanctum')
             ->getJson('/api/v1/courses')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 15);
+            ->assertStatus(200);
+
+        $this->assertCount(15, $response->json('data'));
     }
 
     /**
@@ -83,11 +93,12 @@ class PaginationTest extends ApiTestCase
     public function test_the_cap_holds_for_a_teacher_listing_their_courses(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
-        Course::factory()->count(3)->create(['created_by' => $teacher->id]);
+        Course::factory()->count(105)->create(['created_by' => $teacher->id]);
 
-        $this->actingAs($teacher, 'sanctum')
+        $response = $this->actingAs($teacher, 'sanctum')
             ->getJson('/api/v1/teacher/courses?per_page=99999')
-            ->assertStatus(200)
-            ->assertJsonPath('data.meta.per_page', 100);
+            ->assertStatus(200);
+
+        $this->assertCount(100, $response->json('data'));
     }
 }
