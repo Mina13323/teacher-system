@@ -79,6 +79,13 @@ async function request(config) {
         // callers can read `data.x` or iterate a collection, and read the
         // Laravel pagination meta for paged resources.
         const body = response.data;
+        if (Array.isArray(body?.data) && body?.meta) {
+            return {
+                data: body.data,
+                meta: body.meta,
+                links: body.links || null,
+            };
+        }
         return body?.data ?? body;
     } catch (error) {
         let status = error.response?.status ?? 0;

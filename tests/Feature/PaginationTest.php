@@ -10,7 +10,8 @@ use App\Models\Course;
  * Controller::perPage() helper.
  *
  * The paginator sits inside the API envelope, so the page size is asserted at
- * `data.meta.per_page` — `meta` is not top-level.
+ * `meta.per_page` — pagination metadata remains available alongside the
+ * established `data` array envelope.
  *
  * `per_page` is client-supplied, so an uncapped value lets any caller request an
  * entire table in a single response and force the server to hydrate every row.
@@ -29,6 +30,7 @@ class PaginationTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->assertCount(100, $response->json('data'));
+        $this->assertSame(2, $response->json('meta.last_page'));
     }
 
     public function test_page_size_is_capped_on_a_teacher_endpoint(): void
@@ -43,6 +45,7 @@ class PaginationTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->assertCount(100, $response->json('data'));
+        $this->assertSame(2, $response->json('meta.last_page'));
     }
 
     public function test_a_zero_or_negative_page_size_falls_back_to_the_default(): void
@@ -72,6 +75,7 @@ class PaginationTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->assertCount(7, $response->json('data'));
+        $this->assertSame(2, $response->json('meta.last_page'));
     }
 
     public function test_the_default_page_size_applies_when_none_is_requested(): void

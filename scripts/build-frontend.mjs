@@ -101,7 +101,11 @@ fs.rmSync(dist, { recursive: true, force: true });
 
 // ---------------------------------------------------------------- 2. build
 log('[build-frontend] running vite build...');
-const build = spawnSync('npx', ['vite', 'build'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+// Use the current Node executable and local Vite entry point. Invoking `npx`
+// on Windows can pick up an unrelated nvm shim, even when this build script
+// itself is already running under a valid Node runtime.
+const viteBin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
+const build = spawnSync(process.execPath, [viteBin, 'build'], { cwd: root, stdio: 'inherit' });
 if (build.status !== 0) {
     fail(`vite build exited with code ${build.status}. public/ was left untouched apart from generated output; re-run after fixing.`);
 }

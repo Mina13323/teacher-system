@@ -206,9 +206,10 @@ async function load(p = 1) {
     loading.value = true;
     error.value = '';
     try {
-        const params = { per_page: 50, page: p };
+        const params = { per_page: 25, page: p };
         if (yearFilter.value !== 'all') params.academic_year = yearFilter.value;
         if (subjectFilter.value !== 'all') params.academic_subject = subjectFilter.value;
+        if (statusFilter.value !== 'all') params.status = statusFilter.value;
         if (search.value.trim()) params.search = search.value.trim();
         const res = toList(await teacher.students(params));
         items.value = res.items;

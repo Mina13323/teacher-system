@@ -3,6 +3,8 @@
 namespace App\Support;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\ResourceCollection;
+use Illuminate\Pagination\AbstractPaginator;
 
 /**
  * Shared API response helpers.
@@ -33,6 +35,24 @@ trait ApiResponse
      */
     protected function success(mixed $data = null, string $message = 'Operation completed successfully.', int $status = 200): JsonResponse
     {
+        // A paginated resource collection only adds its `links` and `meta`
+        // fields when it is rendered as a resource response. Passing it
+        // directly to response()->json() silently serializes just the records,
+        // leaving clients with no way to navigate beyond the first page.
+        // Keep the established `data` array contract and expose paginator
+        // metadata beside it, rather than nesting records a second time.
+        if ($data instanceof ResourceCollection && $data->resource instanceof AbstractPaginator) {
+            $page = $data->response()->getData(true);
+
+            return $this->apiResponse([
+                'success' => true,
+                'message' => $message,
+                'data' => $page['data'],
+                'meta' => $page['meta'],
+                'links' => $page['links'],
+            ], $status);
+        }
+
         return $this->apiResponse([
             'success' => true,
             'message' => $message,
