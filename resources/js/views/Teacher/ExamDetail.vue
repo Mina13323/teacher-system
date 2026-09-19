@@ -122,15 +122,17 @@ async function remove() {
 
 // ---- Question modal ----
 const qModal = ref(false);
-const qForm = reactive({ id: null, question_text: '', type: 'single_choice', points: 1, reference_answer: '' });
+const qForm = reactive({ id: null, question_text: '', type: 'single_choice', points: 1, reference_answer: '', image_url: null });
 const qErrors = ref({});
 const qBusy = ref(false);
+const qImageBusy = ref(false);
 function openQuestion(q = null) {
     qForm.id = q?.id || null;
     qForm.question_text = q?.question_text || '';
     qForm.type = q?.type || 'single_choice';
     qForm.points = q?.points || 1;
     qForm.reference_answer = q?.reference_answer || '';
+    qForm.image_url = q?.image_url || null;
     qErrors.value = {};
     qModal.value = true;
 }
@@ -154,6 +156,40 @@ async function saveQuestion() {
         toast.error(e.isValidation ? '' : e.message);
     } finally {
         qBusy.value = false;
+    }
+}
+
+async function uploadQuestionImage(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !qForm.id) return;
+
+    qImageBusy.value = true;
+    try {
+        const updated = await teacher.uploadQuestionImage(qForm.id, file);
+        qForm.image_url = updated.image_url;
+        toast.success(t('examQuestions.imageUploaded'));
+        refresh();
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        qImageBusy.value = false;
+    }
+}
+
+async function removeQuestionImage() {
+    if (!qForm.id) return;
+
+    qImageBusy.value = true;
+    try {
+        await teacher.removeQuestionImage(qForm.id);
+        qForm.image_url = null;
+        toast.success(t('examQuestions.imageRemoved'));
+        refresh();
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        qImageBusy.value = false;
     }
 }
 
@@ -386,6 +422,7 @@ function attemptTone(status) {
                                     <span class="text-xs text-ink-500 font-bold">({{ q.points }} {{ $t('examTake.pts') }})</span>
                                 </div>
                                 <p class="mt-2 font-medium text-ink-900 text-base" dir="auto">{{ q.question_text }}</p>
+                                <img v-if="q.image_url" :src="q.image_url" :alt="$t('examQuestions.questionImage')" class="mt-3 max-h-64 rounded-lg border border-ink-200 bg-white object-contain" />
                                 <div v-if="q.reference_answer" class="mt-2 rounded-lg bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
                                     <strong class="block text-amber-800 mb-1">{{ $t('exams.referenceAnswerTeacher') }}</strong>
                                     {{ q.reference_answer }}
@@ -459,6 +496,23 @@ function attemptTone(status) {
                     :rows="3"
                     :placeholder="$t('exams.referenceAnswerPlaceholder')"
                 />
+                <div class="rounded-lg border border-ink-200 bg-ink-50 p-3">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-medium text-ink-800">{{ $t('examQuestions.questionImage') }}</p>
+                            <p class="text-xs text-ink-500">{{ $t('examQuestions.questionImageHint') }}</p>
+                        </div>
+                        <label v-if="qForm.id" class="cursor-pointer rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50" :class="qImageBusy ? 'pointer-events-none opacity-60' : ''">
+                            {{ qImageBusy ? $t('common.loading') : (qForm.image_url ? $t('examQuestions.replaceImage') : $t('examQuestions.uploadImage')) }}
+                            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="sr-only" @change="uploadQuestionImage" />
+                        </label>
+                    </div>
+                    <p v-if="!qForm.id" class="mt-2 text-xs text-amber-700">{{ $t('examQuestions.saveBeforeImage') }}</p>
+                    <div v-if="qForm.image_url" class="relative mt-3">
+                        <img :src="qForm.image_url" :alt="$t('examQuestions.questionImage')" class="max-h-64 rounded-lg border border-ink-200 bg-white object-contain" />
+                        <button type="button" class="absolute end-2 top-2 rounded bg-white px-2 py-1 text-xs font-medium text-rose-600 shadow hover:bg-rose-50" :disabled="qImageBusy" @click="removeQuestionImage">{{ $t('common.remove') }}</button>
+                    </div>
+                </div>
                 <div class="flex justify-end gap-2">
                     <AppButton variant="outline" @click="qModal = false">{{ $t('common.cancel') }}</AppButton>
                     <AppButton type="submit" :loading="qBusy">{{ $t('common.save') }}</AppButton>
