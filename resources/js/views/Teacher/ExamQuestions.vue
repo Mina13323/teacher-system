@@ -55,6 +55,7 @@ function normalize(q) {
     return {
         id: q.id,
         question_text: q.question_text || '',
+        image_url: q.image_url || null,
         type: q.type || 'single_choice',
         points: q.points ?? 1,
         reference_answer: q.reference_answer || '',
@@ -173,6 +174,33 @@ function addOption(q) {
 function removeOption(q, option) {
     q.options = q.options.filter((o) => o !== option);
     markDirty();
+}
+
+async function uploadImage(q, event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!(q.id > 0)) {
+        toast.info(t('examQuestions.saveBeforeImage'));
+        return;
+    }
+    try {
+        const updated = await teacher.uploadQuestionImage(q.id, file);
+        q.image_url = updated.image_url;
+        toast.success(t('examQuestions.imageUploaded'));
+    } catch (e) {
+        toast.error(e.message);
+    }
+}
+
+async function removeImage(q) {
+    try {
+        await teacher.removeQuestionImage(q.id);
+        q.image_url = null;
+        toast.success(t('examQuestions.imageRemoved'));
+    } catch (e) {
+        toast.error(e.message);
+    }
 }
 
 // Single-choice behaves like a radio: marking one correct clears the others.
@@ -490,6 +518,23 @@ const isPublished = computed(() => exam.value?.status === 'published');
                             :disabled="isPublished"
                             @update:model-value="markDirty"
                         />
+
+                        <div class="rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-medium text-ink-800">{{ $t('examQuestions.questionImage') }}</p>
+                                    <p class="text-xs text-ink-500">{{ $t('examQuestions.questionImageHint') }}</p>
+                                </div>
+                                <label v-if="!isPublished" class="cursor-pointer rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50">
+                                    {{ q.image_url ? $t('examQuestions.replaceImage') : $t('examQuestions.uploadImage') }}
+                                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="sr-only" @change="uploadImage(q, $event)" />
+                                </label>
+                            </div>
+                            <div v-if="q.image_url" class="relative mt-3 max-w-xl">
+                                <img :src="q.image_url" :alt="$t('examQuestions.questionImage')" class="max-h-72 rounded-lg border border-ink-200 object-contain bg-white" />
+                                <button v-if="!isPublished" type="button" class="absolute end-2 top-2 rounded bg-white px-2 py-1 text-xs font-medium text-rose-600 shadow hover:bg-rose-50" @click="removeImage(q)">{{ $t('common.remove') }}</button>
+                            </div>
+                        </div>
 
                         <!-- MCQ options -->
                         <div v-if="!isEssay(q)">

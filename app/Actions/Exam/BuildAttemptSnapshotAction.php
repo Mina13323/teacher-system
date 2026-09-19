@@ -33,6 +33,7 @@ class BuildAttemptSnapshotAction
                     'attempt_id' => $attempt->getKey(),
                     'question_id' => $question->getKey(),
                     'question_text' => $question->question_text,
+                    'question_image_path' => $question->image_path,
                     'question_type' => $question->type?->value ?? 'single_choice',
                     'points' => $question->points,
                     'position' => $index + 1,

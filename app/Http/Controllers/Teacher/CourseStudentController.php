@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Teacher;
 use App\Actions\Enrollment\EnrollStudentToCourseAction;
 use App\Actions\Enrollment\UnenrollStudentAction;
 use App\Enums\EnrollmentStatus;
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\EnrollStudentCourseRequest;
 use App\Http\Resources\EnrollmentResource;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -41,7 +43,27 @@ class CourseStudentController extends Controller
 
     public function store(EnrollStudentCourseRequest $request, Course $course): JsonResponse
     {
-        $student = \App\Models\User::findOrFail($request->integer('student_id'));
+        if ($request->filled('academic_year')) {
+            $ownerId = $course->created_by;
+            $staffIds = User::query()->where('created_by', $ownerId)
+                ->orWhere('id', $ownerId)
+                ->pluck('id');
+            $students = User::role(UserRole::Student->value)
+                ->whereIn('created_by', $staffIds)
+                ->where('academic_year', $request->string('academic_year')->toString())
+                ->where('is_active', true)
+                ->get();
+            foreach ($students as $student) {
+                $this->enrollStudent->execute($student, $course);
+            }
+
+            return $this->success([
+                'academic_year' => $request->string('academic_year')->toString(),
+                'enrolled_count' => $students->count(),
+            ], 'Students enrolled.');
+        }
+
+        $student = User::findOrFail($request->integer('student_id'));
 
         $enrollment = $this->enrollStudent->execute($student, $course);
 

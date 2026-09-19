@@ -29,6 +29,8 @@ class Exam extends Model
      */
     protected $fillable = [
         'course_id',
+        'lesson_id',
+        'unit_ids',
         'title',
         'description',
         'duration_minutes',
@@ -56,12 +58,18 @@ class Exam extends Model
             'shuffle_questions' => 'boolean',
             'shuffle_options' => 'boolean',
             'show_result_immediately' => 'boolean',
+            'unit_ids' => 'array',
         ];
     }
 
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function lesson(): BelongsTo
+    {
+        return $this->belongsTo(Lesson::class);
     }
 
     public function creator(): BelongsTo

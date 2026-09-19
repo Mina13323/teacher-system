@@ -136,6 +136,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('exams/{exam}/questions', [TeacherQuestionController::class, 'store']);
     Route::get('questions/{question}', [TeacherQuestionController::class, 'show']);
     Route::put('questions/{question}', [TeacherQuestionController::class, 'update']);
+    Route::post('questions/{question}/image', [TeacherQuestionController::class, 'uploadImage']);
+    Route::delete('questions/{question}/image', [TeacherQuestionController::class, 'removeImage']);
     Route::delete('questions/{question}', [TeacherQuestionController::class, 'destroy']);
 
     Route::get('questions/{question}/options', [TeacherOptionController::class, 'index']);

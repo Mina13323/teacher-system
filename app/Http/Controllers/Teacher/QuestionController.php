@@ -8,11 +8,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateQuestionRequest;
 use App\Http\Requests\SyncExamQuestionsRequest;
 use App\Http\Requests\UpdateQuestionRequest;
+use App\Http\Requests\UploadQuestionImageRequest;
 use App\Http\Resources\QuestionResource;
 use App\Models\Exam;
 use App\Models\Question;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class QuestionController extends Controller
 {
@@ -102,6 +104,32 @@ class QuestionController extends Controller
             new QuestionResource($question->fresh()->load('options')),
             'Question updated.'
         );
+    }
+
+    public function uploadImage(UploadQuestionImageRequest $request, Question $question): JsonResponse
+    {
+        $oldPath = $question->image_path;
+        $question->image_path = $request->file('image')->store('exam-question-images', 'public');
+        $question->save();
+
+        if ($oldPath && $oldPath !== $question->image_path) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        return $this->success(new QuestionResource($question->fresh()->load('options')), 'Question image uploaded.');
+    }
+
+    public function removeImage(Request $request, Question $question): JsonResponse
+    {
+        $this->authorize('update', $question);
+
+        if ($question->image_path) {
+            Storage::disk('public')->delete($question->image_path);
+            $question->image_path = null;
+            $question->save();
+        }
+
+        return $this->success(new QuestionResource($question->fresh()->load('options')), 'Question image removed.');
     }
 
     public function destroy(Question $question): JsonResponse

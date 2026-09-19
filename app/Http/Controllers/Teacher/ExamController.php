@@ -35,7 +35,7 @@ class ExamController extends Controller
         $this->authorize('view', $course);
 
         $exams = $course->exams()
-            ->with(['course', 'creator'])
+            ->with(['course', 'creator', 'lesson'])
             ->withCount(['questions', 'attempts'])
             ->latest()
             ->paginate($this->perPage($request, 15));
@@ -48,7 +48,7 @@ class ExamController extends Controller
         $exam = $this->createExam->execute($course, $request->user(), $request->validated());
 
         return $this->success(
-            new ExamResource($exam->load(['course', 'creator'])->loadCount(['questions', 'attempts'])),
+            new ExamResource($exam->load(['course', 'creator', 'lesson'])->loadCount(['questions', 'attempts'])),
             'Exam created.',
             201
         );
@@ -58,7 +58,7 @@ class ExamController extends Controller
     {
         $this->authorize('view', $exam);
 
-        $exam->load(['course', 'creator', 'questions.options'])
+        $exam->load(['course', 'creator', 'lesson', 'questions.options'])
             ->loadCount(['questions', 'attempts']);
 
         return $this->success(new ExamDetailResource($exam), 'Exam retrieved.');
@@ -69,7 +69,7 @@ class ExamController extends Controller
         $exam = $this->updateExam->execute($exam, $request->validated());
 
         return $this->success(
-            new ExamResource($exam->load(['course', 'creator'])->loadCount(['questions', 'attempts'])),
+            new ExamResource($exam->load(['course', 'creator', 'lesson'])->loadCount(['questions', 'attempts'])),
             'Exam updated.'
         );
     }

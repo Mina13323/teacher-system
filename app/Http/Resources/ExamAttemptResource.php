@@ -70,6 +70,9 @@ class ExamAttemptResource extends JsonResource
                     'id' => $attemptQuestion->question_id,
                     'attempt_question_id' => $attemptQuestion->id,
                     'question_text' => $attemptQuestion->question_text,
+                    'image_url' => $attemptQuestion->question_image_path
+                        ? \Illuminate\Support\Facades\Storage::disk('public')->url($attemptQuestion->question_image_path)
+                        : null,
                     'question_type' => $attemptQuestion->question_type ?? 'single_choice',
                     'points' => $attemptQuestion->points,
                     'position' => $attemptQuestion->position,

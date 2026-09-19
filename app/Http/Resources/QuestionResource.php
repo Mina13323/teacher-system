@@ -24,6 +24,7 @@ class QuestionResource extends JsonResource
             'id' => $this->id,
             'exam_id' => $this->exam_id,
             'question_text' => $this->question_text,
+            'image_url' => $this->imageUrl(),
             'type' => $this->type?->value,
             'points' => $this->points,
             'position' => $this->position,

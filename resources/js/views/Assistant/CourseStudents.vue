@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { teacher, publicCatalog, toList } from '@/api';
+import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -31,6 +31,7 @@ const enrolling = ref(false);
 const enrollError = ref({});
 const removeTarget = ref(null);
 const removeBusy = ref(false);
+const contentUnits = ref([]);
 
 async function loadEnrollments() {
     const res = toList(await teacher.courseStudents(courseId, { per_page: 25 }));
@@ -43,10 +44,12 @@ async function load() {
     error.value = '';
     try {
         const [c, s] = await Promise.all([
-            publicCatalog.course(courseId),
+            teacher.course(courseId),
             teacher.students({ per_page: 100 }),
         ]);
         course.value = c;
+        const rawUnits = Array.isArray(c.units) ? c.units : (c.units?.data || []);
+        contentUnits.value = rawUnits.map((unit) => ({ ...unit, lessons: Array.isArray(unit.lessons) ? unit.lessons : (unit.lessons?.data || []) }));
         students.value = toList(s).items.filter((x) => x.is_active);
         await loadEnrollments();
     } catch (e) {
@@ -106,6 +109,15 @@ onMounted(load);
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <div class="flex-1"><AppSelect v-model="selectedStudent" :label="$t('common.student')" :options="students.map((s) => ({ value: s.id, label: s.name }))" id="enroll-student" :placeholder="$t('common.selectStudent')" :error="enrollError.student_id" /></div>
                     <AppButton :loading="enrolling" :disabled="!selectedStudent" @click="enroll">{{ $t('students.enroll') }}</AppButton>
+                </div>
+            </AppCard>
+
+            <AppCard v-if="contentUnits.length" :title="$t('courses.contentTab')">
+                <div class="space-y-3">
+                    <div v-for="unit in contentUnits" :key="unit.id" class="rounded-lg border border-ink-100 p-3">
+                        <p class="font-semibold text-ink-800" dir="auto">{{ unit.title }}</p>
+                        <p v-for="lesson in unit.lessons" :key="lesson.id" class="mt-1 text-sm text-ink-500" dir="auto">— {{ lesson.title }}</p>
+                    </div>
                 </div>
             </AppCard>
 

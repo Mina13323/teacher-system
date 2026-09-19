@@ -8,7 +8,14 @@ const deferredPrompt = ref(null);
 const isIos = ref(false);
 
 export function usePwa() {
-    const { needRefresh, updateServiceWorker } = useRegisterSW();
+    const { needRefresh, updateServiceWorker } = useRegisterSW({
+        immediate: true,
+        onRegisteredSW(_swUrl, registration) {
+            // Ask for a new deployment regularly while the PWA is open. The
+            // update is still user-controlled through the refresh button.
+            if (registration) setInterval(() => registration.update(), 60 * 60 * 1000);
+        },
+    });
 
     function updateOnlineStatus() {
         isOnline.value = navigator.onLine;

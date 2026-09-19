@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Question extends Model
 {
@@ -16,6 +17,7 @@ class Question extends Model
     protected $fillable = [
         'exam_id',
         'question_text',
+        'image_path',
         'type',
         'points',
         'position',
@@ -50,6 +52,18 @@ class Question extends Model
     public function isMcq(): bool
     {
         return $this->type !== QuestionType::Essay;
+    }
+
+    public function imageUrl(): ?string
+    {
+        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (self $question): void {
+            if ($question->image_path) Storage::disk('public')->delete($question->image_path);
+        });
     }
 
     /**

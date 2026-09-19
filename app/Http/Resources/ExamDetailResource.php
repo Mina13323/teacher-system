@@ -20,6 +20,10 @@ class ExamDetailResource extends JsonResource
         return [
             'id' => $this->id,
             'course_id' => $this->course_id,
+            'lesson_id' => $this->lesson_id,
+            'unit_ids' => $this->unit_ids ?? [],
+            'scope' => $this->lesson_id ? 'lesson' : (! empty($this->unit_ids) ? 'units' : 'course'),
+            'lesson' => $this->whenLoaded('lesson', fn () => new LessonResource($this->lesson)),
             'title' => $this->title,
             'description' => $this->description,
             'duration_minutes' => $this->duration_minutes,

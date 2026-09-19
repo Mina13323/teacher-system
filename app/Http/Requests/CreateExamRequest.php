@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use App\Models\Course;
+use App\Models\Lesson;
+use App\Models\Unit;
 use App\Support\ExamWindowRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -25,6 +27,9 @@ class CreateExamRequest extends FormRequest
     {
         return [
             'title' => ['required', 'string', 'max:255'],
+            'lesson_id' => ['nullable', 'integer', 'exists:lessons,id'],
+            'unit_ids' => ['nullable', 'array', 'min:1'],
+            'unit_ids.*' => ['integer', 'distinct', 'exists:units,id'],
             'description' => ['nullable', 'string'],
             'duration_minutes' => ['nullable', 'integer', 'min:1', 'max:600'],
             'pass_percentage' => ['nullable', 'integer', 'between:0,100'],
@@ -48,6 +53,20 @@ class CreateExamRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             ExamWindowRules::validate($this->all(), $validator);
+
+            /** @var Course $course */
+            $course = $this->route('course');
+            if ($this->filled('lesson_id') && ! Lesson::whereKey($this->integer('lesson_id'))
+                ->whereIn('unit_id', Unit::query()->where('course_id', $course->getKey())->select('id'))->exists()) {
+                $validator->errors()->add('lesson_id', 'The selected lesson does not belong to this course.');
+            }
+            if ($this->filled('lesson_id') && $this->filled('unit_ids')) {
+                $validator->errors()->add('unit_ids', 'Choose a lesson or unit(s), not both.');
+            }
+            if ($this->filled('unit_ids') && Unit::whereIn('id', $this->input('unit_ids', []))
+                ->where('course_id', $course->getKey())->count() !== count($this->input('unit_ids', []))) {
+                $validator->errors()->add('unit_ids', 'Every selected unit must belong to this course.');
+            }
         });
     }
 }

@@ -246,14 +246,40 @@ async function moveLesson(unit, lesson, dir) {
 
 // ---- Exam create ----
 const examModal = ref(false);
-const examForm = reactive({ title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true });
+const examForm = reactive({ title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope: 'course', lesson_id: null, unit_ids: [] });
 const examErrors = ref({});
 const examBusy = ref(false);
+const examScopeOptions = computed(() => [
+    { value: 'course', label: t('courses.examScopeCourse') },
+    { value: 'lesson', label: t('courses.examScopeLesson') },
+    { value: 'units', label: t('courses.examScopeUnits') },
+]);
+const lessonOptions = computed(() => units.value.flatMap((u) => u.lessons.map((l) => ({ value: l.id, label: `${u.title} — ${l.title}` }))));
+function openExam(scope = 'course', lesson = null) {
+    Object.assign(examForm, { title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope, lesson_id: lesson?.id || null, unit_ids: [] });
+    examErrors.value = {};
+    examModal.value = true;
+}
+function toggleExamUnit(id) {
+    const key = Number(id);
+    examForm.unit_ids = examForm.unit_ids.includes(key)
+        ? examForm.unit_ids.filter((unitId) => unitId !== key)
+        : [...examForm.unit_ids, key];
+}
+function examScopeLabel(exam) {
+    if (exam.lesson_id) return `${t('courses.examForLesson')}: ${exam.lesson?.title || `#${exam.lesson_id}`}`;
+    if (exam.unit_ids?.length) return `${t('courses.examForUnits')}: ${exam.unit_ids.length}`;
+    return t('courses.examForCourse');
+}
 async function saveExam() {
     examBusy.value = true;
     examErrors.value = {};
     try {
-        await teacher.createExam(courseId, examForm);
+        const payload = { ...examForm, lesson_id: null, unit_ids: null };
+        if (examForm.scope === 'lesson') payload.lesson_id = examForm.lesson_id;
+        if (examForm.scope === 'units') payload.unit_ids = examForm.unit_ids;
+        delete payload.scope;
+        await teacher.createExam(courseId, payload);
         toast.success(t('courses.examCreated'));
         examModal.value = false;
         loadExams(1);
@@ -269,6 +295,13 @@ async function saveExam() {
 const enrollModal = ref(false);
 const allStudents = ref([]);
 const selectedStudent = ref('');
+const enrollmentMode = ref('student');
+const selectedAcademicYear = ref('');
+const academicYearOptions = computed(() => [
+    { value: 'secondary_1', label: t('students.secondary1') },
+    { value: 'secondary_2', label: t('students.secondary2') },
+    { value: 'secondary_3', label: t('students.secondary3') },
+]);
 const enrollBusy = ref(false);
 const enrollError = ref({});
 async function openEnroll() {
@@ -280,16 +313,23 @@ async function openEnroll() {
         toast.error(e.message);
     }
     selectedStudent.value = '';
+    selectedAcademicYear.value = '';
+    enrollmentMode.value = 'student';
     enrollError.value = {};
     enrollModal.value = true;
 }
 async function doEnroll() {
-    if (!selectedStudent.value) return;
+    if (enrollmentMode.value === 'student' && !selectedStudent.value) return;
+    if (enrollmentMode.value === 'year' && !selectedAcademicYear.value) return;
     enrollBusy.value = true;
     enrollError.value = {};
     try {
-        await teacher.enrollStudent(courseId, selectedStudent.value);
-        toast.success(t('students.enrolled'));
+        const result = enrollmentMode.value === 'year'
+            ? await teacher.enrollAcademicYear(courseId, selectedAcademicYear.value)
+            : await teacher.enrollStudent(courseId, selectedStudent.value);
+        toast.success(enrollmentMode.value === 'year'
+            ? t('courses.academicYearEnrolled', { count: result?.enrolled_count || 0 })
+            : t('students.enrolled'));
         enrollModal.value = false;
         loadStudents(1);
     } catch (e) {
@@ -356,7 +396,7 @@ onMounted(async () => { await run(); });
                                             <button class="rounded px-2 py-1 font-medium text-ink-400 disabled:opacity-40" :disabled="unit.lessons.findIndex((l) => l.id === lesson.id) === unit.lessons.length - 1" @click="moveLesson(unit, lesson, 1)">↓</button>
                                         </div>
                                     </div>
-                                    <AppButton variant="outline" size="sm" @click="openVideo(lesson)">{{ $t('courses.addVideoLabel') }}</AppButton>
+                                    <div class="flex gap-2"><AppButton variant="outline" size="sm" @click="openExam('lesson', lesson)">{{ $t('courses.createLessonExam') }}</AppButton><AppButton variant="outline" size="sm" @click="openVideo(lesson)">{{ $t('courses.addVideoLabel') }}</AppButton></div>
                                 </div>
                                 <div v-if="lesson.videos?.length" class="mt-3 space-y-2">
                                     <div v-for="video in lesson.videos" :key="video.id" class="flex items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-sm">
@@ -377,9 +417,9 @@ onMounted(async () => { await run(); });
             </div>
 
             <div v-else-if="tab === 'exams'" class="space-y-4">
-                <div class="flex justify-end"><AppButton @click="examModal = true">{{ $t('courses.createExam') }}</AppButton></div>
+                <div class="flex justify-end"><AppButton @click="openExam()">{{ $t('courses.createExam') }}</AppButton></div>
                 <EmptyState v-if="!exams.length" icon="clipboard" :title="$t('courses.noExamsTitle')" :message="$t('courses.noExamsMessage')">
-                    <AppButton @click="examModal = true">{{ $t('courses.createExam') }}</AppButton>
+                    <AppButton @click="openExam()">{{ $t('courses.createExam') }}</AppButton>
                 </EmptyState>
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
@@ -387,7 +427,7 @@ onMounted(async () => { await run(); });
                             <Icon name="clipboard" :size="20" class="text-terracotta-500" />
                             <div class="min-w-0 flex-1">
                                 <p class="font-medium text-ink-800" dir="auto">{{ e.title }}</p>
-                                <p class="text-xs text-ink-400">{{ $t('courses.examSummary', { questions: e.questions_count, attempts: e.attempts_count }) }}</p>
+                                <p class="text-xs text-ink-400">{{ examScopeLabel(e) }} · {{ $t('courses.examSummary', { questions: e.questions_count, attempts: e.attempts_count }) }}</p>
                             </div>
                             <AppBadge :tone="e.status === 'published' ? 'success' : 'neutral'">{{ $t(`status.${e.status}`, e.status) }}</AppBadge>
                             <router-link :to="`/teacher/exams/${e.id}`"><AppButton variant="outline" size="sm">{{ $t('common.manage') }}</AppButton></router-link>
@@ -461,6 +501,9 @@ onMounted(async () => { await run(); });
         <AppModal :open="examModal" :title="$t('courses.createExam')" size="lg" @close="examModal = false">
             <form class="space-y-4" @submit.prevent="saveExam">
                 <AppInput v-model="examForm.title" :label="$t('exams.titleField')" required id="exam-title" :error="examErrors.title" />
+                <AppSelect v-model="examForm.scope" :label="$t('courses.examScope')" :options="examScopeOptions" id="exam-scope" />
+                <AppSelect v-if="examForm.scope === 'lesson'" v-model="examForm.lesson_id" :label="$t('courses.lessonTitle')" :options="lessonOptions" id="exam-lesson" :placeholder="$t('common.select')" :error="examErrors.lesson_id" />
+                <div v-if="examForm.scope === 'units'" class="space-y-2"><p class="text-sm font-medium text-ink-800">{{ $t('courses.selectUnits') }}</p><label v-for="unit in units" :key="unit.id" class="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-700"><input type="checkbox" :checked="examForm.unit_ids.includes(unit.id)" @change="toggleExamUnit(unit.id)" />{{ unit.title }}</label><p v-if="examErrors.unit_ids" class="text-xs font-medium text-rose-600">{{ examErrors.unit_ids }}</p></div>
                 <AppTextarea v-model="examForm.description" :label="$t('exams.description')" id="exam-desc" :error="examErrors.description" :rows="2" />
                 <div class="grid gap-4 sm:grid-cols-3">
                     <AppInput v-model="examForm.duration_minutes" :label="$t('exams.durationMin')" type="number" id="exam-duration" :error="examErrors.duration_minutes" />
@@ -474,7 +517,9 @@ onMounted(async () => { await run(); });
         <!-- Enroll student modal -->
         <AppModal :open="enrollModal" :title="$t('courses.enrollStudent')" size="sm" @close="enrollModal = false">
             <form class="space-y-4" @submit.prevent="doEnroll">
+                <AppSelect v-model="enrollmentMode" :label="$t('courses.enrollmentMode')" :options="[{ value: 'student', label: $t('courses.oneStudent') }, { value: 'year', label: $t('courses.academicYear') }]" id="course-enroll-mode" />
                 <AppSelect
+                    v-if="enrollmentMode === 'student'"
                     v-model="selectedStudent"
                     :label="$t('common.student')"
                     :options="allStudents"
@@ -482,9 +527,10 @@ onMounted(async () => { await run(); });
                     :placeholder="$t('common.selectStudent')"
                     :error="enrollError.student_id"
                 />
+                <AppSelect v-else v-model="selectedAcademicYear" :label="$t('courses.academicYear')" :options="academicYearOptions" id="course-enroll-year" :placeholder="$t('common.select')" :error="enrollError.academic_year" />
                 <div class="flex justify-end gap-2">
                     <AppButton variant="outline" :disabled="enrollBusy" @click="enrollModal = false">{{ $t('common.cancel') }}</AppButton>
-                    <AppButton type="submit" :loading="enrollBusy" :disabled="!selectedStudent">{{ $t('students.enroll') }}</AppButton>
+                    <AppButton type="submit" :loading="enrollBusy" :disabled="enrollmentMode === 'student' ? !selectedStudent : !selectedAcademicYear">{{ $t('students.enroll') }}</AppButton>
                 </div>
             </form>
         </AppModal>

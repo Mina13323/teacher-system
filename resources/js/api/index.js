@@ -145,6 +145,8 @@ export const teacher = {
     question: (id) => api.get(`/teacher/questions/${id}`),
     createQuestion: (examId, payload) => api.post(`/teacher/exams/${examId}/questions`, payload),
     updateQuestion: (id, payload) => api.put(`/teacher/questions/${id}`, payload),
+    uploadQuestionImage: (id, image) => { const form = new FormData(); form.append('image', image); return api.post(`/teacher/questions/${id}/image`, form); },
+    removeQuestionImage: (id) => api.delete(`/teacher/questions/${id}/image`),
     deleteQuestion: (id) => api.delete(`/teacher/questions/${id}`),
     options: (questionId) => api.get(`/teacher/questions/${questionId}/options`),
     createOption: (questionId, payload) => api.post(`/teacher/questions/${questionId}/options`, payload),
@@ -180,6 +182,7 @@ export const teacher = {
 
     courseStudents: (courseId, params) => api.get(`/teacher/courses/${courseId}/students`, params),
     enrollStudent: (courseId, studentId) => api.post(`/teacher/courses/${courseId}/students`, { student_id: studentId }),
+    enrollAcademicYear: (courseId, academicYear) => api.post(`/teacher/courses/${courseId}/students`, { academic_year: academicYear }),
     unenrollStudent: (courseId, studentId) => api.delete(`/teacher/courses/${courseId}/students/${studentId}`),
 
     analyticsOverview: () => api.get('/teacher/analytics/overview'),

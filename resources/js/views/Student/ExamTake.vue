@@ -343,6 +343,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     <span>{{ currentQuestion?.points }} {{ $t('examTake.pts') }}</span>
                 </div>
                 <p class="mt-2 text-lg font-medium text-ink-900" dir="auto">{{ currentQuestion?.question_text }}</p>
+                <img v-if="currentQuestion?.image_url" :src="currentQuestion.image_url" :alt="$t('examTake.questionImageAlt')" class="max-h-[28rem] w-full rounded-lg border border-ink-200 object-contain bg-ink-50" />
 
                 <!-- Essay Question Input -->
                 <div v-if="currentQuestion?.question_type === 'essay'" class="space-y-3 pt-2">
