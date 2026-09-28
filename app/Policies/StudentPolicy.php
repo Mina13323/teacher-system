@@ -87,6 +87,11 @@ class StudentPolicy
             return false;
         }
 
+        // Under co-teaching, all teachers in the academy co-manage students.
+        if (config('app.co_teaching', false)) {
+            return true;
+        }
+
         if ((int) $student->created_by === (int) $user->getKey()) {
             return true;
         }

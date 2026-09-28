@@ -411,38 +411,91 @@ function attemptTone(status) {
                     </div>
                 </EmptyState>
                 <div v-else class="space-y-4">
-                    <div v-for="(q, qi) in questions" :key="q.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm space-y-3">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0 flex-1">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-ink-500">{{ $t('exams.questionNumber', { n: qi + 1 }) }}</span>
-                                    <AppBadge :tone="q.type === 'essay' ? 'warning' : 'info'">
-                                        {{ q.type === 'essay' ? $t('exams.qTypeEssay') : (q.type === 'multiple_choice' ? $t('exams.qTypeMultipleShort') : $t('exams.qTypeSingle')) }}
-                                    </AppBadge>
-                                    <span class="text-xs text-ink-500 font-bold">({{ q.points }} {{ $t('examTake.pts') }})</span>
-                                </div>
-                                <p class="mt-2 font-medium text-ink-900 text-base" dir="auto">{{ q.question_text }}</p>
-                                <img v-if="q.image_url" :src="q.image_url" :alt="$t('examQuestions.questionImage')" class="mt-3 max-h-64 rounded-lg border border-ink-200 bg-white object-contain" />
-                                <div v-if="q.reference_answer" class="mt-2 rounded-lg bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
-                                    <strong class="block text-amber-800 mb-1">{{ $t('exams.referenceAnswerTeacher') }}</strong>
-                                    {{ q.reference_answer }}
-                                </div>
+                    <div v-for="(q, qi) in questions" :key="q.id" class="rounded-xl border border-ink-100 bg-white p-4 sm:p-5 shadow-sm space-y-3">
+                        <!-- Question Header Row -->
+                        <div class="flex flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-ink-100">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-bold uppercase tracking-wider text-ink-600 bg-ink-100 px-2 py-0.5 rounded">{{ $t('exams.questionNumber', { n: qi + 1 }) }}</span>
+                                <AppBadge :tone="q.type === 'essay' ? 'warning' : 'info'">
+                                    {{ q.type === 'essay' ? $t('exams.qTypeEssayShort') : (q.type === 'multiple_choice' ? $t('exams.qTypeMultipleShort') : ($t('exams.qTypeChoiceShort') || 'اختيار من متعدد')) }}
+                                </AppBadge>
+                                <span class="text-xs text-ink-500 font-bold">({{ q.points }} {{ $t('examTake.pts') }})</span>
                             </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100" @click="openQuestion(q)">{{ $t('common.edit') }}</button>
-                                <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="confirmTarget = q; runDelete('question')">{{ $t('common.delete') }}</button>
-                                <AppButton v-if="q.type !== 'essay'" variant="outline" size="sm" @click="openOption(q)">{{ $t('exams.addOption') }}</AppButton>
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <AppButton v-if="q.type !== 'essay'" variant="outline" size="sm" class="!px-2.5 !py-1 text-xs" @click="openOption(q)">
+                                    + {{ $t('exams.addOption') }}
+                                </AppButton>
+                                <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 border border-ink-200" @click="openQuestion(q)">
+                                    {{ $t('common.edit') }}
+                                </button>
+                                <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 border border-rose-200" @click="confirmTarget = q; runDelete('question')">
+                                    {{ $t('common.delete') }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Question Body -->
+                        <div class="pt-1">
+                            <p class="font-medium text-ink-900 text-base leading-relaxed break-words" dir="auto">{{ q.question_text }}</p>
+                            <img v-if="q.image_url" :src="q.image_url" :alt="$t('examQuestions.questionImage')" class="mt-3 max-h-64 rounded-lg border border-ink-200 bg-white object-contain" />
+                            <div v-if="q.reference_answer" class="mt-2 rounded-lg bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
+                                <strong class="block text-amber-800 mb-1">{{ $t('exams.referenceAnswerTeacher') }}</strong>
+                                {{ q.reference_answer }}
                             </div>
                         </div>
 
                         <!-- MCQ Options list -->
                         <div v-if="q.type !== 'essay' && q.options?.length" class="mt-3 space-y-2">
-                            <div v-for="o in q.options" :key="o.id" class="flex items-center gap-3 rounded-lg border px-3 py-2" :class="o.is_correct ? 'border-emerald-300 bg-emerald-50' : 'border-ink-100 bg-ink-50/40'">
-                                <span class="h-3 w-3 shrink-0 rounded-full" :class="o.is_correct ? 'bg-emerald-500' : 'bg-ink-300'" />
-                                <span class="flex-1 text-sm text-ink-800" :class="o.is_correct ? 'text-emerald-800 font-bold' : ''" dir="auto">{{ o.option_text }}</span>
-                                <button class="rounded px-2 py-1 text-xs font-medium" :class="o.is_correct ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'" @click="toggleCorrect(q, o)">{{ o.is_correct ? $t('exams.unmark') : $t('exams.markCorrect') }}</button>
-                                <button class="rounded px-2 py-1 text-xs font-medium text-ink-500 hover:bg-ink-100" @click="openOption(q, o)">{{ $t('common.edit') }}</button>
-                                <button class="rounded px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="deleteOption(q, o)">{{ $t('common.delete') }}</button>
+                            <div
+                                v-for="o in q.options"
+                                :key="o.id"
+                                class="rounded-lg border p-3 transition"
+                                :class="o.is_correct ? 'border-emerald-300 bg-emerald-50/80 shadow-xs' : 'border-ink-200 bg-ink-50/40 hover:bg-ink-50'"
+                            >
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                    <div class="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                                        <span
+                                            class="mt-0.5 sm:mt-0 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors"
+                                            :class="o.is_correct ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-ink-300 bg-white'"
+                                        >
+                                            <svg v-if="o.is_correct" class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                                <path d="M20 6 9 17l-5-5"/>
+                                            </svg>
+                                        </span>
+                                        <span
+                                            class="text-sm leading-relaxed break-words flex-1 text-start"
+                                            :class="o.is_correct ? 'text-emerald-950 font-bold' : 'text-ink-800'"
+                                            dir="auto"
+                                        >
+                                            {{ o.option_text }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 self-end sm:self-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-ink-100 sm:border-transparent w-full sm:w-auto justify-end">
+                                        <button
+                                            type="button"
+                                            class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
+                                            :class="o.is_correct ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'"
+                                            @click="toggleCorrect(q, o)"
+                                        >
+                                            <span v-if="o.is_correct">✕ {{ $t('exams.unmark') }}</span>
+                                            <span v-else>✓ {{ $t('exams.markCorrect') }}</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 border border-ink-200"
+                                            @click="openOption(q, o)"
+                                        >
+                                            {{ $t('common.edit') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 border border-rose-200"
+                                            @click="deleteOption(q, o)"
+                                        >
+                                            {{ $t('common.delete') }}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

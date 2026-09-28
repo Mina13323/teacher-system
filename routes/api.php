@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ProfileController;
+use App\Http\Controllers\StudentRegistrationController;
+use App\Http\Controllers\Teacher\StudentRegistrationLinkController;
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
@@ -60,6 +62,15 @@ Route::prefix('auth')->group(function () {
         Route::put('password', [ProfileController::class, 'changePassword']);
     });
 });
+
+// A teacher-owned, revocable link for student self-registration. The opaque
+// token selects the teacher; no open generic registration endpoint exists.
+Route::prefix('public/student-registration/{token}')
+    ->middleware('throttle:student-registration')
+    ->group(function () {
+        Route::get('/', [StudentRegistrationController::class, 'show']);
+        Route::post('/', [StudentRegistrationController::class, 'store']);
+    });
 
 // ---- Course catalog (authenticated users only) -----------------------------
 Route::middleware('auth:sanctum')->group(function () {
@@ -172,6 +183,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     // Student account management (teacher-owned LMS)
     Route::get('students', [TeacherStudentController::class, 'index']);
     Route::post('students', [TeacherStudentController::class, 'store']);
+    Route::post('students/batch-delete', [TeacherStudentController::class, 'batchDestroy']);
+    Route::get('student-registration-link', [StudentRegistrationLinkController::class, 'show']);
+    Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
+    Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
     Route::get('students/{student}', [TeacherStudentController::class, 'show']);
     Route::put('students/{student}', [TeacherStudentController::class, 'update']);
     Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);

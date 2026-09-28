@@ -23,6 +23,16 @@ const visibleNav = computed(() =>
     props.nav.filter((n) => !n.roles || n.roles.some((r) => auth.roles.includes(r))),
 );
 
+// The authenticated user may hold more than one role. Use the navigation
+// supplied by the active layout rather than the first role on the account, so
+// a student portal never sends the user to a teacher-only route.
+const notificationsRoute = computed(() =>
+    props.nav.find((item) => item.icon === 'bell')?.to || `/${auth.role}/notifications`,
+);
+const profileRoute = computed(() =>
+    props.nav.find((item) => item.icon === 'user')?.to || `/${auth.role}/profile`,
+);
+
 // Mobile bottom bar shows first 4 items; 5th button is "More" / Menu drawer
 const bottomNavItems = computed(() => {
     const list = visibleNav.value;
@@ -119,7 +129,7 @@ watch(() => route.path, () => {
             <div class="flex items-center gap-1 sm:gap-2 shrink-0">
                 <LanguageSwitcher class="me-0.5 sm:me-1 scale-90 sm:scale-100" />
                 <router-link
-                    :to="`/${auth.role}/notifications`"
+                    :to="notificationsRoute"
                     class="relative rounded-lg p-2 text-ink-600 hover:bg-ink-100"
                     :aria-label="$t('app.notifications')"
                 >
@@ -132,7 +142,7 @@ watch(() => route.path, () => {
                     </span>
                 </router-link>
                 <router-link
-                    :to="`/${auth.role}/profile`"
+                    :to="profileRoute"
                     class="flex items-center gap-2 rounded-lg p-1.5 hover:bg-ink-100"
                     :aria-label="$t('app.profile')"
                 >

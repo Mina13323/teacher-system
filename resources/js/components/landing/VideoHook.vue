@@ -13,7 +13,7 @@ import Icon from '@/components/ui/Icon.vue';
  */
 const VIDEO_CONFIG = ref({
     type: 'youtube', // 'youtube' | 'local'
-    source: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1',
+    source: '',
     posterText: 'Geography & History Beyond the Classroom',
     durationText: '03:45',
 });
@@ -21,7 +21,9 @@ const VIDEO_CONFIG = ref({
 const isPlaying = ref(false);
 
 function playVideo() {
-    isPlaying.value = true;
+    if (VIDEO_CONFIG.value.source) {
+        isPlaying.value = true;
+    }
 }
 
 function closeVideo() {

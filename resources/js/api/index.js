@@ -33,6 +33,11 @@ export const publicCatalog = {
     course: (id) => api.get(`/courses/${id}`),
 };
 
+export const publicStudentRegistration = {
+    details: (token) => api.get(`/public/student-registration/${token}`),
+    register: (token, payload) => api.post(`/public/student-registration/${token}`, payload),
+};
+
 // ---- Notifications (any authenticated user) --------------------------------
 export const notifications = {
     all: (params) => api.get('/notifications', params),
@@ -79,6 +84,7 @@ export const teacher = {
     createStudent: (payload) => api.post('/teacher/students', payload),
     updateStudent: (id, payload) => api.put(`/teacher/students/${id}`, payload),
     deleteStudent: (id) => api.delete(`/teacher/students/${id}`),
+    batchDeleteStudents: (ids) => api.post('/teacher/students/batch-delete', { ids }),
     activateStudent: (id) => api.patch(`/teacher/students/${id}/activate`),
     deactivateStudent: (id) => api.patch(`/teacher/students/${id}/deactivate`),
     resetStudentPassword: (id, payload) => api.post(`/teacher/students/${id}/reset-password`, payload),
@@ -88,6 +94,9 @@ export const teacher = {
     allowStudentImmediately: (id, payload) => api.post(`/teacher/students/${id}/allow-immediately`, payload),
     renewStudent: (id, payload) => api.post(`/teacher/students/${id}/renew`, payload),
     notifyStudent: (id, payload) => api.post(`/teacher/students/${id}/notify`, payload),
+    studentRegistrationLink: () => api.get('/teacher/student-registration-link'),
+    rotateStudentRegistrationLink: () => api.post('/teacher/student-registration-link/rotate'),
+    setStudentRegistrationLinkActive: (is_active) => api.patch('/teacher/student-registration-link', { is_active }),
 
     assistants: (params) => api.get('/teacher/assistants', params),
     assistant: (id) => api.get(`/teacher/assistants/${id}`),

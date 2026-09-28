@@ -69,6 +69,12 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        // A public registration link intentionally has a small budget per
+        // token and IP, limiting abuse without blocking normal class signup.
+        RateLimiter::for('student-registration', function (Request $request) {
+            return Limit::perMinute(8)->by('student-registration|'.$request->ip().'|'.$request->route('token'));
+        });
+
         // Dedicated rate limiter for the student integrity-event endpoint. It
         // supports legitimate browser visibility/focus events while preventing a
         // malicious client from flooding the endpoint.

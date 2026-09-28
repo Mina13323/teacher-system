@@ -1,12 +1,26 @@
 <script setup>
+import { ref } from 'vue';
 import { usePwa } from '@/composables/usePwa';
 import Icon from '@/components/ui/Icon.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
 const { needRefresh, updateServiceWorker } = usePwa();
+const isUpdating = ref(false);
 
-function update() {
-    updateServiceWorker(true);
+async function update() {
+    if (isUpdating.value) return;
+    isUpdating.value = true;
+
+    try {
+        // The PWA helper listens for controllerchange and normally reloads
+        // automatically. Some mobile browsers do not dispatch that event to
+        // an existing standalone window, so reload as a reliable fallback.
+        await updateServiceWorker(true);
+        window.setTimeout(() => window.location.reload(), 1200);
+    } catch {
+        // Keep the prompt visible and allow the user to try again.
+        isUpdating.value = false;
+    }
 }
 </script>
 
@@ -28,7 +42,7 @@ function update() {
             </p>
         </div>
 
-        <AppButton size="sm" variant="primary" @click="update">
+        <AppButton size="sm" variant="primary" :loading="isUpdating" @click="update">
             {{ $t('pwa.updateCta') }}
         </AppButton>
     </div>

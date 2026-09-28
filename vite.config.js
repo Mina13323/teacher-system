@@ -51,7 +51,10 @@ export default defineConfig({
                 ],
             },
             workbox: {
-                skipWaiting: true,
+                // Keep an update waiting until the user confirms it through
+                // PwaUpdateToast. `updateServiceWorker(true)` then sends the
+                // skip-waiting message and reloads under the new worker.
+                skipWaiting: false,
                 clientsClaim: true,
                 cleanupOutdatedCaches: true,
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],

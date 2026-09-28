@@ -7,15 +7,30 @@ const isInstalled = ref(false);
 const deferredPrompt = ref(null);
 const isIos = ref(false);
 
+// PWA registration must be shared by every component that consumes it.
+// Registering once per banner creates separate `needRefresh` refs and can
+// leave the visible button disconnected from the worker that is waiting.
+let registration;
+
+function getRegistration() {
+    if (!registration) {
+        registration = useRegisterSW({
+            immediate: true,
+            onRegisteredSW(_swUrl, serviceWorkerRegistration) {
+                // Ask for a new deployment regularly while the PWA is open.
+                // The update remains user-controlled through the refresh button.
+                if (serviceWorkerRegistration) {
+                    setInterval(() => serviceWorkerRegistration.update(), 60 * 60 * 1000);
+                }
+            },
+        });
+    }
+
+    return registration;
+}
+
 export function usePwa() {
-    const { needRefresh, updateServiceWorker } = useRegisterSW({
-        immediate: true,
-        onRegisteredSW(_swUrl, registration) {
-            // Ask for a new deployment regularly while the PWA is open. The
-            // update is still user-controlled through the refresh button.
-            if (registration) setInterval(() => registration.update(), 60 * 60 * 1000);
-        },
-    });
+    const { needRefresh, updateServiceWorker } = getRegistration();
 
     function updateOnlineStatus() {
         isOnline.value = navigator.onLine;

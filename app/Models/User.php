@@ -217,8 +217,35 @@ class User extends Authenticatable
             return false;
         }
 
+        if ($this->isAdmin()) {
+            return true;
+        }
+
         if ($this->isTeacher()) {
-            return (int) $this->getKey() === (int) $ownerId;
+            if ((int) $this->getKey() === (int) $ownerId) {
+                return true;
+            }
+
+            // Co-teaching: Teachers collaborate on resources created by any teacher or assistant
+            if (config('app.co_teaching', false)) {
+                $cacheKey = 'co_teach_'.(string) $ownerId;
+
+                if (! array_key_exists($cacheKey, $this->staffScopeCache)) {
+                    $this->staffScopeCache[$cacheKey] = User::query()
+                        ->whereKey($ownerId)
+                        ->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                            UserRole::Teacher->value,
+                            UserRole::Assistant->value,
+                        ]))
+                        ->exists();
+                }
+
+                if ($this->staffScopeCache[$cacheKey]) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         if (! $this->isAssistant()) {
@@ -239,14 +266,17 @@ class User extends Authenticatable
             return true;
         }
 
-        // No teacher link — fall back to the single-LMS rule. Memoized per
+        // Under co-teaching or no teacher link — fall back to the single-LMS rule. Memoized per
         // owner id, since policies evaluate many resources per request.
         $cacheKey = (string) $ownerId;
 
         if (! array_key_exists($cacheKey, $this->staffScopeCache)) {
             $this->staffScopeCache[$cacheKey] = User::query()
                 ->whereKey($ownerId)
-                ->role(UserRole::Teacher->value)
+                ->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                    UserRole::Teacher->value,
+                    UserRole::Assistant->value,
+                ]))
                 ->exists();
         }
 
@@ -262,12 +292,25 @@ class User extends Authenticatable
      * already let them manage — otherwise the backend would authorize an
      * Assistant to edit a course that never appears in their list.
      *
+     * Under co-teaching, all teachers and assistants collaborate across the platform.
+     *
      * @return list<int>|null
      */
     public function staffOwnerIds(): ?array
     {
         if ($this->isAdmin()) {
             return null;
+        }
+
+        if (config('app.co_teaching', false) && ($this->isTeacher() || $this->isAssistant())) {
+            return User::query()
+                ->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                    UserRole::Teacher->value,
+                    UserRole::Assistant->value,
+                ]))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
         }
 
         if ($this->isTeacher()) {

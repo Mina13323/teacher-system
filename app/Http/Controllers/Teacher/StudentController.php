@@ -19,11 +19,13 @@ use App\Http\Requests\CreateStudentRequest;
 use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Requests\UpdateStudentRequest;
 use App\Http\Resources\StudentResource;
+use App\Models\CompetitionParticipant;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Student account management for a teacher-owned LMS. A teacher or authorized assistant
@@ -56,23 +58,38 @@ class StudentController extends Controller
 
         if (! $request->user()->isAdmin()) {
             $user = $request->user();
-            $teacherId = $user->isTeacher()
-                ? $user->getKey()
-                : ($user->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $user->getKey()));
 
-            $assistantIds = User::query()
-                ->where('created_by', $teacherId)
-                ->orWhereHas('roles', fn ($q) => $q->where('name', UserRole::Assistant->value))
-                ->pluck('id');
+            if (config('app.co_teaching', false) && ($user->isTeacher() || $user->isAssistant())) {
+                $staffIds = User::query()
+                    ->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                        UserRole::Teacher->value,
+                        UserRole::Assistant->value,
+                        UserRole::Admin->value,
+                    ]))
+                    ->pluck('id');
 
-            $enrolledInOwnCourses = Enrollment::query()
-                ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))
-                ->where('status', \App\Enums\EnrollmentStatus::Active->value)
-                ->pluck('student_id');
+                $query->where(fn ($q) => $q->whereIn('created_by', $staffIds)
+                    ->orWhereNull('created_by')
+                    ->orWhereHas('enrollments'));
+            } else {
+                $teacherId = $user->isTeacher()
+                    ? $user->getKey()
+                    : ($user->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $user->getKey()));
 
-            $query->where(fn ($q) => $q->where('created_by', $teacherId)
-                ->orWhereIn('created_by', $assistantIds)
-                ->orWhereIn('id', $enrolledInOwnCourses));
+                $assistantIds = User::query()
+                    ->where('created_by', $teacherId)
+                    ->orWhereHas('roles', fn ($q) => $q->where('name', UserRole::Assistant->value))
+                    ->pluck('id');
+
+                $enrolledInOwnCourses = Enrollment::query()
+                    ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))
+                    ->where('status', \App\Enums\EnrollmentStatus::Active->value)
+                    ->pluck('student_id');
+
+                $query->where(fn ($q) => $q->where('created_by', $teacherId)
+                    ->orWhereIn('created_by', $assistantIds)
+                    ->orWhereIn('id', $enrolledInOwnCourses));
+            }
         }
 
         if ($request->filled('academic_year')) {
@@ -113,7 +130,99 @@ class StudentController extends Controller
             }
         }
 
-        $students = $query->latest()->paginate($this->perPage($request));
+        if ($request->boolean('duplicates')) {
+            $scopedIds = (clone $query)->pluck('users.id');
+
+            $duplicateNames = User::query()
+                ->whereIn('id', $scopedIds)
+                ->whereNotNull('name')
+                ->where('name', '!=', '')
+                ->selectRaw('TRIM(name) as dup_name')
+                ->groupBy('dup_name')
+                ->havingRaw('COUNT(*) > 1')
+                ->pluck('dup_name');
+
+            $duplicatePhones = User::query()
+                ->whereIn('id', $scopedIds)
+                ->whereNotNull('phone')
+                ->where('phone', '!=', '')
+                ->selectRaw('TRIM(phone) as dup_phone')
+                ->groupBy('dup_phone')
+                ->havingRaw('COUNT(*) > 1')
+                ->pluck('dup_phone');
+
+            $query->where(function ($q) use ($duplicateNames, $duplicatePhones) {
+                $hasCond = false;
+                if ($duplicateNames->isNotEmpty()) {
+                    $q->whereIn(DB::raw('TRIM(name)'), $duplicateNames);
+                    $hasCond = true;
+                }
+                if ($duplicatePhones->isNotEmpty()) {
+                    if ($hasCond) {
+                        $q->orWhereIn(DB::raw('TRIM(phone)'), $duplicatePhones);
+                    } else {
+                        $q->whereIn(DB::raw('TRIM(phone)'), $duplicatePhones);
+                    }
+                    $hasCond = true;
+                }
+                if (! $hasCond) {
+                    $q->whereRaw('1 = 0');
+                }
+            });
+        }
+
+        $sort = $request->string('sort', 'name_asc')->toString();
+        switch ($sort) {
+            case 'name_desc':
+                $query->orderBy('name', 'desc')->orderBy('id', 'asc');
+                break;
+            case 'latest':
+                $query->latest();
+                break;
+            case 'oldest':
+                $query->oldest();
+                break;
+            case 'code_asc':
+                $query->orderBy('student_code', 'asc');
+                break;
+            case 'code_desc':
+                $query->orderBy('student_code', 'desc');
+                break;
+            case 'name_asc':
+            default:
+                $query->orderBy('name', 'asc')->orderBy('id', 'asc');
+                break;
+        }
+
+        $students = $query->paginate($this->perPage($request));
+
+        $studentNames = $students->getCollection()->pluck('name')->filter()->map(fn ($n) => trim($n))->unique();
+        $studentPhones = $students->getCollection()->pluck('phone')->filter()->map(fn ($p) => trim($p))->unique();
+
+        $dupNames = User::query()
+            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
+            ->whereIn(DB::raw('TRIM(name)'), $studentNames)
+            ->selectRaw('TRIM(name) as d_name')
+            ->groupBy('d_name')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('d_name')
+            ->all();
+
+        $dupPhones = User::query()
+            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
+            ->whereIn(DB::raw('TRIM(phone)'), $studentPhones)
+            ->selectRaw('TRIM(phone) as d_phone')
+            ->groupBy('d_phone')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('d_phone')
+            ->all();
+
+        $dupNamesSet = array_flip($dupNames);
+        $dupPhonesSet = array_flip($dupPhones);
+
+        $students->getCollection()->each(function ($user) use ($dupNamesSet, $dupPhonesSet) {
+            $user->is_duplicate = (isset($dupNamesSet[trim($user->name)]) || ($user->phone && isset($dupPhonesSet[trim($user->phone)])));
+        });
 
         return $this->success(StudentResource::collection($students), 'Students retrieved.');
     }
@@ -294,9 +403,34 @@ class StudentController extends Controller
         $student->enrollments()->delete();
         $student->examAttempts()->delete();
         $student->lessonProgress()->delete();
+        CompetitionParticipant::where('student_id', $student->id)->delete();
         $student->delete();
 
         return $this->success(null, 'Student deleted successfully.');
     }
 
+    public function batchDestroy(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $count = 0;
+        foreach ($validated['ids'] as $id) {
+            $student = User::find($id);
+            if ($student && $request->user()->can('delete', $student)) {
+                $student->tokens()->delete();
+                $student->accessPeriods()->delete();
+                $student->enrollments()->delete();
+                $student->examAttempts()->delete();
+                $student->lessonProgress()->delete();
+                CompetitionParticipant::where('student_id', $student->id)->delete();
+                $student->delete();
+                $count++;
+            }
+        }
+
+        return $this->success(['deleted_count' => $count], "{$count} students deleted successfully.");
+    }
 }

@@ -49,6 +49,7 @@ class StudentResource extends JsonResource
             'academic_subject' => $academicSubjectEnum?->value ?? 'general',
             'academic_subject_label' => $academicSubjectEnum?->label(),
             'is_active' => $this->is_active,
+            'is_duplicate' => (bool) ($this->is_duplicate ?? false),
             'must_change_password' => (bool) $this->must_change_password,
             'can_access_lessons' => $this->canAccessLessons(),
             'can_take_exams' => $this->canTakeExams(),

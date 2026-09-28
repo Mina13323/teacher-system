@@ -123,4 +123,16 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Co-Teaching Collaboration
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, all teachers and assistants on the platform share and
+    | co-manage courses, lessons, exams, and students as a unified faculty.
+    |
+    */
+
+    'co_teaching' => (bool) env('CO_TEACHING_ENABLED', true),
+
 ];

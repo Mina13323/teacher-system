@@ -44,8 +44,18 @@ class AssistantController extends Controller
             ->with('roles');
 
         if (! $request->user()->isAdmin()) {
-            $teacherId = $request->user()->getKey();
-            $query->where('created_by', $teacherId);
+            if (config('app.co_teaching', false)) {
+                $staffIds = User::query()
+                    ->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                        UserRole::Teacher->value,
+                        UserRole::Admin->value,
+                    ]))
+                    ->pluck('id');
+                $query->where(fn ($q) => $q->whereIn('created_by', $staffIds)->orWhereNull('created_by'));
+            } else {
+                $teacherId = $request->user()->getKey();
+                $query->where('created_by', $teacherId);
+            }
         }
 
         $assistants = $query->latest()->paginate($this->perPage($request));
@@ -143,6 +153,7 @@ class AssistantController extends Controller
     {
         abort_unless(
             $request->user()->isAdmin()
+                || config('app.co_teaching', false)
                 || ((int) $assistant->created_by === (int) $request->user()->getKey()),
             403,
             'You do not manage this assistant.'

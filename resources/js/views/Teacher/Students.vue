@@ -17,6 +17,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import Pagination from '@/components/ui/Pagination.vue';
 import Icon from '@/components/ui/Icon.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import WhatsAppContactModal from '@/components/students/WhatsAppContactModal.vue';
 
 const { t } = useI18n();
@@ -96,6 +97,16 @@ const search = ref('');
 const yearFilter = ref('all');
 const subjectFilter = ref('all');
 const statusFilter = ref('all');
+const sortOrder = ref('name_asc');
+const showDuplicatesOnly = ref(false);
+
+// Delete student state
+const deleteTarget = ref(null);
+const deleteBusy = ref(false);
+
+// Batch delete state
+const batchDeleteOpen = ref(false);
+const batchDeleteBusy = ref(false);
 
 // Suspend modal state
 const suspendTarget = ref(null);
@@ -160,9 +171,44 @@ const statusOptions = computed(() => [
     { value: 'suspended', label: t('students.statusSuspended') || 'معلق / موقوف' },
 ]);
 
+const sortOptions = computed(() => [
+    { value: 'name_asc', label: t('students.sortAlphabeticalAsc') || 'أبجدي (أ - ي / A - Z)' },
+    { value: 'name_desc', label: t('students.sortAlphabeticalDesc') || 'أبجدي عكسي (ي - أ / Z - A)' },
+    { value: 'latest', label: t('students.sortLatest') || 'الأحدث إضافة' },
+    { value: 'oldest', label: t('students.sortOldest') || 'الأقدم إضافة' },
+    { value: 'code_asc', label: t('students.sortCodeAsc') || 'كود الطالب (تصاعدي)' },
+    { value: 'code_desc', label: t('students.sortCodeDesc') || 'كود الطالب (تنازلي)' },
+]);
+
+function isStudentDuplicate(s) {
+    if (s.is_duplicate) return true;
+    const sName = (s.name || '').trim().toLowerCase();
+    const sPhone = (s.phone || '').replace(/\D/g, '');
+    return items.value.some((other) => {
+        if (other.id === s.id) return false;
+        const otherName = (other.name || '').trim().toLowerCase();
+        const otherPhone = (other.phone || '').replace(/\D/g, '');
+        return (sName && sName === otherName) || (sPhone && sPhone.length >= 8 && sPhone === otherPhone);
+    });
+}
+
+function toggleDuplicates() {
+    showDuplicatesOnly.value = !showDuplicatesOnly.value;
+    load(1);
+}
+
+function toggleSort(field) {
+    if (field === 'name') {
+        sortOrder.value = sortOrder.value === 'name_asc' ? 'name_desc' : 'name_asc';
+    } else if (field === 'code') {
+        sortOrder.value = sortOrder.value === 'code_asc' ? 'code_desc' : 'code_asc';
+    }
+    load(1);
+}
+
 const filtered = computed(() => {
     const q = search.value.trim().toLowerCase();
-    return items.value.filter((s) => {
+    const result = items.value.filter((s) => {
         const matchesQuery = !q ||
             (s.name || '').toLowerCase().includes(q) ||
             (s.email || '').toLowerCase().includes(q) ||
@@ -175,7 +221,31 @@ const filtered = computed(() => {
         const currentStatus = s.access_status || (s.is_active ? 'active' : 'suspended');
         const matchesStatus = statusFilter.value === 'all' || currentStatus === statusFilter.value;
 
-        return matchesQuery && matchesYear && matchesSubject && matchesStatus;
+        const matchesDuplicates = !showDuplicatesOnly.value || isStudentDuplicate(s);
+
+        return matchesQuery && matchesYear && matchesSubject && matchesStatus && matchesDuplicates;
+    });
+
+    return result.sort((a, b) => {
+        if (sortOrder.value === 'name_asc') {
+            return (a.name || '').localeCompare(b.name || '', ['ar', 'en'], { sensitivity: 'base', numeric: true });
+        }
+        if (sortOrder.value === 'name_desc') {
+            return (b.name || '').localeCompare(a.name || '', ['ar', 'en'], { sensitivity: 'base', numeric: true });
+        }
+        if (sortOrder.value === 'code_asc') {
+            return (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true });
+        }
+        if (sortOrder.value === 'code_desc') {
+            return (b.student_code || '').localeCompare(a.student_code || '', undefined, { numeric: true });
+        }
+        if (sortOrder.value === 'oldest') {
+            return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        }
+        if (sortOrder.value === 'latest') {
+            return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+        }
+        return 0;
     });
 });
 
@@ -206,11 +276,12 @@ async function load(p = 1) {
     loading.value = true;
     error.value = '';
     try {
-        const params = { per_page: 25, page: p };
+        const params = { per_page: 25, page: p, sort: sortOrder.value };
         if (yearFilter.value !== 'all') params.academic_year = yearFilter.value;
         if (subjectFilter.value !== 'all') params.academic_subject = subjectFilter.value;
         if (statusFilter.value !== 'all') params.status = statusFilter.value;
         if (search.value.trim()) params.search = search.value.trim();
+        if (showDuplicatesOnly.value) params.duplicates = 1;
         const res = toList(await teacher.students(params));
         items.value = res.items;
         meta.value = res.meta;
@@ -218,6 +289,47 @@ async function load(p = 1) {
         error.value = e.message;
     } finally {
         loading.value = false;
+    }
+}
+
+function openDeleteStudent(s) {
+    deleteTarget.value = s;
+}
+
+async function submitDeleteStudent() {
+    if (!deleteTarget.value) return;
+    deleteBusy.value = true;
+    try {
+        await teacher.deleteStudent(deleteTarget.value.id);
+        toast.success(t('students.deleted') || 'تم حذف حساب الطالب بنجاح');
+        selectedIds.value = selectedIds.value.filter((id) => id !== deleteTarget.value.id);
+        deleteTarget.value = null;
+        load(page.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        deleteBusy.value = false;
+    }
+}
+
+function openBatchDelete() {
+    if (!selectedIds.value.length) return;
+    batchDeleteOpen.value = true;
+}
+
+async function submitBatchDelete() {
+    if (!selectedIds.value.length) return;
+    batchDeleteBusy.value = true;
+    try {
+        await teacher.batchDeleteStudents(selectedIds.value);
+        toast.success(t('students.batchDeleteSuccess') || 'تم حذف الطلاب المحددين بنجاح');
+        selectedIds.value = [];
+        batchDeleteOpen.value = false;
+        load(page.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        batchDeleteBusy.value = false;
     }
 }
 
@@ -433,6 +545,12 @@ onMounted(() => load(1));
                 <AppButton v-if="selectedIds.length" variant="outline" size="sm" @click="openPrintSelected">
                     🖨️ {{ $t('students.printSelected') }} ({{ selectedIds.length }})
                 </AppButton>
+                <AppButton v-if="selectedIds.length" variant="outline" size="sm" class="border-rose-300 text-rose-700 hover:bg-rose-50" @click="openBatchDelete">
+                    🗑️ {{ $t('students.deleteSelected') || 'حذف المحددين' }} ({{ selectedIds.length }})
+                </AppButton>
+                <router-link :to="`/${authRole}/students/registration-link`">
+                    <AppButton variant="outline" size="sm">Student registration link</AppButton>
+                </router-link>
                 <router-link :to="`/${authRole}/students/new`">
                     <AppButton>{{ $t('students.addStudent') || 'إضافة طالب جديد' }}</AppButton>
                 </router-link>
@@ -454,8 +572,34 @@ onMounted(() => load(1));
                 <div class="w-full max-w-[160px]">
                     <AppSelect v-model="statusFilter" :options="statusOptions" id="filter-status" @change="load(1)" />
                 </div>
+                <div class="w-full max-w-[200px]">
+                    <AppSelect v-model="sortOrder" :options="sortOptions" id="filter-sort" @change="load(1)" />
+                </div>
+                <AppButton
+                    :variant="showDuplicatesOnly ? 'primary' : 'outline'"
+                    size="sm"
+                    class="whitespace-nowrap"
+                    :class="showDuplicatesOnly ? '!bg-amber-600 hover:!bg-amber-700 !border-amber-600 !text-white font-bold' : ''"
+                    @click="toggleDuplicates"
+                >
+                    <span>👥</span>
+                    <span>{{ showDuplicatesOnly ? ($t('students.showAllStudents') || 'عرض جميع الطلاب') : ($t('students.showDuplicatesOnly') || 'عرض المكررين فقط') }}</span>
+                </AppButton>
             </div>
-            <span class="text-sm text-ink-400">{{ $t('students.count', { n: meta?.total ?? filtered.length }) }}</span>
+            <span class="text-sm text-ink-400 shrink-0">{{ $t('students.count', { n: meta?.total ?? filtered.length }) }}</span>
+        </div>
+
+        <!-- Duplicates Active Banner -->
+        <div v-if="showDuplicatesOnly" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
+            <div class="flex items-center gap-2.5">
+                <span class="text-xl">⚠️</span>
+                <div>
+                    <p class="font-bold">{{ $t('students.duplicatesNotice') || 'يتم الآن تصفية الحسابات المكررة فقط لتسهيل مراجعتها وحذف الحسابات الزائدة.' }}</p>
+                </div>
+            </div>
+            <AppButton size="sm" variant="outline" class="border-amber-400 text-amber-900 hover:bg-amber-100 shrink-0 self-start sm:self-auto" @click="toggleDuplicates">
+                {{ $t('students.showAllStudents') || 'إلغاء التصفية وعرض الكل' }}
+            </AppButton>
         </div>
 
         <!-- Student List Table -->
@@ -477,11 +621,21 @@ onMounted(() => load(1));
                                     @change="toggleSelectAll"
                                 />
                             </th>
-                            <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle">
-                                {{ $t('students.colCode') }}
+                            <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle cursor-pointer hover:bg-ink-100 transition-colors select-none" @click="toggleSort('code')" :title="$t('students.sortBy')">
+                                <div class="inline-flex items-center gap-1">
+                                    <span>{{ $t('students.colCode') }}</span>
+                                    <span v-if="sortOrder === 'code_asc'" class="text-terracotta-600 text-xs">▲</span>
+                                    <span v-else-if="sortOrder === 'code_desc'" class="text-terracotta-600 text-xs">▼</span>
+                                    <span v-else class="text-ink-300 text-xs">↕</span>
+                                </div>
                             </th>
-                            <th scope="col" class="px-4 py-3 text-start min-w-[200px] align-middle">
-                                {{ $t('students.colStudent') }}
+                            <th scope="col" class="px-4 py-3 text-start min-w-[200px] align-middle cursor-pointer hover:bg-ink-100 transition-colors select-none" @click="toggleSort('name')" :title="$t('students.sortBy')">
+                                <div class="inline-flex items-center gap-1">
+                                    <span>{{ $t('students.colStudent') }}</span>
+                                    <span v-if="sortOrder === 'name_asc'" class="text-terracotta-600 text-xs">▲</span>
+                                    <span v-else-if="sortOrder === 'name_desc'" class="text-terracotta-600 text-xs">▼</span>
+                                    <span v-else class="text-ink-300 text-xs">↕</span>
+                                </div>
                             </th>
                             <th scope="col" class="px-4 py-3 text-start whitespace-nowrap align-middle hidden md:table-cell">
                                 {{ $t('students.colYearTrack') }}
@@ -495,7 +649,7 @@ onMounted(() => load(1));
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-ink-100 bg-white">
-                        <tr v-for="s in filtered" :key="s.id" class="hover:bg-ink-50/50 transition-colors">
+                        <tr v-for="s in filtered" :key="s.id" class="hover:bg-ink-50/50 transition-colors" :class="isStudentDuplicate(s) ? 'bg-amber-50/30' : ''">
                             <td class="w-12 px-4 py-3.5 text-center align-middle">
                                 <input
                                     type="checkbox"
@@ -512,9 +666,14 @@ onMounted(() => load(1));
                             </td>
 
                             <td class="px-4 py-3.5 align-middle min-w-[200px]">
-                                <p class="font-semibold text-ink-900 whitespace-nowrap" dir="auto">
-                                    {{ s.name }}
-                                </p>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <p class="font-semibold text-ink-900 whitespace-nowrap" dir="auto">
+                                        {{ s.name }}
+                                    </p>
+                                    <AppBadge v-if="isStudentDuplicate(s)" tone="warning" class="text-[11px] !px-1.5 !py-0">
+                                        ⚠️ {{ $t('students.duplicateBadge') || 'مكرر' }}
+                                    </AppBadge>
+                                </div>
                                 <div class="text-xs text-ink-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                     <span>{{ s.email }}</span>
                                     <span v-if="s.phone" class="text-ink-300">·</span>
@@ -613,6 +772,15 @@ onMounted(() => load(1));
                                         @click="openPrintSingle(s)"
                                     >
                                         🖨️ {{ $t('students.actionPrint') }}
+                                    </AppButton>
+                                    <AppButton
+                                        variant="ghost"
+                                        size="sm"
+                                        class="!px-2.5 !py-1 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200"
+                                        :title="$t('students.deleteStudent') || 'حذف الطالب'"
+                                        @click="openDeleteStudent(s)"
+                                    >
+                                        🗑️ {{ $t('common.delete') || 'حذف' }}
                                     </AppButton>
                                 </div>
                             </td>
@@ -796,6 +964,30 @@ onMounted(() => load(1));
             :resetting="resettingWhatsApp"
             @reset="whatsappResetAndSend"
             @close="closeWhatsApp"
+        />
+
+        <!-- Confirm Delete Single Student Modal -->
+        <ConfirmDialog
+            :open="Boolean(deleteTarget)"
+            :title="$t('students.deleteStudent') || 'حذف الطالب'"
+            :message="$t('students.deleteStudentConfirm', { name: deleteTarget?.name || '' })"
+            :confirm-text="$t('common.delete') || 'حذف نهائي'"
+            tone="danger"
+            :loading="deleteBusy"
+            @close="deleteTarget = null"
+            @confirm="submitDeleteStudent"
+        />
+
+        <!-- Confirm Batch Delete Students Modal -->
+        <ConfirmDialog
+            :open="batchDeleteOpen"
+            :title="$t('students.deleteSelected') || 'حذف الطلاب المحددين'"
+            :message="$t('students.deleteSelectedConfirm', { n: selectedIds.length })"
+            :confirm-text="$t('common.delete') || 'حذف نهائي'"
+            tone="danger"
+            :loading="batchDeleteBusy"
+            @close="batchDeleteOpen = false"
+            @confirm="submitBatchDelete"
         />
     </div>
 </template>

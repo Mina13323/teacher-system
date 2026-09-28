@@ -45,11 +45,16 @@ class CourseStudentController extends Controller
     {
         if ($request->filled('academic_year')) {
             $ownerId = $course->created_by;
-            $staffIds = User::query()->where('created_by', $ownerId)
-                ->orWhere('id', $ownerId)
-                ->pluck('id');
+            $staffIds = config('app.co_teaching', false)
+                ? User::query()->whereHas('roles', fn ($q) => $q->whereIn('name', [
+                    UserRole::Teacher->value,
+                    UserRole::Assistant->value,
+                    UserRole::Admin->value,
+                ]))->pluck('id')
+                : User::query()->where('created_by', $ownerId)->orWhere('id', $ownerId)->pluck('id');
+
             $students = User::role(UserRole::Student->value)
-                ->whereIn('created_by', $staffIds)
+                ->where(fn ($q) => $q->whereIn('created_by', $staffIds)->orWhereNull('created_by'))
                 ->where('academic_year', $request->string('academic_year')->toString())
                 ->where('is_active', true)
                 ->get();
