@@ -22,7 +22,7 @@ class AttemptController extends Controller
     {
         $this->authorize('viewStaff', $attempt);
 
-        $attempt->load(['exam', 'student', 'answers', 'attemptQuestions']);
+        $attempt->load(['exam', 'student', 'answers', 'attemptQuestions.attemptOptions']);
 
         return $this->success(new ExamAttemptDetailResource($attempt), 'Attempt retrieved.');
     }
@@ -52,7 +52,7 @@ class AttemptController extends Controller
         }
 
         return $this->success(
-            new ExamAttemptDetailResource($updatedAttempt->load(['exam', 'student', 'answers'])),
+            new ExamAttemptDetailResource($updatedAttempt->load(['exam', 'student', 'answers', 'attemptQuestions.attemptOptions'])),
             'Essay answer graded successfully.'
         );
     }
@@ -64,7 +64,7 @@ class AttemptController extends Controller
         $publishedAttempt = $this->publishGradesAction->execute($request->user(), $attempt);
 
         return $this->success(
-            new ExamAttemptDetailResource($publishedAttempt->load(['exam', 'student', 'answers'])),
+            new ExamAttemptDetailResource($publishedAttempt->load(['exam', 'student', 'answers', 'attemptQuestions.attemptOptions'])),
             'Exam grades published successfully.'
         );
     }

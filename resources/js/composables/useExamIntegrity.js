@@ -77,7 +77,7 @@ export function useExamIntegrity(options = {}) {
      * Report an event to the server. Deliberately fire-and-forget: a failed
      * report must never block the UI or stop the attempt from being ended.
      */
-    function report(type, metadata = {}) {
+    function report(type, metadata = {}, options = {}) {
         const id = attemptId();
         if (!id) return;
 
@@ -93,27 +93,31 @@ export function useExamIntegrity(options = {}) {
             );
         }
 
-        student.recordIntegrity(id, payload).catch(() => {
-            /* Never surface reporting failures to the student. */
-        });
+        if (options.keepalive && typeof student.recordIntegrityKeepalive === 'function') {
+            student.recordIntegrityKeepalive(id, payload);
+        } else {
+            student.recordIntegrity(id, payload).catch(() => {
+                /* Never surface reporting failures to the student. */
+            });
+        }
     }
 
     /**
      * Record an event and act on it. Duplicate bursts of the same event type
      * (blur and visibilitychange often fire together) are collapsed.
      */
-    function record(type, metadata = {}) {
+    function record(type, metadata = {}, options = {}) {
         if (reported.has(type)) return;
         reported.add(type);
 
         violations.value += 1;
         lastViolation.value = type;
 
-        report(type, metadata);
+        report(type, metadata, options);
         onEvent(type, metadata);
 
         if (isTerminal(type)) {
-            onTerminate(type);
+            onTerminate(type, options);
         }
     }
 
@@ -128,7 +132,7 @@ export function useExamIntegrity(options = {}) {
             // period: this is the real thing, not a transient blur.
             clearTimeout(blurTimer);
             if (rules().detect_tab_switch) {
-                record('TAB_SWITCH', { source: 'visibilitychange' });
+                record('TAB_SWITCH', { source: 'visibilitychange' }, { keepalive: true });
             }
         } else if (rules().detect_tab_switch) {
             // Returning is informative for review but is not a violation.
@@ -207,10 +211,11 @@ export function useExamIntegrity(options = {}) {
 
     /**
      * Best effort: the page is being hidden or unloaded, so a normal XHR may
-     * not complete. Recorded without waiting for a response.
+     * not complete. Recorded with keepalive and triggers termination if enabled.
      */
     function onPageHide() {
-        report('WINDOW_BLUR', { source: 'pagehide' });
+        clearTimeout(blurTimer);
+        record('WINDOW_BLUR', { source: 'pagehide' }, { keepalive: true });
     }
 
     // -----------------------------------------------------------------

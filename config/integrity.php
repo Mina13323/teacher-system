@@ -171,4 +171,17 @@ return [
         'per_minute' => 60,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Heartbeat and Liveness
+    |--------------------------------------------------------------------------
+    |
+    | When an attempt requires terminate_on_violation, the client sends periodic
+    | heartbeats. If heartbeats stop for longer than the timeout threshold (e.g.
+    | app backgrounded/killed/offline), the attempt is terminated as a violation.
+    |
+    */
+    'heartbeat_interval_seconds' => 15,
+    'heartbeat_timeout_seconds' => 60,
+
 ];

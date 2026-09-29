@@ -61,7 +61,7 @@ class ExamAttemptResource extends JsonResource
                 $this->grades_published_at !== null
                     && $this->percentage !== null
                     && $this->pass_percentage !== null,
-                fn () => $this->percentage >= $this->pass_percentage
+                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
             ),
             'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);

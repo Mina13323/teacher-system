@@ -86,18 +86,25 @@ class StartExamAttemptAction
                     return $existing;
                 }
 
-                $attemptCount = ExamAttempt::query()
+                $completedCount = ExamAttempt::query()
                     ->where('student_id', $studentId)
                     ->where('exam_id', $examId)
                     ->whereIn('status', [
                         ExamAttemptStatus::Submitted->value,
+                        ExamAttemptStatus::Grading->value,
+                        ExamAttemptStatus::Published->value,
                         ExamAttemptStatus::Expired->value,
                     ])
                     ->count();
 
-                if ($attemptCount >= $exam->max_attempts) {
+                if ($completedCount >= $exam->max_attempts) {
                     throw new AttemptLimitReachedException();
                 }
+
+                $nextAttemptNumber = (int) ExamAttempt::query()
+                    ->where('student_id', $studentId)
+                    ->where('exam_id', $examId)
+                    ->max('attempt_number') + 1;
 
                 $startedAt = now();
 
@@ -112,9 +119,10 @@ class StartExamAttemptAction
                 $attempt = ExamAttempt::create([
                     'exam_id' => $examId,
                     'student_id' => $studentId,
-                    'attempt_number' => $attemptCount + 1,
+                    'attempt_number' => $nextAttemptNumber,
                     'started_at' => $startedAt,
                     'expires_at' => $expiresAt,
+                    'last_heartbeat_at' => $startedAt,
                     'status' => ExamAttemptStatus::InProgress->value,
                     'pass_percentage' => $exam->pass_percentage,
                     'active_key' => $studentId.':'.$examId,

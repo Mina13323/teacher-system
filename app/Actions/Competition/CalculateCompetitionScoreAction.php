@@ -37,6 +37,10 @@ class CalculateCompetitionScoreAction
             ->where('exam_id', $competition->exam_id)
             ->where('student_id', $studentId)
             ->where('status', ExamAttemptStatus::Submitted->value)
+            ->where(function ($query) {
+                $query->whereNull('integrity_status')
+                    ->orWhere('integrity_status', '!=', \App\Enums\IntegrityStatus::Flagged->value);
+            })
             ->when($competition->ends_at !== null, function ($query) use ($competition) {
                 $query->where('submitted_at', '<', $competition->ends_at);
             })

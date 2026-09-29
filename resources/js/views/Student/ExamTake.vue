@@ -56,24 +56,55 @@ const {
 } = useExamIntegrity({
     getAttemptId: () => attempt.value?.id ?? null,
     getRules: () => integrityRules.value,
-    onTerminate: (type) => terminateExam(type),
+    onTerminate: (type, options) => terminateExam(type, options),
 });
 
+let heartbeatTimer = null;
+function startHeartbeat() {
+    stopHeartbeat();
+    if (attempt.value?.status !== 'in_progress') return;
+    heartbeatTimer = setInterval(async () => {
+        if (!attempt.value || attempt.value.status !== 'in_progress') {
+            stopHeartbeat();
+            return;
+        }
+        try {
+            await student.heartbeat(attempt.value.id);
+        } catch (e) {
+            if (e.status === 422 || e.isValidation) {
+                stopHeartbeat();
+                load();
+            }
+        }
+    }, 15000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+}
+
 /**
- * Ends the attempt because the student left the exam screen. Goes through the
- * same submit endpoint as a normal submission, so the server grades it and
- * applies the usual expiry rules — the client never decides the outcome.
+ * Ends the attempt because the student left the exam screen.
+ * Terminates the attempt immediately on the server, grading current answers
+ * and flagging the attempt integrity status.
  */
-async function terminateExam(type) {
+async function terminateExam(type, options = {}) {
     if (!attempt.value || attempt.value.status !== 'in_progress') return;
 
     stopMonitoring();
+    stopHeartbeat();
     terminatedByIntegrity.value = true;
     submittingBusy.value = true;
 
     try {
-        const res = await student.submit(attempt.value.id);
-        result.value = res;
+        if (options.keepalive && typeof student.terminateKeepalive === 'function') {
+            student.terminateKeepalive(attempt.value.id, { reason: type });
+        }
+        const res = await student.terminate(attempt.value.id, { reason: type });
+        result.value = res?.data || res;
         notifications.refreshUnread();
         toast.error(t('examTake.integrityTerminated'));
     } catch (e) {
@@ -101,6 +132,7 @@ const { loading, error, run: load } = useAsync(async () => {
         result.value = a;
     }
     startTimer();
+    startHeartbeat();
     beginMonitoring();
 });
 
@@ -215,6 +247,7 @@ async function submit() {
     submitting.value = true;
     confirmOpen.value = false;
     stopMonitoring();
+    stopHeartbeat();
     try {
         const res = await student.submit(attempt.value.id);
         result.value = res;
@@ -229,6 +262,7 @@ async function submit() {
 async function onTimeUp() {
     submittingBusy.value = true;
     stopMonitoring();
+    stopHeartbeat();
     try {
         const res = await student.submit(attempt.value.id);
         result.value = res;
@@ -248,7 +282,10 @@ function finish() {
 }
 
 onMounted(() => load());
-onBeforeUnmount(() => clearInterval(timer));
+onBeforeUnmount(() => {
+    clearInterval(timer);
+    stopHeartbeat();
+});
 </script>
 
 <template>
@@ -266,7 +303,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     {{ result ? $t('examTake.submitted') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
                 </h1>
 
-                <div v-if="terminatedByIntegrity" class="rounded-xl border border-rose-200 bg-rose-50 p-4 max-w-md mx-auto text-sm text-rose-800">
+                <div v-if="terminatedByIntegrity || attempt?.integrity_status === 'flagged' || result?.integrity_status === 'flagged'" class="rounded-xl border border-rose-200 bg-rose-50 p-4 max-w-md mx-auto text-sm text-rose-800">
                     <p class="font-bold mb-1">🛑 {{ $t('examTake.integrityTerminatedTitle') }}</p>
                     <p class="text-xs leading-relaxed">{{ $t('examTake.integrityTerminatedBody') }}</p>
                 </div>

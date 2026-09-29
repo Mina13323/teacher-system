@@ -251,7 +251,12 @@ async function openGrading(attempt) {
         const res = await teacher.attempt(attempt.id);
         gradingData.value = res.data || res;
         // Populate form
-        if (gradingData.value?.answers) {
+        if (gradingData.value?.questions?.length) {
+            gradingData.value.questions.forEach((q) => {
+                gradeForm[q.id] = q.points_earned !== null ? q.points_earned : 0;
+                gradeFeedback[q.id] = q.feedback || '';
+            });
+        } else if (gradingData.value?.answers) {
             gradingData.value.answers.forEach((ans) => {
                 gradeForm[ans.question_id] = ans.points_earned !== null ? ans.points_earned : 0;
                 gradeFeedback[ans.question_id] = ans.feedback || '';
@@ -599,40 +604,66 @@ function attemptTone(status) {
                     </div>
                     <div class="text-left">
                         <span class="text-2xl font-black text-terracotta-700">{{ gradingData.score ?? 0 }}</span>
-                        <span class="text-xs text-ink-400 block">{{ $t('exams.totalScorePct', { pct: gradingData.percentage }) }}</span>
+                        <span class="text-xs text-ink-500 font-medium"> / {{ gradingData.total_points ?? totalMarks }}</span>
+                        <span class="text-xs text-ink-400 block">{{ $t('exams.totalScorePct', { pct: gradingData.percentage ?? 0 }) }}</span>
                     </div>
                 </div>
 
                 <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                    <div v-for="(q, index) in questions" :key="q.id" class="rounded-xl border border-ink-200 p-4 space-y-3 bg-white">
+                    <div v-for="(q, index) in (gradingData.questions?.length ? gradingData.questions : questions)" :key="q.id" class="rounded-xl border border-ink-200 p-4 space-y-3 bg-white">
                         <div class="flex justify-between items-start gap-2">
                             <div>
-                                <span class="text-xs font-bold text-ink-500">{{ $t('exams.questionNumber', { n: index + 1 }) }} ({{ q.type === 'essay' ? $t('exams.qTypeEssayShort') : $t('exams.qTypeChoiceShort') }}) — {{ $t('exams.totalPointsLabel') }}: {{ q.points }}</span>
+                                <span class="text-xs font-bold text-ink-500">{{ $t('exams.questionNumber', { n: index + 1 }) }} ({{ (q.question_type || q.type) === 'essay' ? $t('exams.qTypeEssayShort') : $t('exams.qTypeChoiceShort') }}) — {{ $t('exams.totalPointsLabel') }}: {{ q.points }}</span>
                                 <p class="text-sm font-semibold text-ink-900 mt-1" dir="auto">{{ q.question_text }}</p>
                             </div>
                         </div>
 
                         <!-- Reference answer if essay -->
-                        <div v-if="q.reference_answer" class="rounded bg-amber-50 p-2.5 text-xs text-amber-900">
-                            <strong>{{ $t('exams.referenceAnswerShort') }}</strong> {{ q.reference_answer }}
+                        <div v-if="q.reference_answer || questions.find(x => x.id === q.id)?.reference_answer" class="rounded bg-amber-50 p-2.5 text-xs text-amber-900">
+                            <strong>{{ $t('exams.referenceAnswerShort') }}</strong> {{ q.reference_answer || questions.find(x => x.id === q.id)?.reference_answer }}
                         </div>
 
                         <!-- Student Answer -->
                         <div class="rounded-lg bg-ink-50 p-3 text-sm">
                             <span class="text-xs font-medium text-ink-500 block mb-1">{{ $t('exams.studentAnswerLabel') }}</span>
-                            <div v-if="q.type === 'essay'" class="text-ink-900 font-mono whitespace-pre-wrap" dir="auto">
-                                {{ (gradingData.answers?.find(a => a.question_id === q.id))?.answer_text || $t('exams.noAnswerEntered') }}
+                            <div v-if="(q.question_type || q.type) === 'essay'" class="text-ink-900 font-mono whitespace-pre-wrap" dir="auto">
+                                {{ q.answer_text || (gradingData.answers?.find(a => a.question_id === q.id))?.answer_text || $t('exams.noAnswerEntered') }}
                             </div>
-                            <div v-else class="text-ink-900 font-medium" dir="auto">
-                                <span :class="(gradingData.answers?.find(a => a.question_id === q.id))?.is_correct ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'">
-                                    {{ (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct ? '✓ ' + $t('exams.answerCorrect') : '✗ ' + $t('exams.answerIncorrect') }}
-                                </span>
-                                ({{ $t('exams.pointsEarnedOf', { earned: (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? 0, total: q.points }) }})
+                            <div v-else class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span :class="(q.is_correct ?? (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct) ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'">
+                                        {{ (q.is_correct ?? (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct) ? '✓ ' + $t('exams.answerCorrect') : '✗ ' + $t('exams.answerIncorrect') }}
+                                    </span>
+                                    <span class="text-xs text-ink-500 font-medium">
+                                        ({{ $t('exams.pointsEarnedOf', { earned: q.points_earned ?? (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? 0, total: q.points }) }})
+                                    </span>
+                                </div>
+                                <!-- Option breakdown if available from snapshot -->
+                                <div v-if="q.options?.length" class="mt-2 space-y-1.5">
+                                    <div
+                                        v-for="opt in q.options"
+                                        :key="opt.id"
+                                        class="flex items-center justify-between rounded-lg px-3 py-2 text-xs"
+                                        :class="opt.is_selected
+                                            ? (opt.is_correct ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium' : 'bg-rose-50 text-rose-900 border border-rose-200 font-medium')
+                                            : (opt.is_correct ? 'bg-emerald-50/50 text-emerald-800 border border-dashed border-emerald-300' : 'bg-white text-ink-700 border border-ink-100')"
+                                    >
+                                        <div class="flex items-center gap-2">
+                                            <span v-if="opt.is_selected" class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider" :class="opt.is_correct ? 'bg-emerald-200 text-emerald-800' : 'bg-rose-200 text-rose-800'">
+                                                {{ $t('exams.studentAnswerLabel') }}
+                                            </span>
+                                            <span dir="auto">{{ opt.option_text }}</span>
+                                        </div>
+                                        <span v-if="opt.is_correct" class="text-emerald-700 font-semibold text-[11px]">
+                                            ✓ {{ $t('exams.correctAnswer') }}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Grading Controls for Essay -->
-                        <div v-if="q.type === 'essay'" class="border-t pt-3 space-y-3">
+                        <div v-if="(q.question_type || q.type) === 'essay'" class="border-t pt-3 space-y-3">
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <AppInput v-model="gradeForm[q.id]" type="number" min="0" :max="q.points" :label="$t('exams.awardedPoints')" id="essay-pts" />
                                 <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" id="essay-fb" />

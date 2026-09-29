@@ -67,6 +67,36 @@ export function setAuthToken(token) {
 }
 
 /**
+ * Send an asynchronous request with keepalive: true.
+ * Used for critical events when the browser/PWA is closing or backgrounded,
+ * where standard Axios XHR requests get cancelled by the browser.
+ */
+export function sendKeepalive(endpoint, data = {}) {
+    const fullUrl = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    const token = client.defaults.headers.common.Authorization;
+    const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+    };
+    if (token) {
+        headers['Authorization'] = token;
+    }
+
+    try {
+        if (typeof fetch === 'function') {
+            return fetch(fullUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(data),
+                keepalive: true,
+            });
+        }
+    } catch {
+        // Fallback / ignore if fetch keepalive is unsupported
+    }
+}
+
+/**
  * Normalize any axios/server response into the app's success/data shape and
  * convert failures into ApiError. Always returns the API `data` payload.
  */

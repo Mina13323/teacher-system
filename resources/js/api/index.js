@@ -1,4 +1,4 @@
-import api from './client';
+import api, { sendKeepalive } from './client';
 
 /**
  * Normalize a "list" payload returned by cross the API's `data` slot.
@@ -66,7 +66,11 @@ export const student = {
     attempt: (attemptId) => api.get(`/student/attempts/${attemptId}`),
     answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, payload),
     submit: (attemptId) => api.post(`/student/attempts/${attemptId}/submit`),
+    heartbeat: (attemptId) => api.post(`/student/attempts/${attemptId}/heartbeat`),
+    terminate: (attemptId, payload = {}) => api.post(`/student/attempts/${attemptId}/terminate`, payload),
+    terminateKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/terminate`, payload),
     recordIntegrity: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/integrity-events`, payload),
+    recordIntegrityKeepalive: (attemptId, payload) => sendKeepalive(`/student/attempts/${attemptId}/integrity-events`, payload),
     competitions: () => api.get('/student/competitions'),
     competition: (id) => api.get(`/student/competitions/${id}`),
     joinCompetition: (id) => api.post(`/student/competitions/${id}/join`),

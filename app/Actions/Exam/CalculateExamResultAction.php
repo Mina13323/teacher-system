@@ -50,16 +50,20 @@ class CalculateExamResultAction
                     $hasUngradedEssay = true;
                 }
             } else {
-                if ($answer->option_id === null) {
-                    continue;
-                }
+                if ($answer->points_earned !== null) {
+                    $earnedPoints += (int) $answer->points_earned;
+                } else {
+                    if ($answer->option_id === null) {
+                        continue;
+                    }
 
-                /** @var ExamAttemptOption|null $correctOption */
-                $correctOption = $attemptQuestion->attemptOptions
-                    ->firstWhere('is_correct', true);
+                    /** @var ExamAttemptOption|null $correctOption */
+                    $correctOption = $attemptQuestion->attemptOptions
+                        ->firstWhere('is_correct', true);
 
-                if ($correctOption && $answer->option_id === $correctOption->option_id) {
-                    $earnedPoints += $attemptQuestion->points;
+                    if ($correctOption && $answer->option_id === $correctOption->option_id) {
+                        $earnedPoints += $attemptQuestion->points;
+                    }
                 }
             }
         }

@@ -36,12 +36,47 @@ class ExamAttemptDetailResource extends JsonResource
             'risk_score' => $this->risk_score,
             'passed' => $this->when(
                 $this->percentage !== null && $this->pass_percentage !== null,
-                fn () => $this->percentage >= $this->pass_percentage
+                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
             ),
             'started_at' => $this->started_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),
             'expires_at' => $this->expires_at?->toISOString(),
-            'answers' => $this->answers->map(fn ($answer) => [
+            'total_points' => $this->relationLoaded('attemptQuestions') && $this->attemptQuestions->isNotEmpty()
+                ? (int) $this->attemptQuestions->sum('points')
+                : ($this->relationLoaded('exam') ? (int) $this->exam->total_marks : null),
+            'questions' => $this->whenLoaded('attemptQuestions', function () {
+                $answersByQuestion = $this->relationLoaded('answers') ? $this->answers->keyBy('question_id') : collect();
+
+                return $this->attemptQuestions->map(function ($aq) use ($answersByQuestion) {
+                    $ans = $answersByQuestion->get($aq->question_id);
+
+                    return [
+                        'id' => $aq->question_id,
+                        'attempt_question_id' => $aq->id,
+                        'question_text' => $aq->question_text,
+                        'question_image_path' => $aq->question_image_path,
+                        'question_type' => $aq->question_type ?? 'single_choice',
+                        'points' => (int) $aq->points,
+                        'position' => (int) $aq->position,
+                        'selected_option_id' => $ans?->option_id,
+                        'answer_text' => $ans?->answer_text,
+                        'is_correct' => $ans?->is_correct,
+                        'points_earned' => $ans !== null ? (int) $ans->points_earned : 0,
+                        'feedback' => $ans?->feedback,
+                        'graded_by' => $ans?->graded_by,
+                        'graded_at' => $ans?->graded_at?->toISOString(),
+                        'options' => $aq->relationLoaded('attemptOptions') ? $aq->attemptOptions->map(fn ($opt) => [
+                            'id' => $opt->option_id,
+                            'attempt_option_id' => $opt->id,
+                            'option_text' => $opt->option_text,
+                            'is_correct' => (bool) $opt->is_correct,
+                            'position' => (int) $opt->position,
+                            'is_selected' => $ans?->option_id !== null && (int) $ans->option_id === (int) $opt->option_id,
+                        ])->values() : [],
+                    ];
+                })->values();
+            }),
+            'answers' => $this->relationLoaded('answers') ? $this->answers->map(fn ($answer) => [
                 'question_id' => $answer->question_id,
                 'option_id' => $answer->option_id,
                 'answer_text' => $answer->answer_text,
@@ -51,7 +86,7 @@ class ExamAttemptDetailResource extends JsonResource
                 'graded_by' => $answer->graded_by,
                 'graded_at' => $answer->graded_at?->toISOString(),
                 'answered_at' => $answer->answered_at?->toISOString(),
-            ])->values(),
+            ])->values() : [],
         ];
     }
 }

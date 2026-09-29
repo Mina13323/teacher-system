@@ -281,6 +281,8 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('attempts/{attempt}', [StudentAttemptController::class, 'show']);
     Route::post('attempts/{attempt}/answers', [StudentAttemptController::class, 'answer']);
     Route::post('attempts/{attempt}/submit', [StudentAttemptController::class, 'submit']);
+    Route::post('attempts/{attempt}/heartbeat', [StudentAttemptController::class, 'heartbeat']);
+    Route::post('attempts/{attempt}/terminate', [StudentAttemptController::class, 'terminate']);
 
     // Integrity event recording (rate limited)
     Route::post('attempts/{attempt}/integrity-events', [StudentIntegrityController::class, 'store'])

@@ -27,9 +27,7 @@ class GradeExamAttemptAction
             'answers',
         ]);
 
-        $result = $this->calculateResult->execute($attempt);
-
-        DB::transaction(function () use ($attempt, $result) {
+        return DB::transaction(function () use ($attempt) {
             $answersByQuestion = $attempt->answers->keyBy('question_id');
 
             foreach ($attempt->attemptQuestions as $attemptQuestion) {
@@ -40,20 +38,31 @@ class GradeExamAttemptAction
                 /** @var ExamAnswer|null $answer */
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
 
-                if (! $answer) {
-                    continue;
-                }
-
                 /** @var ExamAttemptOption|null $correctOption */
                 $correctOption = $attemptQuestion->attemptOptions
                     ->firstWhere('is_correct', true);
 
-                $isCorrect = $correctOption && $answer->option_id === $correctOption->option_id;
+                $isCorrect = false;
+                if ($answer && $answer->option_id !== null) {
+                    $isCorrect = $correctOption && $answer->option_id === $correctOption->option_id;
+                }
+
+                if (! $answer) {
+                    $answer = new ExamAnswer([
+                        'attempt_id' => $attempt->getKey(),
+                        'question_id' => $attemptQuestion->question_id,
+                    ]);
+                }
 
                 $answer->is_correct = $isCorrect;
                 $answer->points_earned = $isCorrect ? $attemptQuestion->points : 0;
                 $answer->save();
             }
+
+            // Fresh calculation from the newly persisted answers
+            $attempt->unsetRelation('answers');
+            $attempt->load('answers');
+            $result = $this->calculateResult->execute($attempt);
 
             $now = now();
 
@@ -75,8 +84,8 @@ class GradeExamAttemptAction
             }
 
             $attempt->save();
-        });
 
-        return $attempt->fresh();
+            return $attempt->fresh();
+        });
     }
 }

@@ -31,6 +31,7 @@ class ExamAttempt extends Model
         // Internal single-active-attempt guard: `{student_id}:{exam_id}` while
         // in progress, null otherwise. Only set within actions, never from input.
         'active_key',
+        'last_heartbeat_at',
         // Server-controlled integrity signals; never writable from client input.
         'integrity_status',
         'risk_score',
@@ -44,6 +45,7 @@ class ExamAttempt extends Model
             'started_at' => 'datetime',
             'submitted_at' => 'datetime',
             'expires_at' => 'datetime',
+            'last_heartbeat_at' => 'datetime',
             'grades_published_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',

@@ -32,7 +32,7 @@ class ExamResultResource extends JsonResource
             'percentage' => $this->when($isPublished, $this->percentage),
             'passed' => $this->when(
                 $isPublished && $this->percentage !== null && $this->pass_percentage !== null,
-                fn () => $this->percentage >= $this->pass_percentage
+                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
             ),
             'grades_published_at' => $this->grades_published_at?->toISOString(),
             'started_at' => $this->started_at?->toISOString(),
