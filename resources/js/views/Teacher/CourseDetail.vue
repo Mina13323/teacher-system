@@ -14,6 +14,7 @@ import AppInput from '@/components/ui/AppInput.vue';
 import AppTextarea from '@/components/ui/AppTextarea.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppModal from '@/components/ui/AppModal.vue';
+import StudentSearchSelect from '@/components/ui/StudentSearchSelect.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
@@ -293,10 +294,10 @@ async function saveExam() {
 
 // ---- Enroll student ----
 const enrollModal = ref(false);
-const allStudents = ref([]);
 const selectedStudent = ref('');
 const enrollmentMode = ref('student');
 const selectedAcademicYear = ref('');
+const enrolledStudentIds = ref(new Set());
 const academicYearOptions = computed(() => [
     { value: 'secondary_1', label: t('students.secondary1') },
     { value: 'secondary_2', label: t('students.secondary2') },
@@ -305,18 +306,17 @@ const academicYearOptions = computed(() => [
 const enrollBusy = ref(false);
 const enrollError = ref({});
 async function openEnroll() {
-    try {
-        const res = toList(await teacher.students({ per_page: 100 }));
-        allStudents.value = res.items.map((s) => ({ value: s.id, label: s.name }));
-    } catch (e) {
-        allStudents.value = [];
-        toast.error(e.message);
-    }
     selectedStudent.value = '';
     selectedAcademicYear.value = '';
     enrollmentMode.value = 'student';
     enrollError.value = {};
     enrollModal.value = true;
+    try {
+        const enrolledRes = toList(await teacher.courseStudents(courseId, { per_page: 250 }));
+        enrolledStudentIds.value = new Set(enrolledRes.items.map((e) => Number(e.student_id || e.student?.id)));
+    } catch {
+        enrolledStudentIds.value = new Set(students.value.map((s) => Number(s.student_id || s.student?.id)));
+    }
 }
 async function doEnroll() {
     if (enrollmentMode.value === 'student' && !selectedStudent.value) return;
@@ -515,20 +515,44 @@ onMounted(async () => { await run(); });
         </AppModal>
 
         <!-- Enroll student modal -->
-        <AppModal :open="enrollModal" :title="$t('courses.enrollStudent')" size="sm" @close="enrollModal = false">
+        <AppModal :open="enrollModal" :title="$t('courses.enrollStudent')" size="md" @close="enrollModal = false">
             <form class="space-y-4" @submit.prevent="doEnroll">
-                <AppSelect v-model="enrollmentMode" :label="$t('courses.enrollmentMode')" :options="[{ value: 'student', label: $t('courses.oneStudent') }, { value: 'year', label: $t('courses.academicYear') }]" id="course-enroll-mode" />
                 <AppSelect
-                    v-if="enrollmentMode === 'student'"
-                    v-model="selectedStudent"
-                    :label="$t('common.student')"
-                    :options="allStudents"
-                    id="course-enroll-student"
-                    :placeholder="$t('common.selectStudent')"
-                    :error="enrollError.student_id"
+                    v-model="enrollmentMode"
+                    :label="$t('courses.enrollmentMode')"
+                    :options="[
+                        { value: 'student', label: $t('courses.oneStudent') },
+                        { value: 'year', label: $t('courses.academicYear') }
+                    ]"
+                    id="course-enroll-mode"
                 />
-                <AppSelect v-else v-model="selectedAcademicYear" :label="$t('courses.academicYear')" :options="academicYearOptions" id="course-enroll-year" :placeholder="$t('common.select')" :error="enrollError.academic_year" />
-                <div class="flex justify-end gap-2">
+
+                <div v-if="enrollmentMode === 'student'" class="space-y-1">
+                    <StudentSearchSelect
+                        v-model="selectedStudent"
+                        :label="$t('common.student')"
+                        :placeholder="$t('courses.searchStudentPlaceholder')"
+                        :error="enrollError.student_id"
+                        :exclude-ids="enrolledStudentIds"
+                        id="course-enroll-student"
+                    />
+                </div>
+
+                <div v-else class="space-y-2">
+                    <AppSelect
+                        v-model="selectedAcademicYear"
+                        :label="$t('courses.academicYear')"
+                        :options="academicYearOptions"
+                        id="course-enroll-year"
+                        :placeholder="$t('common.select')"
+                        :error="enrollError.academic_year"
+                    />
+                    <p class="text-xs text-ink-500">
+                        {{ $t('courses.enrollYearHint') }}
+                    </p>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="enrollBusy" @click="enrollModal = false">{{ $t('common.cancel') }}</AppButton>
                     <AppButton type="submit" :loading="enrollBusy" :disabled="enrollmentMode === 'student' ? !selectedStudent : !selectedAcademicYear">{{ $t('students.enroll') }}</AppButton>
                 </div>

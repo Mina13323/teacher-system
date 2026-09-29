@@ -11,6 +11,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
+import StudentSearchSelect from '@/components/ui/StudentSearchSelect.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 
 const { t } = useI18n();
@@ -107,7 +108,15 @@ onMounted(load);
         <template v-else>
             <AppCard :title="$t('courses.enrollStudent')">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <div class="flex-1"><AppSelect v-model="selectedStudent" :label="$t('common.student')" :options="students.map((s) => ({ value: s.id, label: s.name }))" id="enroll-student" :placeholder="$t('common.selectStudent')" :error="enrollError.student_id" /></div>
+                    <div class="flex-1">
+                        <StudentSearchSelect
+                            v-model="selectedStudent"
+                            :label="$t('common.student')"
+                            id="enroll-student"
+                            :error="enrollError.student_id"
+                            :exclude-ids="enrollments.map((e) => e.student_id)"
+                        />
+                    </div>
                     <AppButton :loading="enrolling" :disabled="!selectedStudent" @click="enroll">{{ $t('students.enroll') }}</AppButton>
                 </div>
             </AppCard>

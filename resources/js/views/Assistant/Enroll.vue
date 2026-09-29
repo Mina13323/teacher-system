@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import StudentSearchSelect from '@/components/ui/StudentSearchSelect.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -83,7 +84,7 @@ onMounted(load);
                 <div class="space-y-4">
                     <AppSelect v-model="selectedCourse" :label="$t('common.course')" :options="courses" id="enroll-course" :placeholder="$t('common.selectCourse')" :error="errors.course_id" />
                     <AppSelect v-model="enrollmentMode" :label="$t('courses.enrollmentMode')" :options="[{ value: 'student', label: $t('courses.oneStudent') }, { value: 'year', label: $t('courses.academicYear') }]" id="enroll-mode" />
-                    <AppSelect v-if="enrollmentMode === 'student'" v-model="selectedStudent" :label="$t('common.student')" :options="students.map((s) => ({ value: s.id, label: s.name }))" id="enroll-student" :placeholder="$t('common.selectStudent')" :error="errors.student_id" />
+                    <StudentSearchSelect v-if="enrollmentMode === 'student'" v-model="selectedStudent" :label="$t('common.student')" id="enroll-student" :error="errors.student_id" />
                     <AppSelect v-else v-model="selectedAcademicYear" :label="$t('courses.academicYear')" :options="academicYearOptions" id="enroll-year" :placeholder="$t('common.select')" :error="errors.academic_year" />
                     <p v-if="!students.length" class="text-sm text-amber-700">{{ $t('students.noActiveStudents') }} <router-link to="/assistant/students/new" class="text-terracotta-600 hover:underline">{{ $t('students.createFirst') }}</router-link></p>
                 </div>
