@@ -55,8 +55,8 @@ jobs:
       - name: Run tests
         run: |
           set -o pipefail
-          php artisan test 2>&1 | tee test-output.log
-          code=${PIPESTATUS[0]}
+          code=0
+          php artisan test 2>&1 | tee test-output.log || code=$?
           if [ "$code" -ne 0 ]; then
             echo "::error::$(tail -c 3000 test-output.log | tr '\n' '~')"
           fi
@@ -121,8 +121,8 @@ jobs:
       - name: Test suite must pass with the new lock
         run: |
           set -o pipefail
-          php artisan test 2>&1 | tee test-output.log
-          code=${PIPESTATUS[0]}
+          code=0
+          php artisan test 2>&1 | tee test-output.log || code=$?
           {
             echo "## php artisan test (tail)"
             echo '```'
