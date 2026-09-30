@@ -237,11 +237,22 @@ class ExamController extends Controller
 
         $this->finalizeExpiredAttempts($exam);
 
-        $attempts = $exam->attempts()
+        $query = $exam->attempts()
             ->with(['student', 'exam'])
             ->with('answers.selectedOptions')
-            ->latest('started_at')
-            ->paginate($this->perPage($request, 15));
+            ->latest('started_at');
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->trim()->toString();
+            $query->whereHas('student', function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('student_code', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+
+        $attempts = $query->paginate($this->perPage($request, 15));
 
         return $this->success(
             ExamAttemptDetailResource::collection($attempts),

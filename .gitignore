@@ -23,3 +23,5 @@ yarn-error.log
 /.zed
 /dist
 /historical_assets_pool
+run-tunnel.ps1
+scripts/tunnel.py

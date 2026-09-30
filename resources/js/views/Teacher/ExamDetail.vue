@@ -47,19 +47,21 @@ const gradeFeedback = reactive({});
 const gradingBusy = ref(false);
 const publishBusy = ref(false);
 
-// ---- Attempt management: grouped by student (P1) ----
+// ---- Attempt management: grouped by student (P1) and search ----
 const attemptsView = ref('flat'); // 'flat' | 'student'
 const grouped = ref([]);
 const groupedSummary = ref(null);
-const groupSearch = ref('');
+const studentSearch = ref('');
 const groupBusy = ref(false);
+const attemptsBusy = ref(false);
 const expandedStudent = ref(null);
-let groupSearchTimer = null;
+let searchTimer = null;
 
 async function loadGrouped() {
     groupBusy.value = true;
     try {
-        const res = await teacher.attemptsGrouped(examId, groupSearch.value ? { search: groupSearch.value } : {});
+        const query = studentSearch.value.trim() ? { search: studentSearch.value.trim() } : {};
+        const res = await teacher.attemptsGrouped(examId, query);
         grouped.value = res.students || [];
         groupedSummary.value = res.summary || null;
     } catch (e) {
@@ -69,14 +71,33 @@ async function loadGrouped() {
     }
 }
 
-function onGroupSearch() {
-    clearTimeout(groupSearchTimer);
-    groupSearchTimer = setTimeout(loadGrouped, 300);
+function onStudentSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        if (attemptsView.value === 'student') {
+            loadGrouped();
+        } else {
+            loadAttempts(1);
+        }
+    }, 300);
+}
+
+function clearStudentSearch() {
+    studentSearch.value = '';
+    if (attemptsView.value === 'student') {
+        loadGrouped();
+    } else {
+        loadAttempts(1);
+    }
 }
 
 function switchAttemptsView(mode) {
     attemptsView.value = mode;
-    if (mode === 'student') loadGrouped();
+    if (mode === 'student') {
+        loadGrouped();
+    } else {
+        loadAttempts(1);
+    }
 }
 
 function toggleStudent(studentId) {
@@ -97,9 +118,20 @@ async function exportResults(format) {
 }
 
 async function loadAttempts(p = 1) {
-    const res = toList(await teacher.examAttempts(examId, { per_page: 15, page: p }));
-    attempts.value = res.items;
-    attemptsMeta.value = res.meta;
+    attemptsBusy.value = true;
+    try {
+        const params = { per_page: 15, page: p };
+        if (studentSearch.value.trim()) {
+            params.search = studentSearch.value.trim();
+        }
+        const res = toList(await teacher.examAttempts(examId, params));
+        attempts.value = res.items;
+        attemptsMeta.value = res.meta;
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        attemptsBusy.value = false;
+    }
 }
 async function loadIntegrity() {
     try { integrity.value = await teacher.integritySettings(examId); }
@@ -582,19 +614,34 @@ function attemptStatusLabel(statusOrAttempt) {
             <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
                 <!-- Task toolbar: group, search, export -->
-                <div class="flex flex-wrap items-center gap-2 rounded-xl border border-ink-100 bg-white p-3 shadow-sm">
+                <div class="flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-white p-3 shadow-sm">
                     <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm">
-                        <button type="button" class="px-3 py-1.5" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
-                        <button type="button" class="px-3 py-1.5" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
+                        <button type="button" class="px-3 py-1.5 transition font-medium" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
+                        <button type="button" class="px-3 py-1.5 transition font-medium" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
                     </div>
-                    <input
-                        v-if="attemptsView === 'student'"
-                        v-model="groupSearch"
-                        type="search"
-                        class="flex-1 min-w-[12rem] rounded-lg border border-ink-200 px-3 py-1.5 text-sm"
-                        :placeholder="$t('exams.searchStudentsPlaceholder')"
-                        @input="onGroupSearch"
-                    />
+
+                    <!-- Search Input for Student Name, Code, Email, Phone -->
+                    <div class="relative flex-1 min-w-[15rem]">
+                        <input
+                            v-model="studentSearch"
+                            type="search"
+                            class="w-full rounded-lg border border-ink-200 ps-9 pe-8 py-1.5 text-sm focus:border-terracotta-500 focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+                            :placeholder="$t('exams.searchStudentsPlaceholder')"
+                            @input="onStudentSearch"
+                        />
+                        <span class="absolute inset-y-0 start-0 flex items-center ps-2.5 pointer-events-none text-ink-400 text-sm">
+                            🔍
+                        </span>
+                        <button
+                            v-if="studentSearch"
+                            type="button"
+                            class="absolute inset-y-0 end-0 flex items-center pe-2.5 text-ink-400 hover:text-ink-700"
+                            @click="clearStudentSearch"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
                     <div class="ms-auto flex items-center gap-2">
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
@@ -609,7 +656,12 @@ function attemptStatusLabel(statusOrAttempt) {
                         {{ $t('exams.groupedSummary', { students: groupedSummary.students_count, attempts: groupedSummary.attempts_count, pending: groupedSummary.pending_grading_count, flagged: groupedSummary.flagged_count }) }}
                     </p>
                     <LoadingSpinner v-if="groupBusy" />
-                    <EmptyState v-else-if="!grouped.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
+                    <EmptyState
+                        v-else-if="!grouped.length"
+                        icon="clipboard"
+                        :title="studentSearch ? ($t('students.notFound') || 'لا توجد نتائج مطابقة للبحث') : $t('exams.noAttemptsTitle')"
+                        :message="studentSearch ? 'جرب البحث باسم أو كود أو بريد طالب آخر' : $t('exams.noAttemptsMessage')"
+                    />
                     <div v-else class="space-y-3">
                         <div v-for="g in grouped" :key="g.student_id" class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                             <button type="button" class="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-start" @click="toggleStudent(g.student_id)">
@@ -648,7 +700,13 @@ function attemptStatusLabel(statusOrAttempt) {
                     </div>
                 </template>
 
-                <EmptyState v-else-if="!attempts.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
+                <LoadingSpinner v-else-if="attemptsBusy" />
+                <EmptyState
+                    v-else-if="!attempts.length"
+                    icon="clipboard"
+                    :title="studentSearch ? ($t('students.notFound') || 'لا توجد نتائج مطابقة للبحث') : $t('exams.noAttemptsTitle')"
+                    :message="studentSearch ? 'جرب البحث باسم أو كود أو بريد طالب آخر' : $t('exams.noAttemptsMessage')"
+                />
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
                         <div v-for="a in attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">
