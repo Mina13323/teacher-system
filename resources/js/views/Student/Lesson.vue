@@ -20,6 +20,7 @@ const lessonId = route.params.id;
 
 const progress = ref(null);
 const lesson = ref(null);
+const attachments = ref([]);
 const videos = ref([]);
 const course = ref(null);
 const activeVideo = ref(null);
@@ -31,7 +32,9 @@ const { loading, error, run } = useAsync(async () => {
         student.lessonVideos(lessonId).catch(() => toList(null)),
         route.query.course ? student.course(route.query.course).catch(() => null) : Promise.resolve(null),
     ]);
-    lesson.value = lRes && lRes.id ? lRes : null;
+    // The endpoint returns { lesson, attachments }; tolerate a bare lesson too.
+    lesson.value = lRes && lRes.id ? lRes : (lRes?.lesson || null);
+    attachments.value = (lRes?.attachments || []).map((a) => ({ id: a.id, title: a.title, size: a.size, type: a.type }));
     progress.value = p;
     videos.value = toList(vRes).items;
     course.value = courseRes;
@@ -45,6 +48,14 @@ async function markComplete() {
             progress.value.completed = true;
             progress.value.progress_percentage = 100;
         }
+    } catch (e) {
+        toast.error(e.message);
+    }
+}
+
+async function downloadAttachment(att) {
+    try {
+        await student.downloadLessonAttachment(att.id, att.title);
     } catch (e) {
         toast.error(e.message);
     }
@@ -82,6 +93,18 @@ onMounted(() => run());
 
             <div v-if="!videos.length" class="space-y-6">
                 <EmptyState icon="play" :title="$t('lesson.noVideosTitle')" :message="$t('lesson.noVideosMessage')" />
+
+                <!-- Lesson attachments -->
+                <div v-if="attachments.length" class="mt-4 rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+                    <p class="text-sm font-semibold text-ink-800">{{ $t('lesson.attachmentsTitle') }}</p>
+                    <ul class="mt-2 space-y-1">
+                        <li v-for="att in attachments" :key="att.id">
+                            <button type="button" class="flex items-center gap-2 text-sm text-terracotta-600 hover:underline" @click="downloadAttachment(att)">
+                                📎 <span dir="auto">{{ att.title }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
             </div>
             <div v-else class="grid gap-6 lg:grid-cols-3">
                 <!-- Video list -->

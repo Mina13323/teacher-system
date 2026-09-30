@@ -4,7 +4,6 @@ namespace App\Actions\Audit;
 
 use App\Models\AuditLog;
 use App\Models\User;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;

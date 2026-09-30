@@ -47,6 +47,55 @@ const gradeFeedback = reactive({});
 const gradingBusy = ref(false);
 const publishBusy = ref(false);
 
+// ---- Attempt management: grouped by student (P1) ----
+const attemptsView = ref('flat'); // 'flat' | 'student'
+const grouped = ref([]);
+const groupedSummary = ref(null);
+const groupSearch = ref('');
+const groupBusy = ref(false);
+const expandedStudent = ref(null);
+let groupSearchTimer = null;
+
+async function loadGrouped() {
+    groupBusy.value = true;
+    try {
+        const res = await teacher.attemptsGrouped(examId, groupSearch.value ? { search: groupSearch.value } : {});
+        grouped.value = res.students || [];
+        groupedSummary.value = res.summary || null;
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        groupBusy.value = false;
+    }
+}
+
+function onGroupSearch() {
+    clearTimeout(groupSearchTimer);
+    groupSearchTimer = setTimeout(loadGrouped, 300);
+}
+
+function switchAttemptsView(mode) {
+    attemptsView.value = mode;
+    if (mode === 'student') loadGrouped();
+}
+
+function toggleStudent(studentId) {
+    expandedStudent.value = expandedStudent.value === studentId ? null : studentId;
+}
+
+const exportBusy = ref(false);
+async function exportResults(format) {
+    exportBusy.value = true;
+    try {
+        await teacher.exportResults(examId, format);
+        toast.success(t('exams.exportStarted'));
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        exportBusy.value = false;
+    }
+}
+
 async function loadAttempts(p = 1) {
     const res = toList(await teacher.examAttempts(examId, { per_page: 15, page: p }));
     attempts.value = res.items;
@@ -515,7 +564,72 @@ function attemptTone(status) {
 
             <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
-                <EmptyState v-if="!attempts.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
+                <!-- Task toolbar: group, search, export -->
+                <div class="flex flex-wrap items-center gap-2 rounded-xl border border-ink-100 bg-white p-3 shadow-sm">
+                    <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm">
+                        <button type="button" class="px-3 py-1.5" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
+                        <button type="button" class="px-3 py-1.5" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
+                    </div>
+                    <input
+                        v-if="attemptsView === 'student'"
+                        v-model="groupSearch"
+                        type="search"
+                        class="flex-1 min-w-[12rem] rounded-lg border border-ink-200 px-3 py-1.5 text-sm"
+                        :placeholder="$t('exams.searchStudentsPlaceholder')"
+                        @input="onGroupSearch"
+                    />
+                    <div class="ms-auto flex items-center gap-2">
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                    </div>
+                </div>
+
+                <!-- Grouped by student: best/latest, integrity, grading state, expandable attempts -->
+                <template v-if="attemptsView === 'student'">
+                    <p v-if="groupedSummary" class="text-xs text-ink-500">
+                        {{ $t('exams.groupedSummary', { students: groupedSummary.students_count, attempts: groupedSummary.attempts_count, pending: groupedSummary.pending_grading_count, flagged: groupedSummary.flagged_count }) }}
+                    </p>
+                    <LoadingSpinner v-if="groupBusy" />
+                    <EmptyState v-else-if="!grouped.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
+                    <div v-else class="space-y-3">
+                        <div v-for="g in grouped" :key="g.student_id" class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
+                            <button type="button" class="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-start" @click="toggleStudent(g.student_id)">
+                                <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (g.student?.name || 'U').slice(0, 1) }}</div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-medium text-ink-800" dir="auto">{{ g.student?.name }} ({{ g.student?.student_code || '---' }})</p>
+                                    <p class="text-xs text-ink-400">
+                                        {{ $t('exams.bestLabel') }} <span class="font-bold text-ink-700">{{ g.best ? `${g.best.percentage}%` : '—' }}</span>
+                                        · {{ $t('exams.latestLabel') }} {{ g.latest?.status }}
+                                        · {{ $t('exams.pendingGrading') }} {{ g.pending_grading_count }}
+                                        <span v-if="g.integrity?.flagged_count" class="text-rose-600 font-semibold ms-2">⚠ {{ $t('exams.flaggedCount', { n: g.integrity.flagged_count }) }}</span>
+                                        <span v-if="g.integrity?.violation_warnings_total" class="text-amber-600 ms-2">{{ $t('exams.warningsTotal', { n: g.integrity.violation_warnings_total }) }}</span>
+                                    </p>
+                                </div>
+                                <AppBadge :tone="attemptTone(g.latest?.status)">{{ g.attempts_count }} ×</AppBadge>
+                                <span class="text-ink-400">{{ expandedStudent === g.student_id ? '▲' : '▼' }}</span>
+                            </button>
+                            <div v-if="expandedStudent === g.student_id" class="divide-y divide-ink-100 border-t border-ink-100 bg-ink-50/40">
+                                <div v-for="a in g.attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs text-ink-400">
+                                            {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
+                                            {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span> ({{ a.percentage ?? '—' }}%)
+                                            · {{ a.outcome }}
+                                            <span v-if="a.end_reason" class="ms-1">· {{ a.end_reason }}</span>
+                                        </p>
+                                    </div>
+                                    <AppBadge :tone="attemptTone(a.status)">{{ a.status }}</AppBadge>
+                                    <AppButton variant="outline" size="sm" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                    <router-link :to="`/teacher/integrity/attempts/${a.id}`">
+                                        <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
+                                    </router-link>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <EmptyState v-else-if="!attempts.length" icon="clipboard" :title="$t('exams.noAttemptsTitle')" :message="$t('exams.noAttemptsMessage')" />
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
                         <div v-for="a in attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">

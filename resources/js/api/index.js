@@ -1,4 +1,4 @@
-import api, { sendKeepalive } from './client';
+import api, { sendKeepalive, downloadFile } from './client';
 
 /**
  * Normalize a "list" payload returned by cross the API's `data` slot.
@@ -48,6 +48,25 @@ export const notifications = {
 
 // ---- Student --------------------------------------------------------------
 export const student = {
+    // Assignments (P2)
+    assignments: (params) => api.get('/student/assignments', params),
+    assignment: (id) => api.get(`/student/assignments/${id}`),
+    submitAssignment: (id, payload) => api.post(`/student/assignments/${id}/submit`, payload),
+    downloadSubmissionFile: (submissionId, filename) => downloadFile(`/assignment-submissions/${submissionId}/file`, filename),
+
+    // Certificates (P2)
+    certificates: (params) => api.get('/student/certificates', params),
+    issueCertificate: (courseId) => api.post(`/student/courses/${courseId}/certificate`),
+    courseCertificate: (courseId) => api.get(`/student/courses/${courseId}/certificate`),
+    verifyCertificate: (code) => api.get(`/public/certificates/${encodeURIComponent(code)}`),
+
+    // Notification preferences (P2)
+    notificationPreferences: () => api.get('/student/notification-preferences'),
+    updateNotificationPreferences: (payload) => api.put('/student/notification-preferences', payload),
+
+    // Lesson attachments download (authorized)
+    downloadLessonAttachment: (attachmentId, filename) => downloadFile(`/lesson-attachments/${attachmentId}/file`, filename),
+
     dashboard: () => api.get('/student/dashboard'),
     courses: (params) => api.get('/student/courses', params),
     enroll: (courseId) => api.post(`/student/courses/${courseId}/enroll`),
@@ -199,6 +218,35 @@ export const teacher = {
     enrollStudent: (courseId, studentId) => api.post(`/teacher/courses/${courseId}/students`, { student_id: studentId }),
     enrollAcademicYear: (courseId, academicYear) => api.post(`/teacher/courses/${courseId}/students`, { academic_year: academicYear }),
     unenrollStudent: (courseId, studentId) => api.delete(`/teacher/courses/${courseId}/students/${studentId}`),
+
+    // Attempts grouped by student (P1 attempt-management UX)
+    attemptsGrouped: (examId, params) => api.get(`/teacher/exams/${examId}/attempts/grouped`, params),
+    exportResults: (examId, format = 'csv') =>
+        downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${format === 'print' ? 'html' : 'csv'}`),
+
+    // Bulk student import (validate -> preview -> confirm -> report)
+    importStudentsPreview: (csv) => api.post('/teacher/students/import/preview', { csv }),
+    importStudentsConfirm: (csv) => api.post('/teacher/students/import/confirm', { csv }),
+
+    // Assignments (P2)
+    courseAssignments: (courseId, params) => api.get(`/teacher/courses/${courseId}/assignments`, params),
+    createAssignment: (courseId, payload) => api.post(`/teacher/courses/${courseId}/assignments`, payload),
+    assignment: (id) => api.get(`/teacher/assignments/${id}`),
+    updateAssignment: (id, payload) => api.put(`/teacher/assignments/${id}`, payload),
+    publishAssignment: (id) => api.post(`/teacher/assignments/${id}/publish`),
+    unpublishAssignment: (id) => api.post(`/teacher/assignments/${id}/unpublish`),
+    deleteAssignment: (id) => api.delete(`/teacher/assignments/${id}`),
+    assignmentSubmissions: (id, params) => api.get(`/teacher/assignments/${id}/submissions`, params),
+    gradeAssignment: (submissionId, payload) => api.post(`/teacher/assignment-submissions/${submissionId}/grade`, payload),
+
+    // Lesson attachments (P2)
+    lessonAttachments: (lessonId) => api.get(`/teacher/lessons/${lessonId}/attachments`),
+    uploadLessonAttachment: (lessonId, form) => api.post(`/teacher/lessons/${lessonId}/attachments`, form),
+    updateLessonAttachment: (id, payload) => api.put(`/teacher/lesson-attachments/${id}`, payload),
+    deleteLessonAttachment: (id) => api.delete(`/teacher/lesson-attachments/${id}`),
+
+    // Staff audit trail (admin-only endpoint, kept here for discoverability)
+    auditLogs: (params) => api.get('/admin/audit-logs', params),
 
     analyticsOverview: () => api.get('/teacher/analytics/overview'),
     courseAnalytics: (courseId) => api.get(`/teacher/analytics/courses/${courseId}`),

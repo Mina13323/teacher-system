@@ -156,6 +156,25 @@ async function request(config) {
     }
 }
 
+/**
+ * Authenticated file download: fetches the blob with the bearer token and
+ * triggers a browser save. Used for exports and private attachment files,
+ * which are never linked directly (no token on <a href> navigations).
+ */
+export async function downloadFile(url, filename) {
+    const response = await client.request({ method: 'get', url, responseType: 'blob' });
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    return filename;
+}
+
 export default {
     get: (url, params) => request({ method: 'get', url, params }),
     post: (url, data) => request({ method: 'post', url, data }),

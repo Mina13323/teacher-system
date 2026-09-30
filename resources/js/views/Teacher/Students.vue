@@ -26,6 +26,50 @@ const toast = useToast();
 const { fieldErrors } = useFieldErrors();
 const authRole = route.path.startsWith('/assistant') ? 'assistant' : 'teacher';
 
+// ---- Bulk student import (P1): paste CSV -> preview -> confirm -> report ----
+const importOpen = ref(false);
+const importCsv = ref('');
+const importBusy = ref(false);
+const importPreview = ref(null); // { preview: [], summary: {} }
+const importReport = ref(null); // { report: {}, credentials: [] }
+
+function resetImport() {
+    importCsv.value = '';
+    importPreview.value = null;
+    importReport.value = null;
+}
+
+async function previewImport() {
+    importBusy.value = true;
+    try {
+        importPreview.value = await teacher.importStudentsPreview(importCsv.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        importBusy.value = false;
+    }
+}
+
+async function confirmImport() {
+    importBusy.value = true;
+    try {
+        const res = await teacher.importStudentsConfirm(importCsv.value);
+        importReport.value = res;
+        importPreview.value = null;
+        toast.success(t('students.importComplete'));
+        load(1);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        importBusy.value = false;
+    }
+}
+
+function closeImport() {
+    importOpen.value = false;
+    resetImport();
+}
+
 // WhatsApp contact modal. Opened from the list with no credential payload, so
 // the credentials template stays disabled there. The payload is only ever
 // supplied straight from a live one-time reveal.
@@ -551,6 +595,7 @@ onMounted(() => load(1));
                 <router-link :to="`/${authRole}/students/registration-link`">
                     <AppButton variant="outline" size="sm">Student registration link</AppButton>
                 </router-link>
+                <AppButton variant="outline" @click="importOpen = true">📄 {{ $t('students.importCsv') }}</AppButton>
                 <router-link :to="`/${authRole}/students/new`">
                     <AppButton>{{ $t('students.addStudent') || 'إضافة طالب جديد' }}</AppButton>
                 </router-link>
@@ -989,5 +1034,67 @@ onMounted(() => load(1));
             @close="batchDeleteOpen = false"
             @confirm="submitBatchDelete"
         />
+
+        <!-- Bulk import modal: validate -> preview -> confirm -> report -->
+        <AppModal :open="importOpen" :title="$t('students.importTitle')" size="lg" @close="closeImport">
+            <div class="space-y-4">
+                <template v-if="!importPreview && !importReport">
+                    <p class="text-sm text-ink-500">{{ $t('students.importHint') }}</p>
+                    <AppTextarea v-model="importCsv" :rows="8" :placeholder="$t('students.importPlaceholder')" id="import-csv" />
+                    <div class="flex justify-end gap-2">
+                        <AppButton variant="outline" @click="closeImport">{{ $t('common.cancel') }}</AppButton>
+                        <AppButton :loading="importBusy" :disabled="!importCsv.trim()" @click="previewImport">{{ $t('students.importPreviewBtn') }}</AppButton>
+                    </div>
+                </template>
+
+                <template v-else-if="importPreview">
+                    <p class="text-sm font-medium text-ink-700">
+                        {{ $t('students.importSummary', importPreview.summary) }}
+                    </p>
+                    <div class="max-h-64 overflow-auto rounded-lg border border-ink-100">
+                        <table class="w-full text-xs">
+                            <thead class="bg-ink-50 text-ink-500"><tr>
+                                <th class="px-2 py-1.5 text-start">#</th>
+                                <th class="px-2 py-1.5 text-start">{{ $t('students.name') }}</th>
+                                <th class="px-2 py-1.5 text-start">{{ $t('students.email') }}</th>
+                                <th class="px-2 py-1.5 text-start">{{ $t('students.importStatus') }}</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-ink-100">
+                                <tr v-for="row in importPreview.preview" :key="row.line" :class="row.status === 'invalid' ? 'bg-rose-50' : row.status === 'duplicate' ? 'bg-amber-50' : ''">
+                                    <td class="px-2 py-1.5">{{ row.line }}</td>
+                                    <td class="px-2 py-1.5" dir="auto">{{ row.name }}</td>
+                                    <td class="px-2 py-1.5">{{ row.email }}</td>
+                                    <td class="px-2 py-1.5">
+                                        {{ $t(`students.importRow.${row.status}`) }}
+                                        <span v-if="row.errors?.length" class="text-rose-600">— {{ row.errors.join(', ') }}</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <AppButton variant="outline" @click="resetImport">{{ $t('students.importBack') }}</AppButton>
+                        <AppButton :loading="importBusy" @click="confirmImport">{{ $t('students.importConfirmBtn', { n: importPreview.summary.valid }) }}</AppButton>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <p class="text-sm font-medium text-ink-700">
+                        {{ $t('students.importReport', importReport.report) }}
+                    </p>
+                    <div v-if="importReport.credentials?.length" class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <p class="text-xs font-semibold text-emerald-800">{{ $t('students.importCredentialsHint') }}</p>
+                        <ul class="mt-2 space-y-1 text-xs text-emerald-900">
+                            <li v-for="c in importReport.credentials" :key="c.login">
+                                {{ c.login }} — {{ c.student_code }} — <span class="font-mono">{{ c.temporary_password }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="flex justify-end">
+                        <AppButton @click="closeImport">{{ $t('common.done') || 'Done' }}</AppButton>
+                    </div>
+                </template>
+            </div>
+        </AppModal>
     </div>
 </template>

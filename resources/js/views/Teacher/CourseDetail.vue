@@ -125,6 +125,8 @@ function openLesson(unit, lesson = null) {
     lessonForm.is_published = lesson ? Boolean(lesson.is_published) : true;
     lessonErrors.value = {};
     lessonModal.value = true;
+    if (lessonForm.id) loadLessonAttachments(lessonForm.id);
+    else lessonAttachments.value = [];
 }
 async function saveLesson() {
     lessonBusy.value = true;
@@ -141,6 +143,55 @@ async function saveLesson() {
         toast.error(e.isValidation ? '' : e.message);
     } finally {
         lessonBusy.value = false;
+    }
+}
+
+// ---- Lesson attachments (P2): private files students can download ----
+const lessonAttachments = ref([]);
+const attachmentBusy = ref(false);
+
+async function loadLessonAttachments(lessonId) {
+    try {
+        const res = await teacher.lessonAttachments(lessonId);
+        lessonAttachments.value = res.items || res.data || res || [];
+    } catch {
+        lessonAttachments.value = [];
+    }
+}
+
+function onAttachmentFile(e) {
+    const f = e.target.files?.[0];
+    if (!f || !lessonForm.id) return;
+    uploadAttachment(f);
+    e.target.value = '';
+}
+
+async function uploadAttachment(file) {
+    attachmentBusy.value = true;
+    try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('title', file.name);
+        await teacher.uploadLessonAttachment(lessonForm.id, form);
+        toast.success(t('courses.attachmentUploaded'));
+        await loadLessonAttachments(lessonForm.id);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        attachmentBusy.value = false;
+    }
+}
+
+async function deleteAttachment(id) {
+    attachmentBusy.value = true;
+    try {
+        await teacher.deleteLessonAttachment(id);
+        toast.success(t('courses.attachmentDeleted'));
+        await loadLessonAttachments(lessonForm.id);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        attachmentBusy.value = false;
     }
 }
 
@@ -474,6 +525,17 @@ onMounted(async () => { await run(); });
                 <AppInput v-model="lessonForm.description" :label="$t('courses.summaryField')" id="lesson-desc" :error="lessonErrors.description" />
                 <AppTextarea v-model="lessonForm.content" :label="$t('courses.content')" id="lesson-content" :error="lessonErrors.content" :rows="5" />
                 <label class="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" v-model="lessonForm.is_published" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('status.published') }}</label>
+                <!-- Attachments (edit mode only) -->
+                <div v-if="lessonForm.id" class="rounded-lg border border-ink-100 p-3">
+                    <p class="text-sm font-medium text-ink-800">{{ $t('courses.attachments') }}</p>
+                    <ul v-if="lessonAttachments.length" class="mt-2 space-y-1">
+                        <li v-for="att in lessonAttachments" :key="att.id" class="flex items-center gap-2 text-sm">
+                            <span class="min-w-0 flex-1 truncate text-ink-700">📎 {{ att.title }}</span>
+                            <button type="button" class="text-rose-600 hover:underline" :disabled="attachmentBusy" @click="deleteAttachment(att.id)">{{ $t('common.delete') }}</button>
+                        </li>
+                    </ul>
+                    <input type="file" class="mt-2 text-sm" :disabled="attachmentBusy" @change="onAttachmentFile" />
+                </div>
                 <div class="flex justify-end gap-2"><AppButton variant="outline" @click="lessonModal = false">{{ $t('common.cancel') }}</AppButton><AppButton type="submit" :loading="lessonBusy">{{ $t('common.save') }}</AppButton></div>
             </form>
         </AppModal>

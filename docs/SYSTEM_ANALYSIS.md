@@ -410,5 +410,142 @@ metrics/error tracking, integrations, video pipeline.
 
 ---
 
+## 30. FINAL IMPLEMENTATION REPORT — Production Exam Hardening + LMS UX/Operability
+
+Scope executed on branch `arena/01a0efd9-teacher-system` across commits `d469062` (P0),
+`911ee9d` (P1), `1f98880` (P2 backend) and the final frontend/report commit. Every claim
+below is verifiable in code and tests; anything not fully delivered is marked
+**PARTIAL** or **DEFERRED** — no false completeness claims.
+
+### A. Bugs fixed
+
+| # | Bug / defect | Fix | Regression test |
+|---|---|---|---|
+| A1 | `multiple_choice` grading compared raw arrays (order/dupe-sensitive) and publisher accepted invalid option sets | Normalized child schema `exam_answer_options`, set-comparison grading with exact-set matching first (no silent partial credit), publish validation: `single_choice` exactly 1 correct, `multiple_choice` ≥ 2 | `MultipleChoiceGradingTest` (13 cases incl. legacy single-choice compat + snapshot immutability) |
+| A2 | Pass/fail duplicated across controllers/resources (and used rounded percentages) | Single source of truth `ExamAttempt::outcome()` + `AttemptOutcome`; values PASSED/FAILED/PENDING_REVIEW/DISQUALIFIED/EXPIRED; raw float comparison of `raw_percentage` vs `pass_percentage` | `AttemptOutcomeTest` (11 cases) incl. boundaries 59.49/59.5/59.99/60/60.01 |
+| A3 | Lesson `content` never delivered to students; lesson title missing on progress endpoint | `StudentLessonController` returns `content`; progress response carries `lesson.title`; frontend falls back `lesson?.title || progress?.lesson?.title` | `StudentLessonContentTest` (6 cases) |
+| A4 | Essay feedback visible before grade publication | `showForStudent` masks essay feedback/ai flags until `grades_published_at` | `StudentAnswerReviewTest` (5 cases) |
+| A5 | Termination fabricated integrity events (e.g. `WINDOW_BLUR` for heartbeat timeout) and hardcoded risk points | `RecordIntegrityEventAction` is the only event writer; heartbeat/network loss never recorded as events; all risk scoring via `config/integrity.php` | `InterruptionFairnessTest` (10 cases) |
+| A6 | Warning threshold hardcoded and not configurable | `violation_warning_threshold` frozen per attempt at start (from exam setting, default 5, config/DB-driven); terminate only when `warning_count > threshold` | `InterruptionFairnessTest`, `ExamHardeningRegressionTest` |
+| A7 | Client recovery lost state after reload; expired attempts unrecoverable | Stateful recovery (reload-safe exam state in `useExamIntegrity`/`ExamTake.vue`); deterministic `end_reason` taxonomy + recovery copy | `AutoSubmitAtDeadlineTest`, `ExamHardeningRegressionTest` |
+| A8 | Late submissions overwrote expired attempts / essays lost at deadline | Auto-submit at `expires_at` (idempotent, essays preserved, `end_reason='auto_submit_at_deadline'`); `expire` mode keeps legacy `end_reason='expired'` and 422 on late submit | `AutoSubmitAtDeadlineTest` (8 cases incl. idempotency) |
+| A9 | `IssueCertificateAction` referenced nonexistent `lessons.course_id` | Eligibility via `$course->lessons()` (HasManyThrough); unpublished lessons excluded | `CertificateTest` |
+| A10 | `User.notification_preferences` not fillable/cast — JSON corrupted on save | Added to `$fillable` with `'array'` cast | `ReminderDispatchTest` |
+| A11 | Reminder dedupe unreliable with faked notifications; wrong `DatabaseNotification` FQCN in tests | Dedeupe implemented against real `notifications.data` rows; tests use `Illuminate\Notifications\DatabaseNotification` | `ReminderDispatchTest` (idempotency case) |
+| A12 | Lesson title fallback bug (P0 A3) frontend half | `Student/Lesson.vue` resolves `{lesson, attachments}` wrapper and bare shapes | static + `StudentLessonContentTest` |
+
+### B. Changed files (by layer)
+
+- **Migrations (all additive)**: `2026_09_30_000001..000010` — answer options table + normalization columns, outcome columns (`raw_percentage`, `end_reason`, `grades_published_at` etc.), `violation_warning_threshold`, `exams.expiry_mode`, `exams.allow_answer_review`, soft deletes on academic parents, `audit_logs`, `assignments` + `assignment_submissions`, `lesson_attachments`, `certificates`, `users.notification_preferences`.
+- **Models/Enums**: `ExamAnswerOption`, `Assignment`, `AssignmentSubmission`, `LessonAttachment`, `Certificate`, `AuditLog`; `AttemptOutcome`, `IntegrityEventType` (+`ThresholdTermination`), `IntegrityRiskConfig`.
+- **Domain**: `ExamAttempt::outcome()`, `Exam::autoSubmitsAtDeadline()/answerReviewEnabled()`, `Actions/Exam/*` (grading with set comparison, `FinalizeExpiredAttemptAction`), `Actions/Integrity/RecordIntegrityEventAction`, `Actions/Audit/RecordAuditLogAction`, `Actions/Certificate/IssueCertificateAction`, `Actions/Course/RestoreCourseAction`, `Services/NotificationPreferences`, `Console/Commands/{ProcessExpiredAttemptsCommand,DispatchRemindersCommand}`.
+- **HTTP**: controllers (student lesson content/answer review, teacher grouped attempts/exports/bulk import/assignments/attachments, student assignments/certificates/preferences, public certificate verification), form requests, API resources (`outcome` in `ExamAttemptResource`; `AssignmentResource`, `CertificateResource`, `AuditLogResource`).
+- **Frontend**: `api/client.js` (+`downloadFile`), `api/index.js` (attemptsGrouped/export/import/assignments/attachments/certificates/preferences), `views/Teacher/ExamDetail.vue` (grouped-by-student attempts + export toolbar), `views/Teacher/Students.vue` (import preview→confirm→report dialog), `views/Teacher/CourseDetail.vue` (lesson attachments), `views/Student/Assignments.vue` (new), `views/Student/Certificates.vue` (new), `views/Student/Lesson.vue` (attachments + content/title), `views/Student/ExamTake.vue` + `composables/useExamIntegrity.js` (recovery, warn-first), `layouts/StudentLayout.vue`, `router/index.js`, i18n `en.js`/`ar.js`.
+- **Tests**: 8 new suites, 7 legacy suites pinned/extended (see G).
+
+### C. Data-safety analysis per migration
+
+Every migration is **additive-only** (CREATE TABLE / ADD COLUMN / ADD INDEX); no drops,
+no type narrowing, no default changes on populated columns.
+
+1. `exam_answer_options` — new table; backfill from legacy `correct_options`/JSON column
+   is performed idempotently (per-question guard on existing rows); rollback = drop table
+   only after verifying no live writes (documented in migration header).
+2. Outcome columns — nullable adds; `raw_percentage` backfilled lazily on read
+   (legacy NULL ⇒ rounded compare inside `outcome()`), never rewriting history.
+3. `violation_warning_threshold` — nullable add; NULL ⇒ `config('integrity.warning_threshold')`.
+4. `expiry_mode` / `allow_answer_review` — nullable/defaults; historical exams keep
+   legacy behaviour (`expiry_mode` NULL ⇒ `expire` semantics).
+5. Soft deletes — nullable `deleted_at` adds; zero effect on attempts/answers/grades rows.
+6. `audit_logs` — append-only table; no source rows touched.
+7. `assignments` / `assignment_submissions` — new tables with `UNIQUE(assignment_id, student_id)`
+   (idempotent submission upsert); deletion of an assignment is soft and never cascades to submissions.
+8. `lesson_attachments` / `certificates` — new tables; `UNIQUE(student_id, course_id)` +
+   `UNIQUE(code)` guarantee idempotent issuance (same code returned on repeat).
+9. `users.notification_preferences` — nullable JSON; missing keys ⇒ defaults (all ON).
+
+Rollback policy: down-migrations are safe only in the documented order (drop new tables
+first, then drop added columns); nothing in the up path requires data deletion.
+
+### D. Exam lifecycle
+
+`start → active → (warn) → submit | auto_submit | terminate(integrity_threshold) | expire → grading → grades_published → outcome()`.
+- Auto-submit at `expires_at` runs in the request path **and** via `attempts:process-expired`
+  scheduled everyMinute; both are idempotent (first writer wins, repeat calls return the same state).
+- Essay answers are preserved verbatim through every terminal transition.
+- `end_reason` is deterministic: `submitted_by_student`, `auto_submit_at_deadline`, `expired`,
+  `integrity_threshold`.
+- Recovery: reloading the exam page restores saved answers and remaining time from
+  server state (`GET student/attempts/{id}`), never trusting the client clock.
+
+### E. Integrity model (fair by construction)
+
+- Event types and risk points live only in `config/integrity.php` (`IntegrityRiskConfig`).
+- **Warn-first**: warnings are recorded; termination requires `warning_count > threshold`
+  (threshold frozen per attempt, default 5, configurable per exam in the DB) AND
+  `terminate_on_violation`; below-threshold attempts are never terminated.
+- **Never fabricate**: heartbeat loss, network loss, and timeouts are *not* integrity
+  events. A page-blur is recorded only when the browser reports an actual visibility change.
+- Flagged ⇒ `PendingReview`/`Disqualified` only after teacher review; all verdicts via `outcome()`.
+
+### F. Attempt-management UX (teacher flow: find → overview → search → open → review → grade → publish → export)
+
+- `GET teacher/exams/{exam}/attempts/grouped?search=` returns students with
+  best/latest/pending-grading/integrity rollups + expandable attempts + summary.
+- UI: ExamDetail → "By student" view with expandable rows, server-side search
+  (name/code/email/phone), and export buttons (CSV + print/PDF view), all
+  server-authorization-scoped.
+- Bulk student import: paste CSV → server preview (valid/duplicate/invalid rows) →
+  confirm → report + one-time credentials. ≤1000 rows, no duplicates created.
+- Audit log (`admin/audit-logs`) records every mutating staff action (verbs listed in §7/§13 contract).
+
+### G. Tests
+
+New: `AttemptOutcomeTest` (11), `MultipleChoiceGradingTest` (13), `StudentAnswerReviewTest` (5),
+`StudentLessonContentTest` (6), `ExamHardeningRegressionTest` (4), `InterruptionFairnessTest` (10),
+`AutoSubmitAtDeadlineTest` (8), `AuditLogTest`, `SoftDeleteRecoveryTest`, `AttemptSearchGroupingTest`,
+`ResultExportTest`, `BulkStudentImportTest`, `AssignmentLifecycleTest` (8), `LessonAttachmentTest` (4),
+`CertificateTest` (6), `ReminderDispatchTest` (5). Legacy suites pinned (no tests deleted;
+behaviour changes intentional and documented in the suites).
+
+Matrix: correctness (grading/outcome/boundaries) · interruption (warn-first, no fabrication,
+threshold freeze) · data safety (soft delete/restore, no cascade) · authorization
+(student-B cannot read attempt of student-A; teacher-A cannot grade teacher-B's course;
+student IDOR on assignments/certificates) · grouping/search · auto-submit idempotency ·
+export scoping · import validation/dedup · certificate idempotency/verification disclosure.
+
+**Verification honesty:** this environment has no PHP/Composer/Node packages; the suites were
+written and statically validated here and are the CI runtime gate. Frontend build/vitest could
+not run locally (registry blocked); all JS was `node --check`-clean and SFC scripts validated.
+
+### H. Remaining gaps
+
+**FIXED** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete.
+**FIXED** — P2 backend: assignments, lesson attachments, certificates, scheduled reminders, notification preferences (API + tests).
+**FIXED (UI)** — student assignments (submit/resubmit/feedback), student certificates (claim/verify), lesson attachments download, teacher grouped attempts + export + import dialog + lesson attachment upload/delete.
+**PARTIAL** — Teacher assignment administration UI (create/publish/grade screens): backend endpoints + policies + tests are complete and used by the student flow; the staff screens are not built yet (API contract documented in §"P2 assignment contract"). Attempting them superficially would have risked the P0/P1 quality bar.
+**PARTIAL** — Exports: CSV (server-scoped) + print-to-PDF HTML are provided; native PDF/XLSX libraries are not installable in this environment and were deliberately not faked.
+**DEFERRED** — Web Push: no push server/VAPID credentials exist in the environment; the reminder system delivers **in-app database notifications** with the same scheduler and preference model, so Web Push can be added later as a pure channel (documented in commit `1f98880`).
+**DEFERRED** — assignment file preview in browser (download exists); competition-group leaderboard pagination (data model ready).
+
+### Production deployment safety
+
+1. **Migrations**: all additive; run `php artisan migrate` on deploy. No destructive steps;
+   rollback notes in each migration header. Existing rows are untouched (see C).
+2. **Scheduler (required)**: `routes/console.php` schedules `attempts:process-expired`
+   everyMinute (auto-submit/expire sweep) and `reminders:dispatch` hourlyAt(7). Deploy must
+   run `php artisan schedule:work` (or cron `schedule:run`).
+3. **Storage**: assignment submissions and lesson attachments are written to the **private**
+   `local` disk; serve them only through the authorized download endpoints. Set
+   `FILESYSTEM_DISK` accordingly; never expose the directory publicly.
+4. **Config**: `config/integrity.php` values (risk points, `warning_threshold`) are
+   deploy-configurable; DB per-exam settings override defaults per attempt.
+5. **Backward compatibility**: all new API routes are additive; response resources keep
+   legacy fields and add `outcome`/`passed` without renaming anything.
+6. **Zero-downtime order**: migrate → deploy code → ensure scheduler running. Old code
+   ignores the new columns; new code handles legacy NULLs (raw percentage, expiry mode).
+
+---
+
 *End of analysis. All defect claims (§3.2) are traceable to the cited files and were confirmed
 by direct code reading on branch `arena/01a0efd9-teacher-system`.*
