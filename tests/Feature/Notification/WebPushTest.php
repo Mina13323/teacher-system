@@ -38,7 +38,7 @@ class WebPushTest extends ApiTestCase
         $exam = $this->makeExam($teacher, $course, [
             'status' => 'published',
             'starts_at' => now()->addHours(2),
-            'ends_at' => now()->addHours(5),
+            'ends_at' => now()->addHours(30),
         ]);
         $student = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student, 'sanctum')
@@ -156,7 +156,11 @@ class WebPushTest extends ApiTestCase
         $serverKey = openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]);
         $server = openssl_pkey_get_details($serverKey);
         config([
-            'push.vapid_private_key' => $server['key'],
+            'push.vapid_private_key' => (static function () use ($serverKey) {
+                openssl_pkey_export($serverKey, $pem);
+
+                return $pem;
+            })(),
             'push.vapid_public_key' => rtrim(strtr(base64_encode("\x04" . $server['ec']['x'] . $server['ec']['y']), '+/', '-_'), '='),
             'push.vapid_subject' => 'mailto:test@example.com',
         ]);

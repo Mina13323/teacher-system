@@ -20,7 +20,7 @@ class Course extends Model
     }
 
     /** @use HasFactory<\Database\Factories\CourseFactory> */
-    use HasFactory;
+    use HasFactory, \Illuminate\Database\Eloquent\SoftDeletes;
 
     protected $fillable = [
         'title',

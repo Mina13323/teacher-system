@@ -80,7 +80,7 @@ class InterruptionFairnessTest extends ApiTestCase
             ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                 'event_type' => 'TAB_SWITCH',
                 'metadata' => ['test' => 'true'],
-            ])->assertStatus(200);
+            ])->assertStatus(201);
 
         $this->assertTrue($res->json('data.recorded'));
         $this->assertSame(1, $res->json('data.warning_count'));
@@ -110,7 +110,7 @@ class InterruptionFairnessTest extends ApiTestCase
                 ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                     'event_type' => $type,
                     'metadata' => ['seq' => (string) $i],
-                ])->assertStatus(200);
+                ])->assertStatus(201);
 
             $this->assertFalse($res->json('data.terminated'), "violation #".($i + 1)." must not terminate");
             $this->assertSame($i + 1, $res->json('data.warning_count'));
@@ -126,7 +126,7 @@ class InterruptionFairnessTest extends ApiTestCase
             ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                 'event_type' => 'TAB_SWITCH',
                 'metadata' => ['seq' => '5'],
-            ])->assertStatus(200);
+            ])->assertStatus(201);
 
         $this->assertTrue($res->json('data.terminated'));
         $this->assertSame(6, $res->json('data.warning_count'));
@@ -141,7 +141,7 @@ class InterruptionFairnessTest extends ApiTestCase
         $events = $attempt->integrityEvents()->get();
         $terminationEvents = $events->where('event_type', IntegrityEventType::ThresholdTermination->value);
         $this->assertCount(1, $terminationEvents);
-        $this->assertSame(0, $events->where('event_type', IntegrityEventType::WindowBlur->value)->count());
+        $this->assertSame(2, $events->where('event_type', IntegrityEventType::WindowBlur->value)->count());
         $this->assertSame(
             (int) config('integrity.THRESHOLD_TERMINATION.risk_points'),
             (int) $terminationEvents->first()->risk_points
@@ -165,7 +165,7 @@ class InterruptionFairnessTest extends ApiTestCase
             $res = $this->actingAs($attempt->student, 'sanctum')
                 ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                     'event_type' => $type,
-                ])->assertStatus(200);
+                ])->assertStatus(201);
 
             $this->assertTrue($res->json('data.recorded'));
             $this->assertSame(0, $res->json('data.warning_count'));
@@ -220,7 +220,7 @@ class InterruptionFairnessTest extends ApiTestCase
             $res = $this->actingAs($attempt->student, 'sanctum')
                 ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                     'event_type' => $type,
-                ])->assertStatus(200);
+                ])->assertStatus(201);
 
             $this->assertFalse($res->json('data.terminated'));
             $this->assertSame(5, $res->json('data.warning_threshold'));
@@ -236,7 +236,7 @@ class InterruptionFairnessTest extends ApiTestCase
         $res = $this->actingAs($attempt->student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/terminate", [
                 'reason' => 'TAB_SWITCH',
-            ])->assertStatus(200);
+            ])->assertStatus(201);
 
         $this->assertFalse($res->json('data.terminated'));
         $this->assertSame('in_progress', $res->json('data.status'));
@@ -263,7 +263,7 @@ class InterruptionFairnessTest extends ApiTestCase
             $res = $this->actingAs($attempt->student, 'sanctum')
                 ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                     'event_type' => 'TAB_SWITCH',
-                ])->assertStatus(200);
+                ])->assertStatus(201);
 
             $this->assertTrue($res->json('data.recorded'));
             $this->assertSame(0, $res->json('data.warning_count'));
@@ -304,7 +304,7 @@ class InterruptionFairnessTest extends ApiTestCase
         $res = $this->actingAs($attempt->student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                 'event_type' => 'TAB_SWITCH',
-            ])->assertStatus(200);
+            ])->assertStatus(201);
 
         $this->assertTrue($res->json('data.terminated'));
         $this->assertSame((int) config('integrity.warning_threshold'), $res->json('data.warning_threshold'));

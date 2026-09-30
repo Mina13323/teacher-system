@@ -119,7 +119,7 @@ class ExamAttemptResource extends JsonResource
                     // is deliberately never included.
                     'review' => $this->reviewEnabled()
                         ? [
-                            'is_correct' => $answer?->is_correct,
+                            'is_correct' => $this->reviewEnabled() ? ($answer?->is_correct) : null,
                             'points_earned' => $answer !== null ? (int) $answer->points_earned : 0,
                             'feedback' => $answer?->feedback,
                             'graded_at' => $answer?->graded_at?->toISOString(),
@@ -132,7 +132,7 @@ class ExamAttemptResource extends JsonResource
                         'position' => $attemptOption->position,
                         'selected' => in_array((int) $attemptOption->option_id, $selectedIds, true),
                         // Answer key only during review (see gate above).
-                        'is_correct' => $this->reviewEnabled() ? (bool) $attemptOption->is_correct : null,
+                        $this->mergeWhen($this->reviewEnabled(), ['is_correct' => (bool) $attemptOption->is_correct]),
                     ])->values(),
                 ];
             })->values(),

@@ -27,7 +27,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $course = $this->createCourse($teacher, ['status' => 'published']);
         $exam = $this->makeExam($teacher, $course, array_merge([
             'status' => 'published',
-            'show_result_immediately' => true,
+            'show_result_immediately' => false, // resume is only legal before grade publication
         ], $examAttrs));
         $this->addSingleChoiceQuestion($exam, ['points' => 1]);
 

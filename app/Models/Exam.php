@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
 class Exam extends Model
 {
     /** @use HasFactory<\Database\Factories\ExamFactory> */
-    use HasFactory;
+    use HasFactory, \Illuminate\Database\Eloquent\SoftDeletes;
 
     /**
      * NOTE on dormant schema: the `academic_year` and `academic_subject` columns

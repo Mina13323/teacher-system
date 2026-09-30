@@ -38,7 +38,7 @@ class ReminderDispatchTest extends ApiTestCase
         $exam = $this->makeExam($teacher, $course, [
             'status' => 'published',
             'starts_at' => now()->addHours(2),
-            'ends_at' => now()->addHours(5),
+            'ends_at' => now()->addHours(30),
         ]);
         $student = $this->enrolledStudent($teacher, $course);
 
@@ -115,7 +115,7 @@ class ReminderDispatchTest extends ApiTestCase
         $this->makeExam($teacher, $course, [
             'status' => 'published',
             'starts_at' => now()->addHours(2),
-            'ends_at' => now()->addHours(5),
+            'ends_at' => now()->addHours(30),
         ]);
 
         $optedOut = $this->enrolledStudent($teacher, $course);
@@ -162,7 +162,7 @@ class ReminderDispatchTest extends ApiTestCase
         $this->makeExam($teacher, $course, [
             'status' => 'draft',
             'starts_at' => now()->addHours(2),
-            'ends_at' => now()->addHours(5),
+            'ends_at' => now()->addHours(30),
         ]);
         $student = $this->enrolledStudent($teacher, $course);
 

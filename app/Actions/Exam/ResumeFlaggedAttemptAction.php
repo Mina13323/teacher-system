@@ -59,7 +59,7 @@ class ResumeFlaggedAttemptAction
 
             $termination = ExamIntegrityEvent::query()
                 ->where('attempt_id', $locked->getKey())
-                ->where('event_type', 'threshold_termination')
+                ->where('event_type', \App\Enums\IntegrityEventType::ThresholdTermination->value)
                 ->orderByDesc('occurred_at')
                 ->first();
             $terminatedAt = $termination?->occurred_at ?? $locked->updated_at ?? now();
