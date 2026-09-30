@@ -63,8 +63,16 @@ jobs:
           extensions: dom, fileinfo, mbstring, pdo, pdo_sqlite, sqlite3, bcmath, intl
           coverage: none
 
-      - name: Re-resolve dependency tree
-        run: composer update --no-interaction --no-progress
+      - name: Re-resolve dependency tree (no scripts)
+        run: |
+          set -o pipefail
+          composer update --no-interaction --no-progress --no-scripts -v 2>&1 | tee composer-update.log
+
+      - name: Regenerate autoloader and discover packages
+        run: |
+          set -o pipefail
+          composer dump-autoload 2>&1 | tee composer-scripts.log
+          php artisan package:discover --ansi 2>&1 | tee -a composer-scripts.log
 
       - name: Fresh install from the new lock
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -82,6 +90,16 @@ jobs:
         with:
           name: composer-lock
           path: composer.lock
+
+      - name: Upload composer logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: composer-logs
+          path: |
+            composer-update.log
+            composer-scripts.log
+          if-no-files-found: ignore
 
   frontend:
     name: Frontend build
