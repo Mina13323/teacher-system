@@ -149,6 +149,8 @@ class ExamController extends Controller
     {
         $this->authorize('viewAttempts', $exam);
 
+        $this->finalizeExpiredAttempts($exam);
+
         $query = $exam->attempts()
             ->with(['student', 'exam'])
             ->orderByDesc('started_at')
@@ -233,6 +235,8 @@ class ExamController extends Controller
     {
         $this->authorize('viewAttempts', $exam);
 
+        $this->finalizeExpiredAttempts($exam);
+
         $attempts = $exam->attempts()
             ->with(['student', 'exam'])
             ->with('answers.selectedOptions')
@@ -243,5 +247,37 @@ class ExamController extends Controller
             ExamAttemptDetailResource::collection($attempts),
             'Attempts retrieved.'
         );
+    }
+
+    /**
+     * Ensure any in-progress attempts whose server deadline has already passed
+     * are finalized and auto-graded immediately when staff open the attempts
+     * list, even if the background scheduler has not run yet.
+     */
+    private function finalizeExpiredAttempts(Exam $exam): void
+    {
+        $inProgress = $exam->attempts()
+            ->where('status', \App\Enums\ExamAttemptStatus::InProgress->value)
+            ->get();
+
+        if ($inProgress->isEmpty()) {
+            return;
+        }
+
+        $finalizer = app(\App\Actions\Exam\FinalizeExpiredAttemptAction::class);
+
+        foreach ($inProgress as $attempt) {
+            if ($attempt->expires_at === null && $attempt->started_at !== null && (int) $exam->duration_minutes > 0) {
+                $computedExpiry = $attempt->started_at->copy()->addMinutes((int) $exam->duration_minutes);
+                if ($computedExpiry->isPast()) {
+                    $attempt->expires_at = $computedExpiry;
+                    $attempt->save();
+                }
+            }
+
+            if ($attempt->isExpired()) {
+                $finalizer->execute($attempt);
+            }
+        }
     }
 }

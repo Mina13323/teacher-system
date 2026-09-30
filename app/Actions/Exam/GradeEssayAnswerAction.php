@@ -92,6 +92,10 @@ class GradeEssayAnswerAction
 
             if ($attempt->status->isSubmitted() && $result['requires_manual_grading']) {
                 $attempt->status = ExamAttemptStatus::Grading->value;
+            } elseif ($attempt->status === ExamAttemptStatus::Grading && ! $result['requires_manual_grading']) {
+                $attempt->status = $attempt->grades_published_at !== null
+                    ? ExamAttemptStatus::Published->value
+                    : ExamAttemptStatus::Submitted->value;
             }
 
             $attempt->save();

@@ -333,6 +333,8 @@ async function submitEssayGrade(questionId) {
         const updated = res.data || res;
         gradingData.value = updated;
         toast.success(t('exams.essayGradeSaved'));
+        loadAttempts(attemptsMeta.value?.current_page || 1);
+        if (attemptsView.value === 'student') loadGrouped();
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -349,6 +351,7 @@ async function submitPublishGrades() {
         gradingData.value = updated;
         toast.success(t('exams.gradesPublishedToast'));
         loadAttempts(attemptsMeta.value?.current_page || 1);
+        if (attemptsView.value === 'student') loadGrouped();
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -414,8 +417,22 @@ async function saveIntegrity() {
 async function refresh() { await run(); loadAttempts(1); loadIntegrity(); }
 onMounted(() => run());
 
-function attemptTone(status) {
-    return { published: 'success', submitted: 'info', grading: 'warning', in_progress: 'warning', expired: 'danger' }[status] || 'neutral';
+function attemptTone(statusOrAttempt) {
+    const status = typeof statusOrAttempt === 'object' && statusOrAttempt !== null ? statusOrAttempt.status : statusOrAttempt;
+    const published = typeof statusOrAttempt === 'object' && statusOrAttempt !== null && Boolean(statusOrAttempt.grades_published_at || statusOrAttempt.grades_published);
+    if (status === 'published' || (status === 'submitted' && published)) return 'success';
+    return { submitted: 'info', grading: 'warning', in_progress: 'info', expired: 'danger' }[status] || 'neutral';
+}
+
+function attemptStatusLabel(statusOrAttempt) {
+    const status = typeof statusOrAttempt === 'object' && statusOrAttempt !== null ? statusOrAttempt.status : statusOrAttempt;
+    const published = typeof statusOrAttempt === 'object' && statusOrAttempt !== null && Boolean(statusOrAttempt.grades_published_at || statusOrAttempt.grades_published);
+    if (status === 'published' || (status === 'submitted' && published)) return t('exams.statusPublishedLabel');
+    if (status === 'grading') return t('exams.statusGradingLabel');
+    if (status === 'submitted') return t('exams.statusSubmittedLabel');
+    if (status === 'in_progress') return t('exams.statusInProgressLabel');
+    if (status === 'expired') return t('exams.statusExpiredLabel');
+    return status || '—';
 }
 </script>
 
@@ -601,7 +618,7 @@ function attemptTone(status) {
                                     <p class="font-medium text-ink-800" dir="auto">{{ g.student?.name }} ({{ g.student?.student_code || '---' }})</p>
                                     <p class="text-xs text-ink-400">
                                         {{ $t('exams.bestLabel') }} <span class="font-bold text-ink-700">{{ g.best ? `${g.best.percentage}%` : '—' }}</span>
-                                        · {{ $t('exams.latestLabel') }} {{ g.latest?.status }}
+                                        · {{ $t('exams.latestLabel') }} {{ attemptStatusLabel(g.latest?.status) }}
                                         · {{ $t('exams.pendingGrading') }} {{ g.pending_grading_count }}
                                         <span v-if="g.integrity?.flagged_count" class="text-rose-600 font-semibold ms-2">⚠ {{ $t('exams.flaggedCount', { n: g.integrity.flagged_count }) }}</span>
                                         <span v-if="g.integrity?.violation_warnings_total" class="text-amber-600 ms-2">{{ $t('exams.warningsTotal', { n: g.integrity.violation_warnings_total }) }}</span>
@@ -620,7 +637,7 @@ function attemptTone(status) {
                                             <span v-if="a.end_reason" class="ms-1">· {{ a.end_reason }}</span>
                                         </p>
                                     </div>
-                                    <AppBadge :tone="attemptTone(a.status)">{{ a.status }}</AppBadge>
+                                    <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
                                     <AppButton variant="outline" size="sm" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
                                     <router-link :to="`/teacher/integrity/attempts/${a.id}`">
                                         <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
@@ -642,12 +659,14 @@ function attemptTone(status) {
                                     {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
                                     {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span>
                                     ({{ a.percentage ?? '—' }}%)
-                                    <span v-if="a.grades_published_at" class="text-emerald-600 font-semibold ms-2">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
+                                    <span v-if="a.grades_published_at || a.status === 'published'" class="text-emerald-600 font-semibold ms-2">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
+                                    <span v-else-if="a.status === 'in_progress'" class="text-sky-600 font-semibold ms-2">⏱ {{ $t('exams.inProgressNoticeBadge') }}</span>
+                                    <span v-else-if="a.status === 'expired'" class="text-rose-600 font-semibold ms-2">⌛ {{ $t('exams.statusExpiredLabel') }}</span>
                                     <span v-else class="text-amber-600 font-semibold ms-2">⏳ {{ $t('exams.gradingDraftBadge') }}</span>
                                 </p>
                             </div>
-                            <AppBadge :tone="attemptTone(a.status)">
-                                {{ a.status === 'published' ? $t('exams.statusPublishedLabel') : (a.status === 'grading' ? $t('exams.statusGradingLabel') : a.status) }}
+                            <AppBadge :tone="attemptTone(a)">
+                                {{ attemptStatusLabel(a) }}
                             </AppBadge>
                             <AppButton variant="outline" size="sm" @click="openGrading(a)">
                                 📝 {{ $t('exams.gradeAction') }}

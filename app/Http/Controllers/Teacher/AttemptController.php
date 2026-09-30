@@ -22,6 +22,21 @@ class AttemptController extends Controller
     {
         $this->authorize('viewStaff', $attempt);
 
+        if ($attempt->status?->isInProgress()) {
+            $exam = $attempt->exam;
+            if ($attempt->expires_at === null && $attempt->started_at !== null && $exam && (int) $exam->duration_minutes > 0) {
+                $computedExpiry = $attempt->started_at->copy()->addMinutes((int) $exam->duration_minutes);
+                if ($computedExpiry->isPast()) {
+                    $attempt->expires_at = $computedExpiry;
+                    $attempt->save();
+                }
+            }
+
+            if ($attempt->isExpired()) {
+                $attempt = app(\App\Actions\Exam\FinalizeExpiredAttemptAction::class)->execute($attempt);
+            }
+        }
+
         $attempt->load(['exam', 'student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
         return $this->success(new ExamAttemptDetailResource($attempt), 'Attempt retrieved.');

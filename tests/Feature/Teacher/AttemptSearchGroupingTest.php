@@ -196,4 +196,40 @@ class AttemptSearchGroupingTest extends ApiTestCase
             $this->assertNotContains($foreign->id, $ids->all(), "search '{$term}' must never leak another teacher's student");
         }
     }
+
+    public function test_teacher_attempts_endpoints_auto_finalize_expired_in_progress_attempts(): void
+    {
+        [$teacher, , $exam, $students] = $this->examWithAttempts();
+        $student = $students[0];
+
+        $start = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attemptId = $start->json('data.id');
+
+        $attempt = ExamAttempt::findOrFail($attemptId);
+        $firstAq = $attempt->attemptQuestions()->firstOrFail();
+        $correctOpt = $firstAq->attemptOptions()->where('is_correct', true)->firstOrFail();
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attemptId}/answers", [
+                'question_id' => $firstAq->question_id,
+                'option_id' => $correctOpt->option_id,
+            ])->assertStatus(200);
+
+        // Simulate a student whose timer expired while their browser was closed (still in_progress).
+        ExamAttempt::whereKey($attemptId)->update([
+            'expires_at' => now()->subMinutes(5),
+        ]);
+
+        // Opening the teacher attempts tab auto-finalizes and grades the expired attempt on read.
+        $res = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts")
+            ->assertStatus(200);
+
+        $row = collect($res->json('data'))->firstWhere('id', $attemptId);
+        $this->assertNotNull($row);
+        $this->assertSame(ExamAttemptStatus::Submitted->value, $row['status']);
+        $this->assertSame(1, $row['score']);
+        $this->assertSame(50, $row['percentage']);
+    }
 }

@@ -19,6 +19,14 @@ class PublishExamGradesAction
 
     public function execute(User $staffUser, ExamAttempt $attempt): ExamAttempt
     {
+        if ($attempt->status?->isInProgress() || $attempt->scored_at === null) {
+            if (! $attempt->end_reason) {
+                $attempt->end_reason = $attempt->isExpired() ? 'auto_submit_at_deadline' : 'submitted_by_staff';
+                $attempt->save();
+            }
+            $attempt = app(GradeExamAttemptAction::class)->execute($attempt);
+        }
+
         $attempt->loadMissing(['student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
         $result = $this->calculateResult->execute($attempt);
