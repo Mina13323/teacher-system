@@ -144,6 +144,11 @@ class BuildStudentAnalyticsAction
                 $released = $revealUnpublishedScores || $a->resultIsPublished();
                 $percentage = $released && $a->hasFinalScore() ? $a->percentage : null;
 
+                // ONE outcome definition for every screen. Hidden until the
+                // result is released so the outcome cannot leak a pass/fail the
+                // student is not allowed to see yet.
+                $outcome = $released ? $a->outcome() : null;
+
                 return [
                     'attempt_id' => $a->id,
                     'exam_id' => $a->exam_id,
@@ -153,8 +158,9 @@ class BuildStudentAnalyticsAction
                     'grades_published' => $a->resultIsPublished(),
                     'score' => $released ? $a->score : null,
                     'percentage' => $percentage,
-                    'passed' => $percentage !== null && $a->pass_percentage !== null
-                        ? $percentage >= $a->pass_percentage
+                    'outcome' => $outcome?->value,
+                    'passed' => $outcome !== null && $outcome->isDefinitive()
+                        ? $outcome->isPassed()
                         : null,
                     'started_at' => $a->started_at?->toISOString(),
                     'submitted_at' => $a->submitted_at?->toISOString(),

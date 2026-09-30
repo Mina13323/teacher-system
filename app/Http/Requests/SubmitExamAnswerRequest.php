@@ -22,7 +22,12 @@ class SubmitExamAnswerRequest extends FormRequest
     {
         return [
             'question_id' => ['required', 'integer'],
+            // Legacy single-select field. Kept for backward compatibility.
             'option_id' => ['nullable', 'integer'],
+            // Multi-select aware field: the full selected option set. When
+            // present it is authoritative and `option_id` is ignored.
+            'option_ids' => ['nullable', 'array', 'max:10'],
+            'option_ids.*' => ['integer'],
             'answer_text' => ['nullable', 'string', 'max:5000'],
         ];
     }

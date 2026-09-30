@@ -92,6 +92,6 @@ class GradeEssayAnswerAction
             $attempt->save();
         });
 
-        return $attempt->fresh(['answers', 'attemptQuestions']);
+        return $attempt->fresh(['answers.selectedOptions', 'attemptQuestions']);
     }
 }

@@ -94,7 +94,7 @@ class BuildTeacherOverviewAction
             'scored_attempts_count' => $scoredCount,
             'pending_grading_count' => $pendingGrading,
             'average_score' => $averageScore !== null ? (int) round($averageScore) : null,
-            'pass_rate' => $this->passRate($attemptsQuery, $scoredCount),
+            'pass_rate' => $this->passRate($attemptsQuery),
             'competitions_count' => $examIds->isEmpty()
                 ? 0
                 : Competition::query()->whereIn('exam_id', $examIds)->count(),
@@ -121,26 +121,44 @@ class BuildTeacherOverviewAction
     }
 
     /**
-     * Share of scored attempts that met their pass threshold.
+     * Share of DEFINITIVE outcomes that met their frozen pass threshold.
      *
-     * The denominator is attempts with a final score, not every attempt handed
-     * in: an attempt still awaiting essay grading has no outcome to pass or
-     * fail, and counting it as a failure would understate the rate.
+     * Uses the same outcome semantics as ExamAttempt::outcome(): flagged
+     * attempts (pending review / disqualified) and unpublished or expired
+     * attempts have no definitive outcome yet and are excluded from BOTH sides
+     * of the ratio — an attempt awaiting review can never be counted as a pass
+     * on one screen and a fail on another. The comparison uses
+     * COALESCE(raw_percentage, percentage): full precision for new rows, the
+     * historical rounded value for legacy rows (identical to old results).
      *
      * @param  Builder<ExamAttempt>|null  $attemptsQuery
      */
-    protected function passRate(?Builder $attemptsQuery, int $scoredCount): ?int
+    protected function passRate(?Builder $attemptsQuery): ?int
     {
-        if ($attemptsQuery === null || $scoredCount === 0) {
+        if ($attemptsQuery === null) {
             return null;
         }
 
-        $passed = (clone $attemptsQuery)
-            ->withFinalScore()
+        $definitive = (clone $attemptsQuery)
+            ->whereNotNull('percentage')
             ->whereNotNull('pass_percentage')
-            ->whereColumn('percentage', '>=', 'pass_percentage')
+            ->whereNotNull('grades_published_at')
+            ->where('status', '!=', ExamAttemptStatus::Expired->value)
+            ->where(function ($query) {
+                $query->whereNull('integrity_status')
+                    ->orWhere('integrity_status', '!=', IntegrityStatus::Flagged->value);
+            });
+
+        $definitiveCount = (clone $definitive)->count();
+
+        if ($definitiveCount === 0) {
+            return null;
+        }
+
+        $passed = (clone $definitive)
+            ->whereRaw('COALESCE(raw_percentage, percentage) >= pass_percentage')
             ->count();
 
-        return (int) round($passed / $scoredCount * 100);
+        return (int) round($passed / $definitiveCount * 100);
     }
 }

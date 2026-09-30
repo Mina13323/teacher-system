@@ -113,7 +113,7 @@ class ExamController extends Controller
 
         $attempts = $exam->attempts()
             ->with(['student', 'exam'])
-            ->with('answers')
+            ->with('answers.selectedOptions')
             ->latest('started_at')
             ->paginate($this->perPage($request, 15));
 

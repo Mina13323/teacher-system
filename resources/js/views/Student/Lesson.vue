@@ -19,16 +19,19 @@ const toast = useToast();
 const lessonId = route.params.id;
 
 const progress = ref(null);
+const lesson = ref(null);
 const videos = ref([]);
 const course = ref(null);
 const activeVideo = ref(null);
 
 const { loading, error, run } = useAsync(async () => {
-    const [p, vRes, courseRes] = await Promise.all([
+    const [lRes, p, vRes, courseRes] = await Promise.all([
+        student.lesson(lessonId).catch(() => null),
         student.lessonProgress(lessonId).catch(() => null),
         student.lessonVideos(lessonId).catch(() => toList(null)),
         route.query.course ? student.course(route.query.course).catch(() => null) : Promise.resolve(null),
     ]);
+    lesson.value = lRes && lRes.id ? lRes : null;
     progress.value = p;
     videos.value = toList(vRes).items;
     course.value = courseRes;
@@ -61,16 +64,22 @@ onMounted(() => run());
         <div>
             <router-link :to="route.query.course ? `/student/courses/${route.query.course}` : '/student/courses'" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('lesson.backToCourse') }}</router-link>
             <div class="mt-2 flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ progress?.lesson?.title || $t('nav.lesson') }}</h1>
+                <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ lesson?.title || progress?.lesson?.title || $t('nav.lesson') }}</h1>
                 <AppBadge :tone="progress?.completed ? 'success' : 'warning'">{{ progress?.completed ? $t('status.completed') : $t('status.in_progress') }}</AppBadge>
             </div>
-            <p v-if="progress?.lesson?.description" class="mt-1 text-ink-600" dir="auto">{{ progress.lesson.description }}</p>
+            <p v-if="lesson?.description || progress?.lesson?.description" class="mt-1 text-ink-600" dir="auto">{{ lesson?.description || progress?.lesson?.description }}</p>
         </div>
 
         <LoadingSpinner v-if="loading" />
         <div v-else-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
         <template v-else>
+            <!-- Lesson body content (authored by the teacher) -->
+            <section v-if="lesson?.content" class="rounded-xl border border-ink-100 bg-white p-6 shadow-sm">
+                <h2 class="mb-3 text-sm font-semibold text-ink-700">{{ $t('lesson.contentTitle') }}</h2>
+                <div class="whitespace-pre-wrap text-ink-800 leading-relaxed" dir="auto">{{ lesson.content }}</div>
+            </section>
+
             <div v-if="!videos.length" class="space-y-6">
                 <EmptyState icon="play" :title="$t('lesson.noVideosTitle')" :message="$t('lesson.noVideosMessage')" />
             </div>

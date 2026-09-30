@@ -34,7 +34,12 @@ class CreateAttemptIntegritySettingsAction
             'detect_window_blur',
             'detect_keyboard_shortcuts',
             'terminate_on_violation',
+            'violation_warning_threshold',
         ]) ?? $this->riskConfig->defaults();
+
+        // Freeze the warning threshold too: NULL means "config default at the
+        // time of use", so the policy stays changeable without rewriting rows.
+        $values['violation_warning_threshold'] = $settings?->violation_warning_threshold ?? null;
 
         return ExamAttemptIntegritySetting::create(array_merge(
             ['attempt_id' => $attempt->getKey()],

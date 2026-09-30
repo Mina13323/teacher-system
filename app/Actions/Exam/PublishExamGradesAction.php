@@ -17,7 +17,7 @@ class PublishExamGradesAction
 
     public function execute(User $staffUser, ExamAttempt $attempt): ExamAttempt
     {
-        $attempt->loadMissing(['student', 'answers', 'attemptQuestions.attemptOptions']);
+        $attempt->loadMissing(['student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
         $result = $this->calculateResult->execute($attempt);
 

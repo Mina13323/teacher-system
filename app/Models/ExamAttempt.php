@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\AttemptOutcome;
 use App\Enums\ExamAttemptStatus;
+use App\Enums\IntegrityReviewDecision;
 use App\Enums\IntegrityStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +37,14 @@ class ExamAttempt extends Model
         // Server-controlled integrity signals; never writable from client input.
         'integrity_status',
         'risk_score',
+        // Full-precision percentage (pass/fail decisions); display `percentage`
+        // stays a rounded integer. Server-set at grading time only.
+        'raw_percentage',
+        // Interruption warning counter (server-derived from integrity events).
+        'violation_warnings',
+        // How the attempt ended (submitted_by_student, auto_submit_at_deadline,
+        // expired, integrity_threshold, ...). Server-set only.
+        'end_reason',
     ];
 
     protected function casts(): array
@@ -49,8 +59,10 @@ class ExamAttempt extends Model
             'grades_published_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',
+            'raw_percentage' => 'float',
             'pass_percentage' => 'integer',
             'risk_score' => 'integer',
+            'violation_warnings' => 'integer',
         ];
     }
 
@@ -171,5 +183,80 @@ class ExamAttempt extends Model
     {
         return app(\App\Services\Integrity\IntegrityRiskConfig::class)
             ->isMultipleSuspicious($this->integrityEvents);
+    }
+
+    // ------------------------------------------------------------------
+    // Official outcome — the ONE source of truth for pass/fail semantics.
+    // Every screen (student result, teacher lists, analytics, exports) must
+    // read the outcome from here so the same attempt can never be "Passed"
+    // on one screen and "Failed" on another. See AttemptOutcome for the
+    // documented resolution order.
+    // ------------------------------------------------------------------
+
+    public function outcome(): AttemptOutcome
+    {
+        // 1. Never-graded, time-expired attempt (strict 'expire' policy).
+        if ($this->status === ExamAttemptStatus::Expired) {
+            return AttemptOutcome::Expired;
+        }
+
+        // 2/3. Integrity: a teacher-confirmed violation disqualifies; an
+        // unresolved automatic flag means pending review — never a silent
+        // pass AND never an automatic fail.
+        if ($this->integrity_status === IntegrityStatus::Flagged) {
+            return $this->hasConfirmedIntegrityViolation()
+                ? AttemptOutcome::Disqualified
+                : AttemptOutcome::PendingReview;
+        }
+
+        // 4. Grades not published yet (awaiting essay grading/publication).
+        if ($this->grades_published_at === null) {
+            return AttemptOutcome::PendingReview;
+        }
+
+        // 5. Definitive academic result on full-precision percentage.
+        return $this->meetsPassThreshold()
+            ? AttemptOutcome::Passed
+            : AttemptOutcome::Failed;
+    }
+
+    public function isPassed(): bool
+    {
+        return $this->outcome() === AttemptOutcome::Passed;
+    }
+
+    /**
+     * Whether a teacher review explicitly confirmed the integrity violation
+     * (review decision FLAGGED), which turns a flag into a disqualification.
+     */
+    public function hasConfirmedIntegrityViolation(): bool
+    {
+        if ($this->relationLoaded('integrityReviews')) {
+            return $this->integrityReviews
+                ->contains(fn ($review) => $review->decision === IntegrityReviewDecision::Flagged->value);
+        }
+
+        return $this->integrityReviews()
+            ->where('decision', IntegrityReviewDecision::Flagged->value)
+            ->exists();
+    }
+
+    /**
+     * Pass threshold comparison on RAW precision. Rounded display values never
+     * decide the academic outcome. Legacy rows (raw_percentage NULL) compare
+     * the stored rounded percentage — exactly the historical rule — so no
+     * past result changes.
+     */
+    public function meetsPassThreshold(): bool
+    {
+        if ($this->pass_percentage === null || $this->percentage === null) {
+            return false;
+        }
+
+        if ($this->raw_percentage !== null) {
+            return (float) $this->raw_percentage >= (float) $this->pass_percentage;
+        }
+
+        return (int) $this->percentage >= (int) $this->pass_percentage;
     }
 }

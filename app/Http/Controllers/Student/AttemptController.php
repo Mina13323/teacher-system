@@ -30,7 +30,7 @@ class AttemptController extends Controller
 
         $attempt = $this->expireAttempt->execute($attempt);
 
-        $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions', 'integritySetting']);
+        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
 
         return $this->success(new ExamAttemptResource($attempt), 'Attempt retrieved.');
     }
@@ -46,10 +46,13 @@ class AttemptController extends Controller
             $attempt,
             $request->integer('question_id'),
             $request->filled('option_id') ? $request->integer('option_id') : null,
-            $request->input('answer_text')
+            $request->input('answer_text'),
+            // `has()` (not `filled()`): an explicitly empty set means "clear the
+            // selection", while an absent key keeps the legacy single-select path.
+            $request->has('option_ids') ? array_map('intval', (array) $request->input('option_ids')) : null
         );
 
-        $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions']);
+        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
         return $this->success(new ExamAttemptResource($attempt), 'Answer saved.');
     }
@@ -84,18 +87,50 @@ class AttemptController extends Controller
         ], 'Heartbeat received.');
     }
 
+    /**
+     * Threshold-gated integrity termination (P0.5).
+     *
+     * A single violation never ends the attempt: this endpoint only finalizes
+     * an attempt whose server-side warning count has EXCEEDED the frozen
+     * threshold (repeated confirmed violations). Below the threshold — or for
+     * any interruption like a network drop or closed tab — it reports the
+     * current warning state and the attempt continues untouched. No integrity
+     * event is fabricated here; the termination itself records a single honest
+     * THRESHOLD_TERMINATION event.
+     */
     public function terminate(Request $request, ExamAttempt $attempt): JsonResponse
     {
         $this->authorize('update', $attempt);
 
-        $reason = (string) $request->input('reason', 'TERMINATED_BY_INTEGRITY');
-        $terminated = $this->terminateAttempt->execute($attempt, $reason, [
-            'ip' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
+        $attempt->loadMissing('integritySetting');
 
-        $terminated->load('exam');
+        $threshold = app(\App\Services\Integrity\IntegrityRiskConfig::class)
+            ->resolveWarningThreshold($attempt->integritySetting?->violation_warning_threshold);
 
-        return $this->success(new ExamResultResource($terminated), 'Attempt terminated for policy violation.');
+        $warningCount = (int) $attempt->violation_warnings;
+        $terminateOnViolation = (bool) ($attempt->integritySetting?->terminate_on_violation ?? true);
+        $thresholdReached = $warningCount > $threshold && $terminateOnViolation;
+
+        if ($attempt->status->isInProgress() && $thresholdReached) {
+            $terminated = $this->terminateAttempt->execute($attempt, 'THRESHOLD_TERMINATION', [
+                'warning_count' => $warningCount,
+                'warning_threshold' => $threshold,
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            $terminated->load('exam');
+
+            return $this->success(new ExamResultResource($terminated), 'Attempt terminated after exceeding the violation warning threshold.');
+        }
+
+        // Not terminated: report the warning state so the client can warn the
+        // student and keep the attempt going (recoverable interruption).
+        return $this->success([
+            'terminated' => false,
+            'status' => $attempt->status?->value,
+            'warning_count' => $warningCount,
+            'warning_threshold' => $threshold,
+        ], 'Attempt not terminated: warning threshold not reached.');
     }
 }

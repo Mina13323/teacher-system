@@ -66,6 +66,44 @@ trait InteractsWithExams
         return $question->fresh();
     }
 
+    /**
+     * Add a multiple_choice question with two correct and two incorrect options.
+     *
+     * @return array{question: Question, correct: list<Option>, wrong: list<Option>}
+     */
+    protected function addMultipleChoiceQuestion(Exam $exam, array $attributes = [], int $correctCount = 2, int $wrongCount = 2): array
+    {
+        $question = Question::factory()->create(array_merge([
+            'exam_id' => $exam->id,
+            'position' => $exam->questions()->count() + 1,
+            'type' => 'multiple_choice',
+            'points' => 2,
+        ], $attributes));
+
+        $correct = [];
+        $wrong = [];
+
+        for ($i = 1; $i <= $correctCount; $i++) {
+            $correct[] = Option::factory()->create([
+                'question_id' => $question->id,
+                'option_text' => "Correct option {$i}",
+                'is_correct' => true,
+                'position' => $i,
+            ]);
+        }
+
+        for ($i = 1; $i <= $wrongCount; $i++) {
+            $wrong[] = Option::factory()->create([
+                'question_id' => $question->id,
+                'option_text' => "Wrong option {$i}",
+                'is_correct' => false,
+                'position' => $correctCount + $i,
+            ]);
+        }
+
+        return ['question' => $question->fresh(), 'correct' => $correct, 'wrong' => $wrong];
+    }
+
     protected function correctOption(Question $question): Option
     {
         return $question->options()->where('is_correct', true)->firstOrFail();

@@ -92,6 +92,26 @@ class IntegrityRiskConfig
     }
 
     /**
+     * Default interruption warning threshold (violations 1..N warn; the next
+     * confirmed violation terminates when terminate_on_violation is enabled).
+     */
+    public function warningThreshold(): int
+    {
+        return max(1, (int) config('integrity.warning_threshold', 5));
+    }
+
+    /**
+     * The effective threshold for an attempt: the frozen per-attempt value when
+     * present, otherwise the global configuration default.
+     */
+    public function resolveWarningThreshold(?int $frozenThreshold): int
+    {
+        return $frozenThreshold !== null
+            ? max(1, $frozenThreshold)
+            : $this->warningThreshold();
+    }
+
+    /**
      * Determines whether an attempt exhibits a server-derived "multiple
      * suspicious events" condition from its recorded, risk-bearing events. This
      * is informational only — it does NOT add synthetic risk. The attempt's risk

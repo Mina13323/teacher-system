@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue';
+import AppSelect from '@/components/ui/AppSelect.vue';
 import { formatDateTime } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
@@ -27,6 +28,11 @@ const form = reactive({
     shuffle_questions: false,
     shuffle_options: false,
     show_result_immediately: true,
+    // What happens to saved work when the deadline passes:
+    // 'auto_submit' grades it (default, fair) — 'expire' discards it (legacy).
+    expiry_mode: 'auto_submit',
+    // Whether students may review answers + feedback after grades publish.
+    allow_answer_review: true,
     // `datetime-local` strings in the browser's own timezone. Converted to
     // ISO-8601 UTC on save, because the server interprets the window in the
     // application timezone (UTC) and the teacher's local offset must not leak.
@@ -54,6 +60,11 @@ function toIso(local) {
 }
 
 /** The deadline the server will actually enforce, mirrored for preview only. */
+const expiryModeOptions = computed(() => [
+    { value: 'auto_submit', label: t('exams.expiryModeAutoSubmit') },
+    { value: 'expire', label: t('exams.expiryModeExpire') },
+]);
+
 const effectiveDeadline = computed(() => {
     const starts = toIso(form.starts_at);
     const ends = toIso(form.ends_at);
@@ -75,6 +86,8 @@ onMounted(async () => {
         form.shuffle_questions = Boolean(e.shuffle_questions);
         form.shuffle_options = Boolean(e.shuffle_options);
         form.show_result_immediately = Boolean(e.show_result_immediately);
+        form.expiry_mode = e.expiry_mode === 'expire' ? 'expire' : 'auto_submit';
+        form.allow_answer_review = e.allow_answer_review !== false;
         form.starts_at = toLocalInput(e.starts_at);
         form.ends_at = toLocalInput(e.ends_at);
     } catch (e) {
@@ -90,6 +103,7 @@ async function submit() {
     try {
         await teacher.updateExam(examId, {
             ...form,
+            allow_answer_review: Boolean(form.allow_answer_review),
             starts_at: toIso(form.starts_at),
             ends_at: toIso(form.ends_at),
         });
@@ -132,11 +146,22 @@ async function submit() {
                             {{ formatDateTime(effectiveDeadline) }}
                         </p>
                     </div>
+                    <!-- What happens to saved answers at the deadline (P0.12) -->
+                    <AppSelect
+                        v-model="form.expiry_mode"
+                        :label="$t('exams.expiryMode')"
+                        :options="expiryModeOptions"
+                        :hint="$t('exams.expiryModeHint')"
+                        id="exam-edit-expiry-mode"
+                        :error="errors.expiry_mode"
+                    />
                     <div class="flex flex-wrap gap-4 text-sm text-ink-700">
                         <label class="flex items-center gap-2"><input type="checkbox" v-model="form.shuffle_questions" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('exams.shuffleQuestions') }}</label>
                         <label class="flex items-center gap-2"><input type="checkbox" v-model="form.shuffle_options" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('exams.shuffleOptions') }}</label>
                         <label class="flex items-center gap-2"><input type="checkbox" v-model="form.show_result_immediately" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('exams.showResult') }}</label>
+                        <label class="flex items-center gap-2"><input type="checkbox" v-model="form.allow_answer_review" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" /> {{ $t('exams.allowAnswerReview') }}</label>
                     </div>
+                    <p class="text-xs text-ink-500">{{ $t('exams.allowAnswerReviewHint') }}</p>
                 </div>
             </AppCard>
             <div class="flex justify-end gap-2">

@@ -17,6 +17,7 @@ use App\Notifications\ExamPublishedNotification;
  *  - it has at least one question,
  *  - every choice question has at least two options,
  *  - every single_choice question has exactly one correct option,
+ *  - every multiple_choice question has at least two correct options,
  *  - every essay question is worth more than zero points (essays carry no
  *    options and no answer key — they are graded manually),
  *  - duration_minutes > 0, 0 <= pass_percentage <= 100, max_attempts >= 1.
@@ -110,9 +111,11 @@ class PublishExamAction
                 }
             }
 
-            if (! $question->hasValidSingleCorrectOption()) {
+            if (! $question->hasValidAnswerKey()) {
                 throw new ExamNotReadyToPublishException(
-                    'Question '.$question->id.' must have exactly one correct option.'
+                    $question->type?->value === 'multiple_choice'
+                        ? 'Question '.$question->id.' must have at least two correct options.'
+                        : 'Question '.$question->id.' must have exactly one correct option.'
                 );
             }
         }

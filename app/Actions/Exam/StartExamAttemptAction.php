@@ -43,6 +43,7 @@ class StartExamAttemptAction
         private readonly BuildAttemptSnapshotAction $buildSnapshot,
         private readonly CreateAttemptIntegritySettingsAction $createIntegritySettings,
         private readonly EnrollmentService $enrollments,
+        private readonly FinalizeExpiredAttemptAction $finalizeExpired,
     ) {
     }
 
@@ -195,9 +196,11 @@ class StartExamAttemptAction
             ->where('status', ExamAttemptStatus::InProgress->value)
             ->where('expires_at', '<', now())
             ->each(function (ExamAttempt $attempt) {
-                $attempt->status = ExamAttemptStatus::Expired->value;
-                $attempt->active_key = null;
-                $attempt->save();
+                // Finalize per the exam's expiry policy (auto-submit grades the
+                // saved answers; 'expire' keeps the legacy blank expiry). The
+                // old behavior here marked the attempt expired WITHOUT grading,
+                // silently discarding every saved answer.
+                $this->finalizeExpired->execute($attempt);
             });
     }
 

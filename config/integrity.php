@@ -37,6 +37,9 @@ return [
         'CONTEXT_MENU_ATTEMPT' => 1,
         'KEYBOARD_SHORTCUT' => 2,
         'WINDOW_FOCUS' => 0,
+        // Server-only: recorded when the warning threshold is exceeded and the
+        // attempt is terminated by policy. Never client-submittable.
+        'THRESHOLD_TERMINATION' => 10,
         // NOTE: MULTIPLE_SUSPICIOUS_EVENTS is intentionally absent here. It is a
         // server-derived CONDITION, not a client-submittable, risk-scored event.
         // Adding it here would allow double-counting (individual event risk plus
@@ -64,6 +67,7 @@ return [
         'CUT_ATTEMPT' => 'medium',
         'CONTEXT_MENU_ATTEMPT' => 'low',
         'KEYBOARD_SHORTCUT' => 'medium',
+        'THRESHOLD_TERMINATION' => 'high',
     ],
 
     /*
@@ -176,11 +180,32 @@ return [
     | Heartbeat and Liveness
     |--------------------------------------------------------------------------
     |
-    | When an attempt requires terminate_on_violation, the client sends periodic
-    | heartbeats. If heartbeats stop for longer than the timeout threshold (e.g.
-    | app backgrounded/killed/offline), the attempt is terminated as a violation.
+    | Interruption warning policy (applies to counted violations):
+    | A first-time violation (tab hidden, blur, fullscreen exit, ...) WARNS —
+    | it never ends the attempt. Each counted violation (enabled, risk-bearing,
+    | non-deduplicated) increments the attempt's warning counter; when the
+    | number of counted violations EXCEEDS `warning_threshold` AND the frozen
+    | `terminate_on_violation` setting is on, the attempt is terminated by
+    | policy and a single honest THRESHOLD_TERMINATION event is recorded.
+    |
+    | Default 5 => violations 1..5 warn ("Warning N/5"); the 6th terminates.
+    | A per-exam/per-attempt `violation_warning_threshold` overrides this
+    | value without code changes.
+    |
+    | IMPORTANT: a network failure, heartbeat loss, laptop sleep or a phone
+    | call is NOT evidence of cheating and NEVER produces an integrity event
+    | on its own. Only actually observed browser events are recorded, and even
+    | those are "suspicious activity indicators", not proof of intent.
+    |
+    | Heartbeats are a liveness/recovery signal ONLY. A missed or late
+    | heartbeat never terminates an attempt, never records an integrity event,
+    | and never adds risk. The attempt simply continues until its
+    | server-authoritative deadline, at which point the exam's expiry policy
+    | (auto-submit / expire) applies.
     |
     */
+    'warning_threshold' => 5,
+
     'heartbeat_interval_seconds' => 15,
     'heartbeat_timeout_seconds' => 60,
 

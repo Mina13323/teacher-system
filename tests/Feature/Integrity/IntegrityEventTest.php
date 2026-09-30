@@ -46,7 +46,7 @@ class IntegrityEventTest extends ApiTestCase
 
     public function test_expired_attempt_rejects_events(): void
     {
-        [$student, , , , $attempt] = $this->enrolledStudentWithStartedAttempt(['duration_minutes' => 1]);
+        [$student, , , , $attempt] = $this->enrolledStudentWithStartedAttempt(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
 
         $attempt->expires_at = now()->subMinute();
         $attempt->save();

@@ -23,6 +23,9 @@ class ExamResultResource extends JsonResource
         $isStaff = $request->user()?->isStaff() || $request->user()?->isAdmin();
         $isPublished = $this->grades_published_at !== null || $isStaff;
 
+        // ONE outcome definition for every screen (ExamAttempt::outcome()).
+        $outcome = $this->resource->outcome();
+
         return [
             'attempt_id' => $this->id,
             'exam_id' => $this->exam_id,
@@ -30,10 +33,14 @@ class ExamResultResource extends JsonResource
             'grades_published' => $this->grades_published_at !== null,
             'score' => $this->when($isPublished, $this->score),
             'percentage' => $this->when($isPublished, $this->percentage),
+            // The official semantic outcome (passed / failed / pending_review /
+            // disqualified / expired) — identical in analytics and teacher views.
+            'outcome' => $isPublished || $isStaff ? $outcome->value : null,
             'passed' => $this->when(
-                $isPublished && $this->percentage !== null && $this->pass_percentage !== null,
-                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
+                $isPublished && $outcome->isDefinitive(),
+                fn () => $outcome->isPassed()
             ),
+            'end_reason' => $this->end_reason,
             'grades_published_at' => $this->grades_published_at?->toISOString(),
             'started_at' => $this->started_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),

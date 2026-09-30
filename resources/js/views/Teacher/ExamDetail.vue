@@ -326,7 +326,7 @@ async function runDelete(kind) {
 
 // ---- Integrity settings ----
 const intModal = ref(false);
-const intForm = reactive({ fullscreen_required: true, prevent_copy: true, prevent_paste: true, prevent_context_menu: true, detect_tab_switch: true, detect_window_blur: true, detect_keyboard_shortcuts: true, terminate_on_violation: true });
+const intForm = reactive({ fullscreen_required: true, prevent_copy: true, prevent_paste: true, prevent_context_menu: true, detect_tab_switch: true, detect_window_blur: true, detect_keyboard_shortcuts: true, terminate_on_violation: true, violation_warning_threshold: 5 });
 const intBusy = ref(false);
 function openIntegrity() {
     const settings = integrity.value?.settings;
@@ -339,13 +339,19 @@ function openIntegrity() {
         intForm.detect_window_blur = Boolean(settings.detect_window_blur);
         intForm.detect_keyboard_shortcuts = Boolean(settings.detect_keyboard_shortcuts);
         intForm.terminate_on_violation = Boolean(settings.terminate_on_violation);
+        // NULL = use the platform default (config/integrity.php).
+        intForm.violation_warning_threshold = settings.violation_warning_threshold ?? 5;
     }
     intModal.value = true;
 }
 async function saveIntegrity() {
     intBusy.value = true;
     try {
-        await teacher.updateIntegritySettings(examId, intForm);
+        const threshold = Number(intForm.violation_warning_threshold);
+        await teacher.updateIntegritySettings(examId, {
+            ...intForm,
+            violation_warning_threshold: Number.isFinite(threshold) ? Math.min(20, Math.max(1, Math.round(threshold))) : null,
+        });
         toast.success(t('exams.settingsUpdated'));
         intModal.value = false;
         loadIntegrity();
@@ -691,6 +697,16 @@ function attemptTone(status) {
                     <span>{{ f.label }}</span>
                     <input type="checkbox" v-model="intForm[f.k]" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" />
                 </label>
+                <!-- Interruption policy (P0.5): warnings 1..N, only the next one ends the attempt -->
+                <div class="rounded-lg border border-ink-100 px-3 py-2.5">
+                    <AppInput
+                        v-model="intForm.violation_warning_threshold"
+                        :label="$t('exams.violationWarningThreshold')"
+                        type="number"
+                        id="int-warning-threshold"
+                        :hint="$t('exams.violationWarningThresholdHint')"
+                    />
+                </div>
                 <div class="flex justify-end gap-2"><AppButton variant="outline" @click="intModal = false">{{ $t('common.cancel') }}</AppButton><AppButton type="submit" :loading="intBusy">{{ $t('common.save') }}</AppButton></div>
             </form>
         </AppModal>

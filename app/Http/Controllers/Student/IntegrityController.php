@@ -32,11 +32,16 @@ class IntegrityController extends Controller
             $request->validated('metadata', [])
         );
 
-        // The student only receives an acknowledgement. Risk points, severity and
-        // the integrity status are server-controlled and never exposed here.
+        // The student receives an acknowledgement plus the WARNING state of the
+        // interruption policy (so the UI can show "Warning N/M"). Risk points,
+        // severity and the integrity status stay server-controlled and are
+        // never exposed here.
         return $this->success([
             'recorded' => $result['event'] !== null,
             'deduplicated' => $result['deduplicated'],
+            'warning_count' => $result['warning_count'],
+            'warning_threshold' => $result['warning_threshold'],
+            'terminated' => $result['terminated'],
         ], 'Integrity event recorded.', 201);
     }
 }

@@ -2,46 +2,35 @@
 
 namespace App\Actions\Exam;
 
-use App\Enums\ExamAttemptStatus;
 use App\Models\ExamAttempt;
 
 /**
- * Transitions an in-progress attempt to expired once its server-side deadline
- * has passed. The backend is the source of truth for timing.
+ * Transitions an in-progress attempt whose server-side deadline has passed to
+ * its final state, according to the exam's expiry policy (auto-submit / expire
+ * — see FinalizeExpiredAttemptAction).
+ *
+ * Heartbeat handling (P0.5 fairness rules):
+ *  - A missed or late heartbeat (network drop, laptop sleep, app suspension,
+ *    phone call) NEVER terminates an attempt, NEVER records an integrity event
+ *    and NEVER adds risk. Heartbeats are a liveness/recovery signal only.
+ *  - The only authority that can end an attempt is the deadline (this action /
+ *    the scheduled job) or the warning-threshold integrity policy.
  */
 class ExpireExamAttemptAction
 {
     public function __construct(
-        private readonly TerminateExamAttemptAction $terminateAttempt,
+        private readonly FinalizeExpiredAttemptAction $finalizeExpired,
     ) {
     }
 
     public function execute(ExamAttempt $attempt): ExamAttempt
     {
-        if ($attempt->status->isInProgress()) {
-            if ($attempt->isExpired()) {
-                $attempt->status = ExamAttemptStatus::Expired->value;
-                $attempt->active_key = null;
-                $attempt->save();
+        $fresh = $attempt->fresh();
 
-                return $attempt->fresh();
-            }
-
-            // If exam requires termination on violation, check heartbeat liveness.
-            $attempt->loadMissing('integritySetting');
-            $terminateOnViolation = (bool) ($attempt->integritySetting?->terminate_on_violation ?? config('integrity.defaults.terminate_on_violation', true));
-
-            if ($terminateOnViolation && $attempt->last_heartbeat_at !== null) {
-                $timeoutSeconds = (int) config('integrity.heartbeat_timeout_seconds', 60);
-                if ($attempt->last_heartbeat_at->diffInSeconds(now()) > $timeoutSeconds) {
-                    return $this->terminateAttempt->execute($attempt, 'HEARTBEAT_TIMEOUT', [
-                        'last_heartbeat_at' => $attempt->last_heartbeat_at->toISOString(),
-                        'timeout_seconds' => $timeoutSeconds,
-                    ]);
-                }
-            }
+        if ($fresh !== null && $fresh->status->isInProgress() && $fresh->isExpired()) {
+            return $this->finalizeExpired->execute($fresh);
         }
 
-        return $attempt->fresh();
+        return $fresh ?? $attempt;
     }
 }

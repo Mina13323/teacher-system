@@ -263,6 +263,10 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::get('lessons/{lesson}/progress', [ProgressController::class, 'show']);
     Route::put('lessons/{lesson}/progress', [ProgressController::class, 'store']);
 
+    // Lesson content (body text + attachments). Enrollment-gated via
+    // LessonPolicy::access — same boundary as lesson videos/progress.
+    Route::get('lessons/{lesson}', [\App\Http\Controllers\Student\LessonController::class, 'show']);
+
     // Video content access (published, enrolled-course only).
     Route::get('lessons/{lesson}/videos', [StudentVideoController::class, 'index']);
     // Protected playback: only place a student receives a playable reference.

@@ -34,9 +34,14 @@ class ExamAttemptDetailResource extends JsonResource
             'pass_percentage' => $this->pass_percentage,
             'integrity_status' => $this->integrity_status?->value,
             'risk_score' => $this->risk_score,
+            'violation_warnings' => (int) ($this->violation_warnings ?? 0),
+            'end_reason' => $this->end_reason,
+            // Official outcome — identical semantics to the student result
+            // screen and analytics (ExamAttempt::outcome()).
+            'outcome' => $this->resource->outcome()->value,
             'passed' => $this->when(
-                $this->percentage !== null && $this->pass_percentage !== null,
-                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
+                $this->resource->outcome()->isDefinitive(),
+                fn () => $this->resource->outcome()->isPassed()
             ),
             'started_at' => $this->started_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),
@@ -49,6 +54,7 @@ class ExamAttemptDetailResource extends JsonResource
 
                 return $this->attemptQuestions->map(function ($aq) use ($answersByQuestion) {
                     $ans = $answersByQuestion->get($aq->question_id);
+                    $selectedIds = $ans ? $ans->selectedOptionIds() : [];
 
                     return [
                         'id' => $aq->question_id,
@@ -59,6 +65,7 @@ class ExamAttemptDetailResource extends JsonResource
                         'points' => (int) $aq->points,
                         'position' => (int) $aq->position,
                         'selected_option_id' => $ans?->option_id,
+                        'selected_option_ids' => $selectedIds,
                         'answer_text' => $ans?->answer_text,
                         'is_correct' => $ans?->is_correct,
                         'points_earned' => $ans !== null ? (int) $ans->points_earned : 0,
@@ -71,7 +78,7 @@ class ExamAttemptDetailResource extends JsonResource
                             'option_text' => $opt->option_text,
                             'is_correct' => (bool) $opt->is_correct,
                             'position' => (int) $opt->position,
-                            'is_selected' => $ans?->option_id !== null && (int) $ans->option_id === (int) $opt->option_id,
+                            'is_selected' => in_array((int) $opt->option_id, $selectedIds, true),
                         ])->values() : [],
                     ];
                 })->values();
@@ -79,6 +86,7 @@ class ExamAttemptDetailResource extends JsonResource
             'answers' => $this->relationLoaded('answers') ? $this->answers->map(fn ($answer) => [
                 'question_id' => $answer->question_id,
                 'option_id' => $answer->option_id,
+                'selected_option_ids' => $answer->selectedOptionIds(),
                 'answer_text' => $answer->answer_text,
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,

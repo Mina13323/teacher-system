@@ -43,7 +43,9 @@ class ExpirationAndIdempotencyTest extends ApiTestCase
 
     public function test_save_answer_after_expiration_is_rejected(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        // 'expire' = legacy strict policy; default 'auto_submit' coverage lives
+        // in Exam\AutoSubmitAtDeadlineTest (intentional change, docs §30).
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->start($student, $exam);
         $attempt->expires_at = now()->subSecond();
         $attempt->save();
@@ -61,7 +63,7 @@ class ExpirationAndIdempotencyTest extends ApiTestCase
 
     public function test_record_integrity_event_after_expiration_is_rejected(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->start($student, $exam);
         $attempt->expires_at = now()->subSecond();
         $attempt->save();
@@ -76,7 +78,7 @@ class ExpirationAndIdempotencyTest extends ApiTestCase
 
     public function test_submit_at_exact_expiration_is_rejected(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->start($student, $exam);
 
         $attempt->expires_at = now()->subSecond();

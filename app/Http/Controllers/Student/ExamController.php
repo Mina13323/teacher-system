@@ -82,7 +82,7 @@ class ExamController extends Controller
     {
         $attempt = $this->startAttempt->execute($request->user(), $exam);
 
-        $attempt->load(['exam', 'answers', 'attemptQuestions.attemptOptions']);
+        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
         return $this->success(
             new ExamAttemptResource($attempt),

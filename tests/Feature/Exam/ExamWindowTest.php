@@ -265,9 +265,13 @@ class ExamWindowTest extends ApiTestCase
 
     public function test_answering_after_the_deadline_expires_the_attempt(): void
     {
+        // 'expire' = legacy strict policy (attempt discarded ungraded). The
+        // default 'auto_submit' policy grades saved work at the deadline —
+        // see Exam\AutoSubmitAtDeadlineTest (documented change, docs §30).
         [$student, $exam] = $this->enrolledStudent([
             'starts_at' => self::OPENS,
             'ends_at' => '2026-10-10 14:00:00',
+            'expiry_mode' => 'expire',
         ]);
 
         $this->travelTo($this->at('0'));

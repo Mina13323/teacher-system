@@ -40,12 +40,13 @@ const blocked = computed(() => expired.value || attempt.value?.status === 'expir
 
 /**
  * Proctoring. The rules come from the server's frozen per-attempt settings, so
- * the student cannot switch monitoring off from the client. When the exam is
- * configured to terminate on a violation, leaving the tab, backgrounding the
- * app or dropping fullscreen submits the attempt immediately.
+ * the student cannot switch monitoring off from the client. Violations WARN
+ * (server-side threshold); only repeated confirmed violations end the attempt.
  */
 const integrityRules = computed(() => attempt.value?.integrity_rules || null);
 const terminatedByIntegrity = ref(false);
+const warningCount = ref(0);
+const warningThreshold = ref(null);
 
 const {
     start: startMonitoring,
@@ -56,8 +57,168 @@ const {
 } = useExamIntegrity({
     getAttemptId: () => attempt.value?.id ?? null,
     getRules: () => integrityRules.value,
-    onTerminate: (type, options) => terminateExam(type, options),
+    onWarning: (count, threshold) => {
+        warningCount.value = count;
+        warningThreshold.value = threshold;
+        toast.error(t('examTake.warningCount', { n: count, total: threshold }));
+    },
+    onTerminate: async () => {
+        // ONLY the server ends the attempt (warning threshold exceeded).
+        terminatedByIntegrity.value = true;
+        await reloadAfterTermination();
+    },
+    onPageHide: () => flushPendingOnExit(),
 });
+
+async function reloadAfterTermination() {
+    stopMonitoring();
+    stopHeartbeat();
+    try {
+        const fresh = normalizeAttempt(await student.attempt(attempt.value.id));
+        attempt.value = fresh;
+        if (fresh && fresh.status !== 'in_progress') {
+            result.value = fresh;
+        }
+        notifications.refreshUnread();
+        toast.error(t('examTake.integrityTerminated'));
+    } catch {
+        expired.value = true;
+    }
+}
+
+// ------------------------------------------------------------------
+// Connection state + recoverable answer queue (P0.5)
+//
+// The server is authoritative; localStorage is a RECOVERY cache only. Failed
+// answer saves are queued locally, retried automatically, and never treated as
+// "the exam is destroyed". A network loss is never reported as an integrity
+// event.
+// ------------------------------------------------------------------
+
+const connectionLost = ref(false);
+const pendingAnswers = ref({});
+let flushTimer = null;
+
+const RECOVERY_KEY = () => `exam.recovery.${route.params.id}`;
+
+function persistRecovery() {
+    try {
+        localStorage.setItem(RECOVERY_KEY(), JSON.stringify({
+            pending: pendingAnswers.value,
+            essayAnswers: essayAnswers.value,
+            current: current.value,
+            savedAt: new Date().toISOString(),
+            expiresAt: attempt.value?.expires_at || null,
+        }));
+    } catch {
+        /* storage full/unavailable — recovery cache is best-effort */
+    }
+}
+
+function restoreRecovery() {
+    try {
+        const raw = localStorage.getItem(RECOVERY_KEY());
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        if (state.expiresAt && attempt.value?.expires_at && state.expiresAt !== attempt.value.expires_at) {
+            // A different attempt generation — ignore stale cache.
+            localStorage.removeItem(RECOVERY_KEY());
+            return;
+        }
+        if (state.pending && typeof state.pending === 'object') {
+            pendingAnswers.value = state.pending;
+        }
+        if (state.essayAnswers && typeof state.essayAnswers === 'object') {
+            essayAnswers.value = { ...state.essayAnswers, ...essayAnswers.value };
+        }
+        if (typeof state.current === 'number' && state.current >= 0 && state.current < questions.value.length) {
+            current.value = state.current;
+        }
+    } catch {
+        localStorage.removeItem(RECOVERY_KEY());
+    }
+}
+
+function clearRecovery() {
+    try {
+        localStorage.removeItem(RECOVERY_KEY());
+    } catch {
+        /* ignore */
+    }
+}
+
+function markConnection(ok) {
+    if (connectionLost.value && ok) {
+        toast.success(t('examTake.connectionRestored'));
+    }
+    connectionLost.value = !ok;
+}
+
+async function flushPending() {
+    const entries = Object.entries(pendingAnswers.value);
+    if (!entries.length || blocked.value) return;
+
+    for (const [qId, payload] of entries) {
+        try {
+            const updated = await student.answer(attempt.value.id, payload);
+            attempt.value = normalizeAttempt(updated);
+            delete pendingAnswers.value[qId];
+            persistRecovery();
+            markConnection(true);
+        } catch (e) {
+            if (e.status === 422 || e.isValidation) {
+                // Server refused (attempt closed) — drop the stale entry and
+                // let handleRejection surface the server's truth.
+                delete pendingAnswers.value[qId];
+                persistRecovery();
+                await handleRejection(e);
+                return;
+            }
+            // Network/server hiccup: keep the entry, retry on the next tick.
+            markConnection(false);
+            return;
+        }
+    }
+}
+
+function startFlushTimer() {
+    stopFlushTimer();
+    flushTimer = setInterval(() => {
+        if (Object.keys(pendingAnswers.value).length) flushPending();
+    }, 5000);
+}
+
+function stopFlushTimer() {
+    if (flushTimer) {
+        clearInterval(flushTimer);
+        flushTimer = null;
+    }
+}
+
+/**
+ * Best-effort flush when the page is being hidden/unloaded: send queued answers
+ * with fetch keepalive so a closing tab does not lose work. NO integrity event
+ * is reported for the hide itself.
+ */
+function flushPendingOnExit() {
+    persistRecovery();
+    const entries = Object.entries(pendingAnswers.value);
+    if (!entries.length) return;
+    for (const [, payload] of entries) {
+        if (typeof student.answerKeepalive === 'function') {
+            student.answerKeepalive(attempt.value.id, payload);
+        }
+    }
+}
+
+function onOffline() {
+    markConnection(false);
+}
+
+function onOnline() {
+    markConnection(true);
+    flushPending();
+}
 
 let heartbeatTimer = null;
 function startHeartbeat() {
@@ -69,11 +230,20 @@ function startHeartbeat() {
             return;
         }
         try {
-            await student.heartbeat(attempt.value.id);
+            const res = await student.heartbeat(attempt.value.id);
+            markConnection(true);
+            if (res && res.status && res.status !== 'in_progress') {
+                // The server finalized the attempt (deadline reached).
+                await load();
+            }
         } catch (e) {
             if (e.status === 422 || e.isValidation) {
                 stopHeartbeat();
                 load();
+            } else {
+                // Network loss / server hiccup: NOT a violation. The attempt
+                // continues; the banner explains what is happening.
+                markConnection(false);
             }
         }
     }, 15000);
@@ -86,35 +256,6 @@ function stopHeartbeat() {
     }
 }
 
-/**
- * Ends the attempt because the student left the exam screen.
- * Terminates the attempt immediately on the server, grading current answers
- * and flagging the attempt integrity status.
- */
-async function terminateExam(type, options = {}) {
-    if (!attempt.value || attempt.value.status !== 'in_progress') return;
-
-    stopMonitoring();
-    stopHeartbeat();
-    terminatedByIntegrity.value = true;
-    submittingBusy.value = true;
-
-    try {
-        if (options.keepalive && typeof student.terminateKeepalive === 'function') {
-            student.terminateKeepalive(attempt.value.id, { reason: type });
-        }
-        const res = await student.terminate(attempt.value.id, { reason: type });
-        result.value = res?.data || res;
-        notifications.refreshUnread();
-        toast.error(t('examTake.integrityTerminated'));
-    } catch (e) {
-        expired.value = true;
-        await handleRejection(e);
-    } finally {
-        submittingBusy.value = false;
-    }
-}
-
 function beginMonitoring() {
     if (attempt.value?.status !== 'in_progress') return;
     startMonitoring();
@@ -124,13 +265,16 @@ const { loading, error, run: load } = useAsync(async () => {
     const a = await student.attempt(route.params.id);
     attempt.value = normalizeAttempt(a);
     initEssayAnswers();
+    restoreRecovery();
     // A student returning to an attempt they already finished (reload, or the
     // link from a result notification) must see the outcome. Previously the
     // result panel was only ever populated by the submit response, so it sat
     // on "under review" forever — even after the grades were published.
     if (a && a.status !== 'in_progress' && a.status !== 'expired') {
         result.value = a;
+        if (a.status !== 'in_progress') clearRecovery();
     }
+    if (a?.violation_warnings) warningCount.value = a.violation_warnings;
     startTimer();
     startHeartbeat();
     beginMonitoring();
@@ -170,6 +314,38 @@ const answeredCount = computed(() => {
 });
 
 const confirmMessage = computed(() => t('examTake.confirmMessage', { n: answeredCount.value, total: questions.value.length }));
+
+/** Post-publication answer review: only questions carrying review payload. */
+const reviewQuestions = computed(() => questions.value.filter((q) => q.review));
+
+/**
+ * Deterministic, user-visible explanation of WHY the attempt ended and what
+ * happened to the answers — every termination path must have one (P0.5).
+ */
+const endReasonText = computed(() => {
+    const reason = result.value?.end_reason || attempt.value?.end_reason;
+    const map = {
+        submitted_by_student: t('examTake.endReasonSubmitted'),
+        auto_submit_at_deadline: t('examTake.endReasonAutoSubmit'),
+        expired: t('examTake.endReasonExpired'),
+        integrity_threshold: t('examTake.endReasonIntegrity'),
+    };
+    return map[reason] || '';
+});
+
+function answerSummary(q) {
+    if (q.question_type === 'essay') {
+        return (q.answer_text || '').trim() || t('examTake.noAnswer');
+    }
+    const selected = (q.options || []).filter((o) => o.selected);
+    return selected.length ? selected.map((o) => o.option_text).join('، ') : t('examTake.noAnswer');
+}
+
+function correctOptionsText(q) {
+    if (q.question_type === 'essay') return '';
+    const correct = (q.options || []).filter((o) => o.is_correct);
+    return correct.map((o) => o.option_text).join('، ');
+}
 
 function startTimer() {
     const expires = attempt.value?.expires_at;
@@ -217,27 +393,89 @@ async function handleRejection(e) {
     toast.error(e?.message || t('examTake.timeExpired', { message: '' }));
 }
 
+/**
+ * Selection model: single_choice replaces the selection; multiple_choice
+ * toggles membership of the selected SET (sent as `option_ids`). The set is the
+ * authoritative payload — `option_id` is legacy single-select.
+ */
+function currentSelection(q) {
+    if (Array.isArray(q.selected_option_ids) && q.selected_option_ids.length) {
+        return [...q.selected_option_ids];
+    }
+    return q.selected_option_id ? [q.selected_option_id] : [];
+}
+
+function applySelection(q, ids) {
+    q.selected_option_ids = ids;
+    q.selected_option_id = ids.length === 1 ? ids[0] : null;
+    q.options.forEach((o) => {
+        o.selected = ids.includes(o.id);
+    });
+}
+
 async function answer(optionId) {
     const q = currentQuestion.value;
     if (blocked.value || attempt.value?.status !== 'in_progress') return;
+
+    const isMulti = q.question_type === 'multiple_choice';
+    const selected = currentSelection(q);
+    let nextSet;
+    if (isMulti) {
+        nextSet = selected.includes(optionId)
+            ? selected.filter((id) => id !== optionId)
+            : [...selected, optionId];
+    } else {
+        nextSet = [optionId];
+    }
+
+    // Optimistic update; the server response is authoritative and overwrites it.
+    applySelection(q, nextSet);
+
+    const payload = { question_id: q.id, option_ids: nextSet };
+    pendingAnswers.value[q.id] = payload;
+    persistRecovery();
+
     try {
-        const updated = await student.answer(attempt.value.id, { question_id: q.id, option_id: optionId });
+        const updated = await student.answer(attempt.value.id, payload);
         attempt.value = normalizeAttempt(updated);
+        delete pendingAnswers.value[q.id];
+        persistRecovery();
+        markConnection(true);
     } catch (e) {
-        await handleRejection(e);
+        if (e.status === 422 || e.isValidation) {
+            delete pendingAnswers.value[q.id];
+            persistRecovery();
+            await handleRejection(e);
+        } else {
+            // Network/server hiccup: the selection is queued locally and will
+            // sync automatically. The exam is NOT destroyed.
+            markConnection(false);
+        }
     }
 }
 
 async function saveEssay(qId) {
     if (blocked.value || attempt.value?.status !== 'in_progress') return;
     savingAnswer.value = true;
+    const payload = { question_id: qId, answer_text: essayAnswers.value[qId] || '' };
+    pendingAnswers.value[qId] = payload;
+    persistRecovery();
     try {
-        const text = essayAnswers.value[qId] || '';
-        const updated = await student.answer(attempt.value.id, { question_id: qId, answer_text: text });
+        const updated = await student.answer(attempt.value.id, payload);
         attempt.value = normalizeAttempt(updated);
+        delete pendingAnswers.value[qId];
+        persistRecovery();
+        markConnection(true);
         toast.success(t('examTake.essaySaved'));
     } catch (e) {
-        await handleRejection(e);
+        if (e.status === 422 || e.isValidation) {
+            delete pendingAnswers.value[qId];
+            persistRecovery();
+            await handleRejection(e);
+        } else {
+            markConnection(false);
+            toast.info(t('examTake.savedLocally'));
+        }
     } finally {
         savingAnswer.value = false;
     }
@@ -248,9 +486,13 @@ async function submit() {
     confirmOpen.value = false;
     stopMonitoring();
     stopHeartbeat();
+    stopFlushTimer();
     try {
+        // Make sure queued answers land before the final submission.
+        await flushPending();
         const res = await student.submit(attempt.value.id);
         result.value = res;
+        clearRecovery();
         notifications.refreshUnread();
     } catch (e) {
         await handleRejection(e);
@@ -263,15 +505,24 @@ async function onTimeUp() {
     submittingBusy.value = true;
     stopMonitoring();
     stopHeartbeat();
+    stopFlushTimer();
     try {
+        await flushPending();
         const res = await student.submit(attempt.value.id);
         result.value = res;
+        clearRecovery();
         toast.info(t('examTake.timeUp'));
     } catch (e) {
-        // The countdown is display-only; the server decides. Lock the screen
-        // and surface the translated expiration notice.
-        expired.value = true;
-        await handleRejection(e);
+        if (e.status === 422 || e.isValidation) {
+            // The server has the final word (auto-submit/expiry policy).
+            expired.value = true;
+            await handleRejection(e);
+        } else {
+            // Network trouble at the deadline: the SERVER auto-submits at the
+            // deadline with the saved answers — nothing is lost. Explain that
+            // instead of pretending the attempt vanished.
+            toast.info(t('examTake.timeUpOffline'));
+        }
     } finally {
         submittingBusy.value = false;
     }
@@ -281,10 +532,20 @@ function finish() {
     router.push('/student/exams');
 }
 
-onMounted(() => load());
+onMounted(() => {
+    load();
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    startFlushTimer();
+});
+
 onBeforeUnmount(() => {
     clearInterval(timer);
     stopHeartbeat();
+    stopFlushTimer();
+    persistRecovery();
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('offline', onOffline);
 });
 </script>
 
@@ -302,6 +563,12 @@ onBeforeUnmount(() => {
                 <h1 class="text-2xl font-bold text-ink-900">
                     {{ result ? $t('examTake.submitted') : (attempt.status === 'expired' ? $t('examTake.expired') : $t('examTake.completed')) }}
                 </h1>
+
+                <!-- Why the attempt ended + what happened to the answers -->
+                <div v-if="endReasonText" class="rounded-xl border border-ink-100 bg-ink-50 p-4 max-w-md mx-auto text-sm text-ink-700">
+                    <p class="font-semibold mb-1">{{ $t('examTake.endReasonTitle') }}</p>
+                    <p class="text-xs leading-relaxed">{{ endReasonText }}</p>
+                </div>
 
                 <div v-if="terminatedByIntegrity || attempt?.integrity_status === 'flagged' || result?.integrity_status === 'flagged'" class="rounded-xl border border-rose-200 bg-rose-50 p-4 max-w-md mx-auto text-sm text-rose-800">
                     <p class="font-bold mb-1">🛑 {{ $t('examTake.integrityTerminatedTitle') }}</p>
@@ -322,6 +589,43 @@ onBeforeUnmount(() => {
                 <div v-else class="rounded-xl border border-amber-200 bg-amber-50 p-4 max-w-md mx-auto text-sm text-amber-900">
                     <p class="font-bold text-base mb-1">⏳ {{ $t('examTake.gradingTitle') }}</p>
                     <p class="text-xs text-amber-800">{{ $t('examTake.gradingBody') }}</p>
+                </div>
+
+                <!-- Post-publication answer review -->
+                <div v-if="reviewQuestions.length" class="mx-auto max-w-2xl space-y-3 pt-4 text-start">
+                    <h2 class="text-lg font-semibold text-ink-900">{{ $t('examTake.reviewTitle') }}</h2>
+                    <div
+                        v-for="q in reviewQuestions"
+                        :key="q.id"
+                        class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm space-y-2"
+                    >
+                        <div class="flex items-start justify-between gap-2">
+                            <p class="font-medium text-ink-900" dir="auto">{{ q.question_text }}</p>
+                            <AppBadge
+                                v-if="q.review?.is_correct !== null && q.review?.is_correct !== undefined"
+                                :tone="q.review.is_correct ? 'success' : 'danger'"
+                            >
+                                {{ q.review.is_correct ? $t('status.correct') : $t('status.incorrect') }}
+                            </AppBadge>
+                        </div>
+                        <p class="text-sm text-ink-600">
+                            <span class="font-semibold">{{ $t('examTake.yourAnswer') }}:</span>
+                            <span dir="auto">{{ answerSummary(q) }}</span>
+                        </p>
+                        <p v-if="correctOptionsText(q)" class="text-sm text-emerald-700">
+                            <span class="font-semibold">{{ $t('examTake.correctAnswer') }}:</span>
+                            <span dir="auto">{{ correctOptionsText(q) }}</span>
+                        </p>
+                        <p v-if="q.review?.feedback" class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" dir="auto">
+                            💬 {{ q.review.feedback }}
+                        </p>
+                        <p v-if="q.review?.explanation" class="text-xs text-ink-500" dir="auto">
+                            📖 {{ q.review.explanation }}
+                        </p>
+                        <p v-if="q.review?.points_earned !== undefined && q.review?.points_earned !== null" class="text-xs text-ink-400">
+                            {{ $t('examTake.pointsEarned', { n: q.review.points_earned, total: q.points }) }}
+                        </p>
+                    </div>
                 </div>
 
                 <div class="pt-2"><AppButton @click="finish">{{ $t('examTake.backToExams') }}</AppButton></div>
@@ -346,6 +650,12 @@ onBeforeUnmount(() => {
                 ⏱ {{ $t('examTake.expiredBlocked') }}
             </div>
 
+            <!-- Connection state: recoverable, never fatal -->
+            <div v-if="connectionLost && !blocked" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+                <p class="font-semibold">📡 {{ $t('examTake.connectionLostTitle') }}</p>
+                <p class="text-xs leading-relaxed">{{ $t('examTake.connectionLostBody') }}</p>
+            </div>
+
             <!-- Proctoring notice: states what is monitored and what ends the attempt -->
             <div
                 v-if="integrityRules && !blocked"
@@ -357,8 +667,8 @@ onBeforeUnmount(() => {
                 <p class="text-xs leading-relaxed">
                     {{ integrityRules.terminate_on_violation ? $t('examTake.integrityStrictBody') : $t('examTake.integrityMonitorBody') }}
                 </p>
-                <p v-if="violations" class="text-xs mt-1.5 font-semibold">
-                    ⚠️ {{ $t('examTake.integrityViolationCount', { n: violations }) }}
+                <p v-if="warningCount" class="text-xs mt-1.5 font-semibold">
+                    ⚠️ {{ $t('examTake.warningCount', { n: warningCount, total: warningThreshold ?? integrityRules.violation_warning_threshold ?? 5 }) }}
                 </p>
             </div>
 
@@ -402,6 +712,9 @@ onBeforeUnmount(() => {
 
                 <!-- MCQ Options -->
                 <div v-else class="space-y-2 pt-2">
+                    <p v-if="currentQuestion?.question_type === 'multiple_choice'" class="text-xs font-medium text-terracotta-700">
+                        ☑ {{ $t('examTake.multiSelectHint') }}
+                    </p>
                     <button
                         v-for="opt in currentQuestion?.options"
                         :key="opt.id"
@@ -411,7 +724,13 @@ onBeforeUnmount(() => {
                         :disabled="blocked"
                         @click="answer(opt.id)"
                     >
-                        <span class="flex h-5 w-5 items-center justify-center rounded-full border" :class="opt.selected ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-ink-300'">
+                        <span
+                            class="flex h-5 w-5 items-center justify-center border"
+                            :class="[
+                                currentQuestion?.question_type === 'multiple_choice' ? 'rounded' : 'rounded-full',
+                                opt.selected ? 'border-terracotta-500 bg-terracotta-500 text-white' : 'border-ink-300',
+                            ]"
+                        >
                             <svg v-if="opt.selected" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
                         </span>
                         <span class="text-ink-800 font-medium" dir="auto">{{ opt.option_text }}</span>

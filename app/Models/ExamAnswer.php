@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ExamAnswer extends Model
 {
@@ -42,6 +43,39 @@ class ExamAnswer extends Model
     public function attempt(): BelongsTo
     {
         return $this->belongsTo(ExamAttempt::class, 'attempt_id');
+    }
+
+    /**
+     * Normalized selection set (multi-select support). Empty for legacy rows
+     * written before the exam_answer_options table existed — those are graded
+     * from the single `option_id` column instead.
+     */
+    public function selectedOptions(): HasMany
+    {
+        return $this->hasMany(ExamAnswerOption::class, 'answer_id');
+    }
+
+    /**
+     * The selected option ids, from the normalized set when present, otherwise
+     * the legacy single `option_id`. Returns a sorted list for deterministic
+     * set comparisons.
+     *
+     * @return list<int>
+     */
+    public function selectedOptionIds(): array
+    {
+        $this->loadMissing('selectedOptions');
+
+        if ($this->selectedOptions->isNotEmpty()) {
+            return $this->selectedOptions
+                ->pluck('option_id')
+                ->map(fn ($id) => (int) $id)
+                ->sort()
+                ->values()
+                ->all();
+        }
+
+        return $this->option_id !== null ? [(int) $this->option_id] : [];
     }
 
     public function question(): BelongsTo

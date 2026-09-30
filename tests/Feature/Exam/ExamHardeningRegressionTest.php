@@ -155,11 +155,15 @@ class ExamHardeningRegressionTest extends ApiTestCase
     }
 
     /**
-     * BUG A test:
-     * Backgrounding/closing client calls terminate endpoint,
-     * immediately terminating and flagging attempt as cheated/violating.
+     * INTERRUPTED-EXAM FAIRNESS (supersedes the old first-strike BUG A test —
+     * documented behavior change in docs/SYSTEM_ANALYSIS.md §7/§30):
+     * The terminate endpoint must NOT end an attempt below the warning
+     * threshold. A backgrounding/pagehide call is a single report, not proof
+     * of cheating. Only when accumulated warnings exceed the attempt's frozen
+     * threshold does the attempt end — and then with ONE honest
+     * THRESHOLD_TERMINATION event (never a fabricated WINDOW_BLUR).
      */
-    public function test_bug_a_terminate_endpoint_flags_and_submits_attempt_immediately(): void
+    public function test_terminate_endpoint_is_threshold_gated_not_first_strike(): void
     {
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
@@ -168,18 +172,43 @@ class ExamHardeningRegressionTest extends ApiTestCase
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
-        // Student triggers termination on visibilitychange/pagehide
+        // Below threshold: terminate endpoint must NOT end or flag the attempt.
         $termRes = $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", [
                 'reason' => 'TAB_SWITCH',
             ])->assertStatus(200);
 
-        $attempt = ExamAttempt::findOrFail($attemptId);
+        $this->assertFalse($termRes->json('data.terminated'));
+        $this->assertSame(0, $termRes->json('data.warning_count'));
+        $this->assertSame(5, $termRes->json('data.warning_threshold'));
 
+        $attempt = ExamAttempt::findOrFail($attemptId);
+        $this->assertSame(ExamAttemptStatus::InProgress, $attempt->status);
+        $this->assertSame('normal', $attempt->integrity_status->value);
+        $this->assertSame(0, $attempt->integrityEvents()->count(), 'No fabricated events for a single report');
+
+        // Above threshold (simulating repeated confirmed violations): ends the attempt.
+        $attempt->forceFill(['violation_warnings' => 5])->save();
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", [
+                'reason' => 'TAB_SWITCH',
+            ])->assertStatus(200);
+
+        $attempt->refresh();
         $this->assertSame(ExamAttemptStatus::Submitted, $attempt->status);
         $this->assertSame('flagged', $attempt->integrity_status->value);
         $this->assertNull($attempt->active_key);
         $this->assertNotNull($attempt->submitted_at);
+        $this->assertSame('integrity_threshold', $attempt->end_reason);
+
+        // Exactly one honest threshold event — no fabricated WINDOW_BLUR.
+        $eventTypes = $attempt->integrityEvents()->pluck('event_type')->all();
+        $this->assertSame(['THRESHOLD_TERMINATION'], $eventTypes);
+        $this->assertSame(
+            (int) config('integrity.THRESHOLD_TERMINATION.risk_points'),
+            (int) $attempt->integrityEvents()->first()->risk_points
+        );
 
         // When student returns to the attempt, it is no longer in progress
         $showRes = $this->actingAs($student, 'sanctum')
@@ -187,14 +216,18 @@ class ExamHardeningRegressionTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->assertSame('submitted', $showRes->json('data.status'));
+        $this->assertSame('integrity_threshold', $showRes->json('data.end_reason'));
     }
 
     /**
-     * BUG A test:
-     * Student abruptly leaves (app killed, lid closed) with missing heartbeats.
-     * When student returns or endpoint is queried, heartbeat timeout flags and terminates attempt.
+     * INTERRUPTED-EXAM FAIRNESS (supersedes the old BUG A heartbeat test —
+     * documented behavior change in docs/SYSTEM_ANALYSIS.md §7/§30):
+     * A missed/timeout heartbeat (app killed, laptop lid closed, network loss)
+     * is a connectivity signal, NOT misconduct. It must never flag, terminate,
+     * or record integrity events. Attempt expiry is decided solely by
+     * expires_at via the finalized expiry policy.
      */
-    public function test_bug_a_heartbeat_timeout_terminates_abandoned_attempt(): void
+    public function test_heartbeat_timeout_never_terminates_or_flags_attempt(): void
     {
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
@@ -204,24 +237,30 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $attemptId = $startRes->json('data.id');
         $attempt = ExamAttempt::findOrFail($attemptId);
 
-        // Simulate client disappearing for 70 seconds
+        // Simulate client disappearing for 75 seconds (past the heartbeat timeout)
         $attempt->last_heartbeat_at = now()->subSeconds(75);
         $attempt->save();
 
-        // Student returns to app
+        // Student returns to app — attempt is still in progress
         $showRes = $this->actingAs($student, 'sanctum')
             ->getJson("/api/v1/student/attempts/{$attemptId}")
             ->assertStatus(200);
+        $this->assertSame('in_progress', $showRes->json('data.status'));
 
         $attempt->refresh();
-        $this->assertSame(ExamAttemptStatus::Submitted, $attempt->status);
-        $this->assertSame('flagged', $attempt->integrity_status->value);
-        $this->assertNull($attempt->active_key);
+        $this->assertSame(ExamAttemptStatus::InProgress, $attempt->status);
+        $this->assertSame('normal', $attempt->integrity_status->value);
+        $this->assertSame(0, $attempt->integrityEvents()->count(), 'Heartbeat loss must not create integrity events');
+        $this->assertSame(0, (int) $attempt->violation_warnings);
 
-        // Heartbeat on terminated attempt is rejected
+        // Student can simply continue: answers are still accepted
+        $firstQ = $attempt->attemptQuestions()->first();
+        $opt = $firstQ->attemptOptions()->first();
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/attempts/{$attemptId}/heartbeat")
-            ->assertStatus(422);
+            ->postJson("/api/v1/student/attempts/{$attemptId}/answers", [
+                'question_id' => $firstQ->question_id,
+                'option_id' => $opt->option_id,
+            ])->assertStatus(200);
     }
 
     /**
@@ -354,7 +393,8 @@ class ExamHardeningRegressionTest extends ApiTestCase
                 ])->assertStatus(200);
         }
 
-        // Terminate due to violation (cheating)
+        // Accumulated confirmed violations past the threshold, then terminate.
+        $attempt->forceFill(['violation_warnings' => 5])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);
@@ -362,21 +402,25 @@ class ExamHardeningRegressionTest extends ApiTestCase
         // Teacher publishes grades
         app(PublishExamGradesAction::class)->execute($teacher, ExamAttempt::find($attemptId));
 
-        // In student attempt view: passed must be FALSE despite 100% score
+        // In student attempt view: unreviewed flagged attempt is PENDING_REVIEW —
+        // it must NOT be presented as passed (and never as both passed and failed).
         $studentAttemptRes = $this->actingAs($student, 'sanctum')
             ->getJson("/api/v1/student/attempts/{$attemptId}")
             ->assertStatus(200);
 
         $this->assertSame(4, $studentAttemptRes->json('data.score'));
         $this->assertSame(100, $studentAttemptRes->json('data.percentage'));
-        $this->assertFalse($studentAttemptRes->json('data.passed'), 'Flagged attempt must NOT be passed');
+        $this->assertNotEquals(true, $studentAttemptRes->json('data.passed'), 'Flagged attempt must NOT be passed');
+        $this->assertSame('pending_review', $studentAttemptRes->json('data.outcome'));
 
-        // In teacher detail view: passed must also be FALSE
+        // In teacher detail view: the same unified outcome (pending_review),
+        // never passed=true and never contradicted between screens.
         $teacherDetailRes = $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/attempts/{$attemptId}")
             ->assertStatus(200);
 
-        $this->assertFalse($teacherDetailRes->json('data.passed'), 'Teacher detail must show passed=false for flagged attempt');
+        $this->assertNotEquals(true, $teacherDetailRes->json('data.passed'), 'Teacher detail must not show passed for flagged attempt');
+        $this->assertSame('pending_review', $teacherDetailRes->json('data.outcome'));
 
         // Create competition referencing this exam
         $competition = \App\Models\Competition::create([
@@ -414,7 +458,8 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $firstQ = $attempt->attemptQuestions->first();
         $opt = $firstQ->attemptOptions->first();
 
-        // Terminate attempt
+        // Terminate attempt (warnings already exceed the frozen threshold)
+        $attempt->forceFill(['violation_warnings' => 5])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);

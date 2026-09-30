@@ -25,6 +25,7 @@ class ExamAttemptIntegritySetting extends Model
         'detect_window_blur',
         'detect_keyboard_shortcuts',
         'terminate_on_violation',
+        'violation_warning_threshold',
     ];
 
     protected function casts(): array
@@ -38,6 +39,7 @@ class ExamAttemptIntegritySetting extends Model
             'detect_window_blur' => 'boolean',
             'detect_keyboard_shortcuts' => 'boolean',
             'terminate_on_violation' => 'boolean',
+            'violation_warning_threshold' => 'integer',
         ];
     }
 

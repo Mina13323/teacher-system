@@ -68,8 +68,13 @@ class Question extends Model
 
     /**
      * Validation check before exam publication.
+     *
+     * Choice questions must carry a coherent answer key:
+     *   single_choice   exactly 1 correct option,
+     *   multiple_choice at least 2 correct options.
+     * Essays never carry options or an answer key.
      */
-    public function hasValidSingleCorrectOption(): bool
+    public function hasValidAnswerKey(): bool
     {
         if ($this->isEssay()) {
             return true;
@@ -77,6 +82,18 @@ class Question extends Model
 
         $correctCount = $this->options()->where('is_correct', true)->count();
 
-        return $correctCount >= 1;
+        if ($this->type === QuestionType::MultipleChoice) {
+            return $correctCount >= 2;
+        }
+
+        return $correctCount === 1;
+    }
+
+    /**
+     * @deprecated Use hasValidAnswerKey(); kept as a stable name for older callers.
+     */
+    public function hasValidSingleCorrectOption(): bool
+    {
+        return $this->hasValidAnswerKey();
     }
 }

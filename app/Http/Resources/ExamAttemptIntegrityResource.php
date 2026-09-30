@@ -30,6 +30,13 @@ class ExamAttemptIntegrityResource extends JsonResource
             'status' => $this->status?->value,
             'integrity_status' => $this->integrity_status?->value,
             'risk_score' => $this->risk_score,
+            'violation_warnings' => (int) ($this->violation_warnings ?? 0),
+            'warning_threshold' => app(\App\Services\Integrity\IntegrityRiskConfig::class)
+                ->resolveWarningThreshold(
+                    $this->relationLoaded('integritySetting')
+                        ? $this->integritySetting?->violation_warning_threshold
+                        : null
+                ),
             // Server-derived condition (never submitted by the client). It is
             // computed from the recorded risk-bearing events and does NOT add
             // any synthetic risk, so the same evidence is never double-counted.
@@ -52,6 +59,7 @@ class ExamAttemptIntegrityResource extends JsonResource
                 'detect_tab_switch' => $this->integritySetting?->detect_tab_switch,
                 'detect_window_blur' => $this->integritySetting?->detect_window_blur,
                 'detect_keyboard_shortcuts' => $this->integritySetting?->detect_keyboard_shortcuts,
+                'violation_warning_threshold' => $this->integritySetting?->violation_warning_threshold,
             ]),
             'reviews' => IntegrityReviewResource::collection(
                 $this->whenLoaded('integrityReviews', $this->integrityReviews)

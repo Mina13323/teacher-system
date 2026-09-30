@@ -50,7 +50,10 @@ class ProgressController extends Controller
         ]);
 
         return $this->success(
-            new LessonProgressResource($progress),
+            // load() (not whenLoaded-only): the lesson page reads the title,
+            // description and content from this payload — without the relation
+            // the page fell back to a generic "Lesson" heading.
+            new LessonProgressResource($progress->load('lesson')),
             'Progress retrieved.'
         );
     }

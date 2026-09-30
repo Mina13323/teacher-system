@@ -36,6 +36,8 @@ class UpdateExamRequest extends FormRequest
             'shuffle_questions' => ['sometimes', 'boolean'],
             'shuffle_options' => ['sometimes', 'boolean'],
             'show_result_immediately' => ['sometimes', 'boolean'],
+            'allow_answer_review' => ['sometimes', 'boolean'],
+            'expiry_mode' => ['sometimes', 'in:auto_submit,expire'],
             // Omitting a key keeps its stored value; sending null clears it.
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date'],

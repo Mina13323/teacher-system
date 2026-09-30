@@ -37,6 +37,8 @@ class CreateExamRequest extends FormRequest
             'shuffle_questions' => ['nullable', 'boolean'],
             'shuffle_options' => ['nullable', 'boolean'],
             'show_result_immediately' => ['nullable', 'boolean'],
+            'allow_answer_review' => ['nullable', 'boolean'],
+            'expiry_mode' => ['nullable', 'in:auto_submit,expire'],
             // Optional official window. Timestamps are interpreted in the
             // application timezone (UTC); clients should send ISO-8601 with an
             // explicit offset. The browser's local timezone never authorizes.

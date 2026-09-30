@@ -29,6 +29,7 @@ class UpdateExamIntegritySettingsRequest extends FormRequest
             'detect_window_blur' => ['sometimes', 'boolean'],
             'detect_keyboard_shortcuts' => ['sometimes', 'boolean'],
             'terminate_on_violation' => ['sometimes', 'boolean'],
+            'violation_warning_threshold' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:20'],
         ];
     }
 }

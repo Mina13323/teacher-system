@@ -43,6 +43,12 @@ class Exam extends Model
         'shuffle_questions',
         'shuffle_options',
         'show_result_immediately',
+        // How a passed-deadline attempt is finalized: 'auto_submit' (grade the
+        // saved answers) or 'expire' (legacy strict mode, never graded).
+        'expiry_mode',
+        // Whether students may review answers + answer key + feedback after
+        // grades are published.
+        'allow_answer_review',
         'created_by',
     ];
 
@@ -58,6 +64,7 @@ class Exam extends Model
             'shuffle_questions' => 'boolean',
             'shuffle_options' => 'boolean',
             'show_result_immediately' => 'boolean',
+            'allow_answer_review' => 'boolean',
             'unit_ids' => 'array',
         ];
     }
@@ -108,6 +115,25 @@ class Exam extends Model
     public function isWindowed(): bool
     {
         return $this->starts_at !== null && $this->ends_at !== null;
+    }
+
+    /**
+     * Whether a passed-deadline attempt is finalized by submitting and grading
+     * the saved answers (the fair default) instead of being discarded.
+     * NULL/legacy rows behave as 'auto_submit' — the documented phase policy.
+     */
+    public function autoSubmitsAtDeadline(): bool
+    {
+        return ($this->expiry_mode ?? 'auto_submit') !== 'expire';
+    }
+
+    /**
+     * Whether students may review their answers (with correctness + feedback)
+     * once grades are published.
+     */
+    public function answerReviewEnabled(): bool
+    {
+        return (bool) ($this->allow_answer_review ?? true);
     }
 
     /**

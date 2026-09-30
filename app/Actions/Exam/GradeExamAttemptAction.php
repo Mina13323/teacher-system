@@ -6,12 +6,19 @@ use App\Enums\ExamAttemptStatus;
 use App\Enums\QuestionType;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
-use App\Models\ExamAttemptOption;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Auto-grades MCQ questions upon submission and sets status to submitted or grading.
+ * Auto-grades choice questions upon submission and sets status to submitted or grading.
  * Scores are draft until published by staff.
+ *
+ * Grading is exact and deterministic against the frozen snapshot:
+ *   single_choice   one correct option (legacy-compatible rule);
+ *   multiple_choice exact-set match (all-or-nothing);
+ *   essay           manual grading path, untouched here.
+ *
+ * Idempotent: re-grading an already graded attempt recomputes the same values
+ * (submit paths lock and re-check status before reaching this action).
  */
 class GradeExamAttemptAction
 {
@@ -24,7 +31,7 @@ class GradeExamAttemptAction
     {
         $attempt->load([
             'attemptQuestions.attemptOptions',
-            'answers',
+            'answers.selectedOptions',
         ]);
 
         return DB::transaction(function () use ($attempt) {
@@ -38,21 +45,19 @@ class GradeExamAttemptAction
                 /** @var ExamAnswer|null $answer */
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
 
-                /** @var ExamAttemptOption|null $correctOption */
-                $correctOption = $attemptQuestion->attemptOptions
-                    ->firstWhere('is_correct', true);
-
-                $isCorrect = false;
-                if ($answer && $answer->option_id !== null) {
-                    $isCorrect = $correctOption && $answer->option_id === $correctOption->option_id;
-                }
-
                 if (! $answer) {
-                    $answer = new ExamAnswer([
+                    // Unanswered question: record an explicit zero-grade row so
+                    // the breakdown is complete (same as the previous behavior).
+                    ExamAnswer::create([
                         'attempt_id' => $attempt->getKey(),
                         'question_id' => $attemptQuestion->question_id,
+                        'is_correct' => false,
+                        'points_earned' => 0,
                     ]);
+                    continue;
                 }
+
+                $isCorrect = $this->calculateResult->isChoiceAnswerCorrect($attemptQuestion, $answer);
 
                 $answer->is_correct = $isCorrect;
                 $answer->points_earned = $isCorrect ? $attemptQuestion->points : 0;
@@ -61,13 +66,15 @@ class GradeExamAttemptAction
 
             // Fresh calculation from the newly persisted answers
             $attempt->unsetRelation('answers');
-            $attempt->load('answers');
+            $attempt->load('answers.selectedOptions');
             $result = $this->calculateResult->execute($attempt);
 
             $now = now();
 
             $attempt->score = $result['earned_points'];
             $attempt->percentage = $result['percentage'];
+            // Full-precision value used for pass/fail (see CalculateExamResultAction).
+            $attempt->raw_percentage = $result['raw_percentage'];
             $attempt->status = $result['requires_manual_grading']
                 ? ExamAttemptStatus::Grading->value
                 : ExamAttemptStatus::Submitted->value;

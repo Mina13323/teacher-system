@@ -29,6 +29,7 @@ class ExamIntegritySettingsResource extends JsonResource
             'detect_window_blur' => $this->detect_window_blur,
             'detect_keyboard_shortcuts' => $this->detect_keyboard_shortcuts,
             'terminate_on_violation' => $this->terminate_on_violation,
+            'violation_warning_threshold' => $this->violation_warning_threshold,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

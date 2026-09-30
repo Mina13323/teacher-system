@@ -92,9 +92,16 @@ class AttemptStateMachineTest extends ApiTestCase
         $this->assertSame('submitted', $attempt->fresh()->status->value);
     }
 
+    /**
+     * Legacy strict expiry mode (exams.expiry_mode = 'expire'):
+     * a timed-out attempt is discarded ungraded and cannot be submitted.
+     * The DEFAULT policy (auto_submit) intentionally differs — the saved work
+     * is graded at the deadline; that is covered in
+     * Exam\AutoSubmitAtDeadlineTest (documented behavior change, docs §30).
+     */
     public function test_expired_attempt_cannot_be_submitted(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->start($student, $exam);
         $attempt->expires_at = now()->subMinute();
         $attempt->save();
@@ -108,7 +115,7 @@ class AttemptStateMachineTest extends ApiTestCase
 
     public function test_expired_attempt_cannot_be_revived_by_viewing_or_answering(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->start($student, $exam);
         $attempt->expires_at = now()->subMinute();
         $attempt->save();

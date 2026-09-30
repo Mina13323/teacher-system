@@ -235,9 +235,15 @@ class ExamAttemptTest extends ApiTestCase
             ->assertStatus(403);
     }
 
+    /**
+     * Legacy strict expiry ('expire' mode): a timed-out attempt is discarded
+     * ungraded and closed to further writes. The DEFAULT 'auto_submit' policy
+     * intentionally grades saved work at the deadline instead — see
+     * Exam\AutoSubmitAtDeadlineTest (documented change, docs §30).
+     */
     public function test_expired_attempt_cannot_be_answered(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/exams/{$exam->id}/start")
@@ -263,7 +269,7 @@ class ExamAttemptTest extends ApiTestCase
 
     public function test_submit_on_expired_attempt_rejected(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/exams/{$exam->id}/start")

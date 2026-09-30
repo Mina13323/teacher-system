@@ -7,13 +7,33 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * Student-facing student/exam attempt resource. Contains the attempt's
- * questions + options in their frozen snapshot order. NEVER exposes
- * `is_correct` or the answer key.
+ * questions + options in their frozen snapshot order.
+ *
+ * Answer-key policy: `is_correct` and the per-question review payload are
+ * NEVER exposed before grades are published. After publication they are
+ * exposed only when the exam's `allow_answer_review` switch is on — the
+ * documented post-publication review feature. Unpublished attempts leak
+ * nothing about correctness.
  *
  * @mixin \App\Models\ExamAttempt
  */
 class ExamAttemptResource extends JsonResource
 {
+    /**
+     * Whether the post-publication answer review payload is enabled for this
+     * attempt: grades must be published AND the exam must allow review.
+     */
+    private function reviewEnabled(): bool
+    {
+        if ($this->grades_published_at === null) {
+            return false;
+        }
+
+        $exam = $this->relationLoaded('exam') ? $this->exam : null;
+
+        return $exam === null || $exam->answerReviewEnabled();
+    }
+
     /**
      * Transform the resource into an array.
      *
@@ -48,6 +68,8 @@ class ExamAttemptResource extends JsonResource
                 'detect_window_blur' => (bool) $this->integritySetting->detect_window_blur,
                 'detect_keyboard_shortcuts' => (bool) $this->integritySetting->detect_keyboard_shortcuts,
                 'terminate_on_violation' => (bool) $this->integritySetting->terminate_on_violation,
+                'violation_warning_threshold' => $this->integritySetting->violation_warning_threshold
+                    ?? (int) config('integrity.warning_threshold', 5),
             ]),
             // The published result. Strictly gated on grades_published_at, the
             // same gate ExamResultResource and the attempts list use, so an
@@ -57,14 +79,19 @@ class ExamAttemptResource extends JsonResource
             'grades_published' => $this->grades_published_at !== null,
             'score' => $this->when($this->grades_published_at !== null, $this->score),
             'percentage' => $this->when($this->grades_published_at !== null, $this->percentage),
+            // Official outcome — same source of truth as analytics and the
+            // teacher screens (ExamAttempt::outcome()).
+            'outcome' => $this->grades_published_at !== null ? $this->resource->outcome()->value : null,
             'passed' => $this->when(
-                $this->grades_published_at !== null
-                    && $this->percentage !== null
-                    && $this->pass_percentage !== null,
-                fn () => $this->integrity_status !== \App\Enums\IntegrityStatus::Flagged && $this->percentage >= $this->pass_percentage
+                $this->grades_published_at !== null && $this->resource->outcome()->isDefinitive(),
+                fn () => $this->resource->outcome()->isPassed()
             ),
+            'end_reason' => $this->end_reason,
             'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
+                // Multi-select aware selection set (falls back to the legacy
+                // single option_id for rows written before it existed).
+                $selectedIds = $answer ? $answer->selectedOptionIds() : [];
 
                 return [
                     'id' => $attemptQuestion->question_id,
@@ -77,12 +104,29 @@ class ExamAttemptResource extends JsonResource
                     'points' => $attemptQuestion->points,
                     'position' => $attemptQuestion->position,
                     'selected_option_id' => $answer?->option_id,
+                    'selected_option_ids' => $selectedIds,
                     'answer_text' => $answer?->answer_text,
+                    // Post-publication answer review (P0.4). Strictly gated:
+                    // nothing here exists before grades are published, and the
+                    // exam's `allow_answer_review` switch can disable the whole
+                    // review payload. Teacher-only metadata (grader identity)
+                    // is deliberately never included.
+                    'review' => $this->reviewEnabled()
+                        ? [
+                            'is_correct' => $answer?->is_correct,
+                            'points_earned' => $answer !== null ? (int) $answer->points_earned : 0,
+                            'feedback' => $answer?->feedback,
+                            'graded_at' => $answer?->graded_at?->toISOString(),
+                            'explanation' => $attemptQuestion->question?->reference_answer,
+                        ]
+                        : null,
                     'options' => $attemptQuestion->attemptOptions->map(fn ($attemptOption) => [
                         'id' => $attemptOption->option_id,
                         'option_text' => $attemptOption->option_text,
                         'position' => $attemptOption->position,
-                        'selected' => ($answer?->option_id === $attemptOption->option_id),
+                        'selected' => in_array((int) $attemptOption->option_id, $selectedIds, true),
+                        // Answer key only during review (see gate above).
+                        'is_correct' => $this->reviewEnabled() ? (bool) $attemptOption->is_correct : null,
                     ])->values(),
                 ];
             })->values(),

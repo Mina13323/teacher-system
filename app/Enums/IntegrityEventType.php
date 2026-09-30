@@ -4,6 +4,18 @@ namespace App\Enums;
 
 /**
  * Supported exam integrity event types. Extensible for later phases.
+ *
+ * Two classes of events exist:
+ *   CLIENT-REPORTABLE — browser-observable signals a student's client may
+ *     report (explicit allowlist below). The server treats them as SUSPICIOUS
+ *     ACTIVITY INDICATORS, never as proof of cheating.
+ *   SERVER-ONLY — derived by the backend and never accepted from a client:
+ *     MULTIPLE_SUSPICIOUS_EVENTS (derived condition) and THRESHOLD_TERMINATION
+ *     (recorded when the warning threshold policy ends an attempt).
+ *
+ * Honesty rule: an event may only be recorded when the corresponding thing was
+ * actually observed. A heartbeat timeout or network failure is NEVER converted
+ * into WINDOW_BLUR or any other event type.
  */
 enum IntegrityEventType: string
 {
@@ -18,21 +30,29 @@ enum IntegrityEventType: string
     case ContextMenuAttempt = 'CONTEXT_MENU_ATTEMPT';
     case KeyboardShortcut = 'KEYBOARD_SHORTCUT';
     case MultipleSuspiciousEvents = 'MULTIPLE_SUSPICIOUS_EVENTS';
+    case ThresholdTermination = 'THRESHOLD_TERMINATION';
 
     /**
-     * Event types a student's client may directly report. The aggregate
-     * MULTIPLE_SUSPICIOUS_EVENTS condition is EXCLUDED: it is derived
-     * server-side from actual recorded events and must never be submitted by a
-     * client.
+     * Event types a student's client may directly report. This is an EXPLICIT
+     * allowlist of browser-observable signals — derived and server-only types
+     * can never be added here by accident.
      *
      * @return list<self>
      */
     public static function clientReportable(): array
     {
-        return array_values(array_filter(
-            self::cases(),
-            fn (self $case) => $case !== self::MultipleSuspiciousEvents
-        ));
+        return [
+            self::TabSwitch,
+            self::WindowBlur,
+            self::WindowFocus,
+            self::FullscreenEnter,
+            self::FullscreenExit,
+            self::CopyAttempt,
+            self::PasteAttempt,
+            self::CutAttempt,
+            self::ContextMenuAttempt,
+            self::KeyboardShortcut,
+        ];
     }
 
     /**
@@ -40,6 +60,14 @@ enum IntegrityEventType: string
      */
     public function isClientReportable(): bool
     {
-        return $this !== self::MultipleSuspiciousEvents;
+        return in_array($this, self::clientReportable(), true);
+    }
+
+    /**
+     * Whether this is a server-only type.
+     */
+    public function isServerOnly(): bool
+    {
+        return ! $this->isClientReportable();
     }
 }

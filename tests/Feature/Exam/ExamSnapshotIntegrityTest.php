@@ -343,7 +343,9 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
 
     public function test_expired_attempt_cannot_be_mutated(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1]);
+        // Legacy strict expiry mode; the default 'auto_submit' policy grades
+        // saved work at the deadline (Exam\AutoSubmitAtDeadlineTest, docs §30).
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
         $attempt = $this->startAttempt($student, $exam);
 
         $attempt->expires_at = now()->subMinute();
