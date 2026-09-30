@@ -79,7 +79,7 @@ class ExamAttempt extends Model
     {
         // withTrashed: historical attempts must keep showing their exam even
         // after the exam is archived/soft-deleted.
-        return $this->belongsTo(Exam::class)->withTrashed();
+        return $this->belongsTo(Exam::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);
     }
 
     public function student(): BelongsTo

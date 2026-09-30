@@ -58,7 +58,18 @@ jobs:
           code=0
           php artisan test 2>&1 | tee test-output.log || code=$?
           if [ "$code" -ne 0 ]; then
-            echo "::error::$(tail -c 3000 test-output.log | tr '\n' '~')"
+            echo "::error::$(tail -c 1500 test-output.log | tr '\n' '~')"
+            # Emit the numbered failure index in chunks so remote debugging
+            # works without raw log access (max 50 annotations x ~3.5KB).
+            grep -E -A 2 '^[0-9]+\) ' test-output.log | head -c 200000 > failed-index.txt || true
+            split -b 3500 failed-index.txt failchunk_ || true
+            n=0
+            for f in failchunk_*; do
+              [ -e "$f" ] || continue
+              n=$((n+1))
+              [ "$n" -gt 45 ] && break
+              echo "::error::FAILIDX $f $(tr '\n' '~' < "$f")"
+            done
           fi
           exit $code
 
@@ -130,7 +141,18 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" -ne 0 ]; then
-            echo "::error::$(tail -c 3000 test-output.log | tr '\n' '~')"
+            echo "::error::$(tail -c 1500 test-output.log | tr '\n' '~')"
+            # Emit the numbered failure index in chunks so remote debugging
+            # works without raw log access (max 50 annotations x ~3.5KB).
+            grep -E -A 2 '^[0-9]+\) ' test-output.log | head -c 200000 > failed-index.txt || true
+            split -b 3500 failed-index.txt failchunk_ || true
+            n=0
+            for f in failchunk_*; do
+              [ -e "$f" ] || continue
+              n=$((n+1))
+              [ "$n" -gt 45 ] && break
+              echo "::error::FAILIDX $f $(tr '\n' '~' < "$f")"
+            done
           fi
           exit $code
 

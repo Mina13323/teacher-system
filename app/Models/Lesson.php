@@ -37,7 +37,7 @@ class Lesson extends Model
 
     public function unit(): BelongsTo
     {
-        return $this->belongsTo(Unit::class)->withTrashed();
+        return $this->belongsTo(Unit::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);
     }
 
     public function videos(): HasMany

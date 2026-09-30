@@ -27,7 +27,7 @@ class LogContextMiddleware
             'method' => $request->method(),
             'user_id' => $request->user()?->getAuthIdentifier(),
             'user_role' => $request->user()?->roles?->first()?->name,
-            'attempt_id' => $request->route('attempt')?->getKey() ?? $request->route('attempt'),
+            'attempt_id' => (fn ($a) => is_object($a) ? $a->getKey() : $a)($request->route('attempt')),
         ];
         $context = array_filter($context, fn ($v) => $v !== null);
 

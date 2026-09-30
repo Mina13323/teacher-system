@@ -22,7 +22,7 @@ class Unit extends Model
 
     public function course(): BelongsTo
     {
-        return $this->belongsTo(Course::class)->withTrashed();
+        return $this->belongsTo(Course::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);
     }
 
     public function lessons(): HasMany

@@ -45,12 +45,12 @@ class Assignment extends Model
 
     public function unit(): BelongsTo
     {
-        return $this->belongsTo(Unit::class)->withTrashed();
+        return $this->belongsTo(Unit::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);
     }
 
     public function lesson(): BelongsTo
     {
-        return $this->belongsTo(Lesson::class)->withTrashed();
+        return $this->belongsTo(Lesson::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);
     }
 
     public function creator(): BelongsTo
