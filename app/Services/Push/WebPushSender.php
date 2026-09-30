@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Http;
  * delivery is best-effort by design (the database notification is the
  * reliable record).
  */
-final class WebPushSender
+class WebPushSender
 {
     /** @var null|callable(string $url, array $headers, string $body): array{0: int, 1: string} */
     private $transport;
