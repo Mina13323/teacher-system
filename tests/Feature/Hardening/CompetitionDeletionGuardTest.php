@@ -45,7 +45,7 @@ class CompetitionDeletionGuardTest extends ApiTestCase
             ->deleteJson("/api/v1/teacher/exams/{$exam->id}")
             ->assertStatus(200);
 
-        $this->assertDatabaseMissing('exams', ['id' => $exam->id]);
+        $this->assertSoftDeleted('exams', ['id' => $exam->id]);
     }
 
     public function test_teacher_cannot_delete_course_containing_a_competition_referenced_exam(): void

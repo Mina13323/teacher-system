@@ -131,8 +131,10 @@ class ExamAttemptResource extends JsonResource
                         'option_text' => $attemptOption->option_text,
                         'position' => $attemptOption->position,
                         'selected' => in_array((int) $attemptOption->option_id, $selectedIds, true),
-                        // Answer key only during review (see gate above).
-                        $this->mergeWhen($this->reviewEnabled(), ['is_correct' => (bool) $attemptOption->is_correct]),
+                        // Answer key VALUES only during review (see gate above). The key is
+                        // part of the stable payload shape but its value is null before
+                        // publication (asserted by StudentAnswerReviewTest).
+                        'is_correct' => $this->reviewEnabled() ? (bool) $attemptOption->is_correct : null,
                     ])->values(),
                 ];
             })->values(),

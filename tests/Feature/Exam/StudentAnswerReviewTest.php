@@ -127,7 +127,7 @@ class StudentAnswerReviewTest extends ApiTestCase
             ->getJson("/api/v1/student/attempts/{$attempt->id}")
             ->assertStatus(200);
 
-        $question = collect($response->json('data.questions'))->first();
+        $question = collect($response->json('data.questions'))->firstWhere('question_type', 'essay');
         $this->assertNotNull($question['review']);
         $this->assertSame('Good, add more detail.', $question['review']['feedback']);
         $this->assertSame(4, $question['review']['points_earned']);

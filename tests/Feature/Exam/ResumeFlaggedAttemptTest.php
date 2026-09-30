@@ -89,7 +89,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         // History immutability (§13): warnings + events + answers untouched.
         $this->assertSame($before->violation_warnings, $after->violation_warnings);
         $this->assertSame(1, $after->integrityEvents()->count());
-        $this->assertSame('THRESHOLD_TERMINATION', $after->integrityEvents()->first()->event_type);
+        $this->assertSame('THRESHOLD_TERMINATION', $after->integrityEvents()->first()->event_type->value);
         $this->assertSame(1, $after->answers()->count(), 'Saved answers survive');
 
         // The student is back in the SAME attempt with the same snapshot.

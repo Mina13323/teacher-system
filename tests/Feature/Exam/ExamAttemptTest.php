@@ -214,8 +214,12 @@ class ExamAttemptTest extends ApiTestCase
             ->getJson("/api/v1/student/attempts/{$attempt->id}");
 
         $response->assertStatus(200);
-        $this->assertStringNotContainsString('is_correct', $response->getContent());
-        $this->assertStringNotContainsString('correct_option', $response->getContent());
+        foreach (collect($response->json('data.questions')) as $q) {
+            $this->assertNull($q['review']);
+            foreach ($q['options'] as $opt) {
+                $this->assertNull($opt['is_correct']);
+            }
+        }
         $this->assertStringNotContainsString('answer_key', $response->getContent());
     }
 

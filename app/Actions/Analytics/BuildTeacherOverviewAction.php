@@ -140,7 +140,7 @@ class BuildTeacherOverviewAction
         }
 
         $definitive = (clone $attemptsQuery)
-            ->whereNotNull('percentage')
+            ->withFinalScore()
             ->whereNotNull('pass_percentage')
             ->whereNotNull('grades_published_at')
             ->where('status', '!=', ExamAttemptStatus::Expired->value)

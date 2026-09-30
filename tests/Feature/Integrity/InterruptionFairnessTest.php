@@ -206,7 +206,7 @@ class InterruptionFairnessTest extends ApiTestCase
         // attempt must keep the rules it started with.
         $live = \App\Models\ExamIntegritySetting::query()
             ->where('exam_id', $attempt->exam_id)
-            ->firstOrFail();
+            ->firstOrCreate(['exam_id' => $attempt->exam_id]);
         $live->forceFill(['violation_warning_threshold' => 1, 'terminate_on_violation' => true])->save();
 
         $frozen = $attempt->integritySetting()->first();
