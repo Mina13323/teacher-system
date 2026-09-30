@@ -1,0 +1,414 @@
+# Teacher-System — Deep System Analysis
+
+> Independent static audit of the full codebase (backend, frontend, migrations, tests, docs).
+> Scope: architecture & design, implementation correctness, strength/weakness map, and the
+> forgotten features that matter for this product. Findings are cited by file so they can be
+> verified and fixed. (Runtime tests could not be re-executed in the audit sandbox — no PHP
+> runtime/network — so runtime claims rest on the repo's own suite + CI, and every finding
+> below was confirmed by code reading.)
+
+---
+
+## 1. What the system is
+
+A **teacher-owned LMS platform** ("El Masry" / Atlas Academy) delivered as:
+
+- **Backend:** Laravel 11 REST API under `/api/v1`, Sanctum tokens, Spatie roles/permissions,
+  SQLite (default) or MySQL/Postgres.
+- **Frontend:** Vue 3 + Vite SPA, PWA (Workbox), vue-router, Pinia, vue-i18n (EN/AR + RTL),
+  Tailwind.
+- **Roles:** `admin`, `teacher`, `assistant` (student-ops staff), `student`.
+- **Domains:** auth & accounts (incl. teacher-owned student provisioning, student codes,
+  registration links, access periods/renewals) → courses → units → lessons → videos (protected
+  playback) → enrollment & progress & roadmap → exams (question/option authoring, templates,
+  frozen attempt snapshots, MCQ + essay grading, grade publication) → exam integrity (anti-cheat
+  events, deterministic risk, teacher review) → competitions (lifecycle, leaderboards,
+  disqualification) → analytics (admin/teacher/student) → in-app notifications → PWA landing page.
+
+Roughly **705 tracked files**, ~363 PHP classes, 49 migrations, 34 API resources, 44 form
+requests, 13 policies, 60+ action classes, ~494 test methods, and a substantial `docs/`
+folder with phase reports, security audits, and a deployment guide.
+
+---
+
+## 2. System design assessment
+
+### 2.1 Architecture — largely exemplary for a Laravel API
+
+```
+Route (thin) → Middleware (auth/role/throttle) → FormRequest (validation + authorize())
+  → Controller (thin) → Policy (ownership) → Action/Service (business rules)
+  → Model (constraints/casts) → Resource (API shape) + domain Exceptions → HTTP codes
+```
+
+Design decisions that are genuinely good and consistently applied:
+
+| Pattern | Where | Why it matters |
+|---|---|---|
+| Actions as the unit of business logic | `app/Actions/*` | Testable, reusable, no fat controllers |
+| Form Requests own validation **and** `authorize()` | `app/Http/Requests/*` | No un-authorized write endpoint |
+| Policies traverse ownership chains | `app/Policies/*` (`isOwnedBy`/`isManagedBy`/`staffOwnerIds`) | Cross-teacher isolation, IDOR defence |
+| Canonical JSON envelope + centralized exception→code mapping | `app/Support/ApiResponse`, `bootstrap/app.php` | Predictable contract, no SQL-error leakage (e.g. 409 `ResourceDeletionBlockedException`) |
+| **Frozen attempt snapshot** | `BuildAttemptSnapshotAction`, `exam_attempt_questions/options`, migration `000201` drops live FKs | Historical attempts survive teacher edits/deletes — textbook-correct design |
+| Frozen `pass_percentage` and frozen integrity settings per attempt | `StartExamAttemptAction`, `CreateAttemptIntegritySettingsAction` | Later exam edits never retroactively change outcomes |
+| Single-active-attempt enforced at **DB level** (`active_key` unique) + `lockForUpdate` + unique-violation recovery | `StartExamAttemptAction`, `SubmitExamAttemptAction` | Concurrency-safe against double-clicks and races |
+| Server-authoritative time & scoring | windows use `now()`; score/rank/risk only server-derived | Client clocks and payloads can't forge outcomes |
+| Deterministic integrity risk model in one config | `config/integrity.php`, `IntegrityRiskConfig` | Traceable, auditable, no scattered magic numbers (mostly — see §4) |
+| Privacy-by-design resources | `ExamAttemptResource` never emits `is_correct`; leaderboards use `publicDisplayName()`; registration tokens hashed + encrypted | Answer-key and PII leak prevention |
+| Deletion guards instead of silent cascades | `DeleteCourseAction`/`DeleteExamAction` → 409 when referenced by competitions | Referential sanity at the domain level |
+| Defence-in-depth throttling | `throttle:login`, `integrity-events`, `video-events`, `student-registration`, global `api` | Abuse resistance on the sensitive endpoints |
+| Co-teaching as a scope abstraction | `User::staffOwnerIds()`, `CO_TEACHING_ENABLED` | Single toggle between "one teacher LMS" and "shared staff platform" |
+| CI | `.github/workflows/ci.yml` (PHP 8.2 + 8.3, `artisan test`, npm build + vitest) | Regression safety net |
+
+### 2.2 Design weaknesses (structural, not just bugs)
+
+1. **Presentation layer encodes pass/fail policy, and two definitions coexist** (see §4.2).
+   Domain outcome ("did this attempt pass?") should be one method on the attempt, not a lambda
+   in two resources plus a third variant in analytics.
+2. **No jobs / events / listeners.** Publishing an exam notifies every enrolled student
+   synchronously inside the request (`PublishExamAttemptAction → notifyEnrolledStudents`).
+   Fine for 30 students, a timeout risk for 3,000. Same for competition finalization (lazy,
+   on-read) and attempt expiry (lazy, on-touch). Only two scheduled commands exist
+   (`students:check-renewals`, `db:backup`).
+3. **`multiple_choice` (multi-select) exists in the enum/UI but not in the data model.**
+   `ExamAnswer` has a single `option_id` — the schema itself cannot represent a multi-select
+   answer (see §4.1). A type was introduced without its storage/grading contract.
+4. **Destructive deletes, no soft deletes.** `students/batch-delete` destroys accounts and the
+   FKs cascade attempts/progress. Exam snapshots survive question deletes, but student/account
+   history does not survive an operator's misclick. No recycle bin, no archive for accounts.
+5. **Notification system is in-app only** (database channel). `MAIL_MAILER=log`; nothing sends
+   email/SMS/WhatsApp/push. The notification *machinery* is complete; the *delivery* is not.
+6. **Proctoring evidence is client-trust-based** by design (browser-observable events), which is
+   honest, but heartbeat loss is conflated with cheating (see §4.3) — a fairness flaw in an
+   otherwise thoughtful integrity design.
+7. **Docs drift across the 8 phase reports.** Examples: `FINAL_PRODUCTION_READINESS_REPORT.md`
+   claims the landing `CoursePreview` fetches live courses (it makes zero API calls now, as
+   `FINAL_PUBLIC_SECURITY_AUDIT.md` correctly states); README still advertises "public course
+   discovery" while `GET /courses` is behind `auth:sanctum` and the SPA route is role-gated;
+   `docs/API.md` (Phase-2 era) lacks the essay, integrity, template, registration-link,
+   heartbeat/terminate, analytics and admin surfaces.
+8. **Template system stores structure, not content** (`ExamTemplate` = counts + marks only),
+   so "templates" can't actually reuse questions — adjacent to the missing question-bank
+   concept (§6).
+
+---
+
+## 3. Correctness of implementation
+
+### 3.1 Verified-correct core behaviours (high confidence)
+
+- **Attempt lifecycle:** start/resume idempotence, stale-attempt expiry, attempt limits vs
+  `max_attempts`, window enforcement (`min(starts_at + duration, ends_at)`) against server
+  clock, idempotent submission with double-submit lock, illegal-state rejections — all
+  implemented coherently in `StartExamAttemptAction` / `SubmitExamAttemptAction` /
+  `SaveExamAnswerAction` / `ExpireExamAttemptAction`.
+- **Snapshot integrity:** question/option text, image, type, points, order frozen; live edits
+  can't corrupt attempts; answer keys isolated from student-facing resources (verified in
+  `ExamAttemptResource`, `StudentExamDetailResource`, `ExamResultResource`).
+- **Grading:** MCQ auto-grade against the snapshot, essays enter `grading` status with
+  range-checked manual awards (`GradeEssayAnswerAction`), grade publication is idempotent and
+  audited (`graded_by`, `grades_published_at`), and scores stay hidden from students until
+  publication (`ExamResultResource`, `BuildStudentAnalyticsAction::revealUnpublishedScores`).
+- **Competitions:** capacity under row lock, unique participation, deterministic scoring with
+  documented tie-breaks (`submitted_at` asc), standard competition ranking, lazy but *atomic*
+  finalization, disqualification preserves history and re-ranks, attempt-timing rule
+  (`submitted_at < ends_at`) enforced server-side.
+- **Integrity:** only client-reportable event types accepted; `MULTIPLE_SUSPICIOUS_EVENTS` is a
+  derived condition, never a scorable event; per-attempt frozen gates; dedup window; metadata
+  caps; risk/status recomputed from events only.
+- **Auth surface:** no open registration (teacher-owned invite links with sha256-hashed tokens,
+  encrypted at rest, revocable/rotatable, throttled); login accepts email *or* student code
+  (`ELM-#####`); account deactivation/credential reset revokes tokens; password changes revoke
+  other tokens.
+- **Video protection:** short-lived playback session tokens (`Str::random(48)`, TTL, revocation),
+  no storage paths leaked publicly, playback-event reporting scoped + throttled.
+
+### 3.2 Concrete defects found
+
+**D1 — Multi-select (`multiple_choice`) questions are broken end-to-end (correctness, high).**
+- Authoring allows multiple correct options (`ExamQuestions.vue` renders checkboxes), but
+- the answer API takes a single `option_id` (`SubmitExamAnswerRequest`, `SaveExamAnswerAction`
+  `updateOrCreate`s one row with one `option_id`), the take-exam UI selects radio-style
+  (`ExamTake.vue` `@click="answer(opt.id)"`, circle indicators), so a student physically cannot
+  select two options;
+- grading credits only the **first** correct option (`firstWhere('is_correct', true)` in
+  `GradeExamAttemptAction` and `CalculateExamResultAction`) — picking the second correct option
+  scores **0**;
+- publish validation `Question::hasValidSingleCorrectOption()` checks `count >= 1` while the
+  error message and docblock claim *"exactly one"* — so even a `single_choice` question with two
+  answer keys publishes and silently misgrades;
+- **zero tests** reference `multiple_choice`.
+→ Fix: either implement `answer_option_ids[]` (JSON/child table) + set-equality grading with
+partial credit, or remove the `multiple_choice` type until it is real; and make publish
+validation enforce `count === 1` for `single_choice`, `count >= 1` (or `>= 2`) for
+`multiple_choice`.
+
+**D2 — Two conflicting definitions of "passed" (consistency, high).**
+- `ExamResultResource` / `ExamAttemptResource`: `passed = integrity_status !== Flagged && percentage >= pass_percentage`
+- `CalculateExamResultAction` / `BuildStudentAnalyticsAction` / `BuildTeacherOverviewAction::passRate`:
+  `passed = percentage >= pass_percentage` (integrity ignored).
+→ A flagged attempt reads **"Failed"** on the student's result screen but **"Passed"** in the
+student's own analytics and in the teacher's pass-rate. Pick one policy (likely "flagged ⇒
+pending review, not auto-failed"), implement it once in a domain method, and use it everywhere.
+
+**D3 — Heartbeat loss is recorded as cheating (fairness/design, medium-high).**
+`ExpireExamAttemptAction` terminates an attempt when a heartbeat is >60s late (internet drop,
+laptop sleep, closed tab) and `terminate_on_violation` defaults to **true**. The termination path
+(`TerminateExamAttemptAction`) then:
+- records the event as `WINDOW_BLUR` (the `default` arm of the reason match — a mislabel; the
+  real reason only lives in `metadata`);
+- assigns **hardcoded** `risk_points = 10`, `severity = High` — bypassing `config/integrity.php`
+  and contradicting the "no magic numbers" claim;
+- auto-grades and (with `show_result_immediately`) immediately publishes the grade and sends
+  "result available" for an attempt the student never submitted.
+→ A student with a 2-minute network outage is branded `Flagged` with a fabricated `WINDOW_BLUR`
+record. Terminate-on-heartbeat-loss should at most *expire* (or freeze) the attempt; any
+integrity event should use the config table and an honest event type.
+
+**D4 — Lesson `content` is authored but never delivered to students (broken pipeline, high).**
+Teachers write lesson body text (`content` accepted by `CreateLessonRequest`/`UpdateLessonRequest`,
+editable in `Teacher/CourseDetail.vue`), but:
+- `LessonResource` **omits `content` entirely**, and there is no student lesson endpoint;
+- the student `Lesson.vue` page renders only title/description/videos — the body text can never
+appear on the learner screen.
+→ The richest content type in the data model is write-only. Either expose it (student
+`GET /lessons/{id}` + render) or remove the field to avoid teacher confusion.
+
+**D5 — Student lesson page can't show its own title after direct load (small).**
+`ProgressController::show` returns `LessonProgressResource` **without** `->load('lesson')`,
+while `store` and `index` do load it. `whenLoaded('lesson')` therefore omits the relation on
+`GET /student/lessons/{id}/progress`, and the SPA falls back to a generic "Lesson" heading.
+
+**D6 — Essay `feedback` never reaches students (forgotten delivery, medium).**
+`GradeEssayAnswerAction` stores `feedback` + `graded_at` per answer, but the only resource that
+emits them is the teacher-facing `ExamAttemptDetailResource`. `ExamAttemptResource` /
+`ExamResultResource` (student) return `selected_option_id`/`answer_text` only — so a teacher's
+essay feedback is written and lost.
+
+**D7 — Rounding at the pass boundary (small, but grading-critical).**
+`CalculateExamResultAction` computes `percentage = (int) round(earned/total*100)` and compares
+the rounded value to `pass_percentage`. 59.5% rounds to 60 and passes a 60% threshold. Compare
+with full precision (or floor) and round only for display.
+
+**D8 — Expired attempts are never graded yet consume `max_attempts` (fairness, medium).**
+An expired attempt keeps its recorded answers but is excluded from reporting
+(`countsAsAttempt()` = false) *and* counts against the attempt limit in
+`StartExamAttemptAction`. A student whose browser crashed mid-exam loses an attempt with no
+score and no review. Consider auto-submitting saved answers at `expires_at` (scheduled job) so
+the attempt is graded rather than discarded.
+
+**D9 — Hardcoded academic years in the public registration flow (small).**
+`StudentRegistrationController::show` returns `['secondary_1','secondary_2','secondary_3']`
+literal instead of `AcademicYear::cases()` — will silently drift from the enum.
+
+**D10 — Docs/claims drift (process, medium).** See §2.2-7. Additionally the gap-analysis doc
+itself records that a prior session shipped a broken import (`\ProfileController`) and an
+unresolvable constructor dependency — evidence that static-only verification missed wiring
+errors; CI now covers this, but `docs/API.md` remains stale.
+
+### 3.3 Verification posture
+
+- The suite (~303 tests / 1,262 assertions claimed passing on the dev machine, ~494 test
+  methods in-tree) is unusually thorough for this size of project — state machines,
+  concurrency, IDOR matrices, privacy invariants, snapshot deep-integrity, transaction
+  atomicity, rate limits, and regression tests for past bugs (`ExamHardeningRegressionTest`).
+- Gaps in the suite: **no tests for `multiple_choice`** (D1), no test asserting lesson `content`
+  reaches a student (D4), no test asserting essay `feedback` reaches a student (D6), no test
+  asserting `lesson` is present on `GET .../progress` (D5).
+- This audit could not execute PHP (sandbox has no PHP and no package network); CI
+  (`.github/workflows/ci.yml`) runs the suite on PHP 8.2/8.3 and is the runtime gate.
+
+---
+
+## 4. Strength points (ranked)
+
+1. **Attempt snapshot architecture** — immutability of historical exams done properly
+   (frozen content, frozen pass threshold, FK-drop protection, deep-integrity tests).
+2. **Security posture** — IDOR-safe policies everywhere, answer-key isolation, hashed/encrypted
+   registration tokens, short-lived playback tokens, per-concern throttles, uniform 403s,
+   no mass-assignment from raw input, secrets-safe backup command (0600 defaults file for
+   mysqldump).
+3. **Server-derived everything** — scores, rankings, risk, completion, qualification; clients
+   can only report observations, never conclusions.
+4. **Concurrency correctness** — DB-level unique guards + `lockForUpdate` + unique-violation
+   recovery on attempts, joins, grading, and publication.
+5. **Clean layering** — thin controllers, Actions, FormRequests, Policies, Resources; enforced
+   by convention and by test (`AuthorizationTest`, `SecurityMatrixTest`, `StaffParityMatrixTest`).
+6. **Deterministic, transparent anti-cheat scoring** — one config file, dedup windows, frozen
+   per-attempt gates, server-derived aggregates, immutable review trail.
+7. **Competition domain discipline** — atomic finalization, disqualification preserves history
+   and re-ranks, deterministic ties, privacy-safe identities.
+8. **Honest scope control** — README explicitly declares what is *not* built (proctoring
+   hardware, AI grading, payments, transcoding) instead of faking it.
+9. **Operational basics** — nightly rotating DB backup with failure signalling, daily renewal
+   checks, `/up` health route, PWA that never caches API/attempt payloads (`NetworkOnly`).
+10. **Bilingual product surface** — EN/AR i18n with RTL handling, WhatsApp deep-link contact
+    helpers, printable credential sheets — real teacher-workflow awareness.
+
+---
+
+## 5. Weak points (ranked)
+
+1. **Multi-select questions broken** (D1) — a correctness hole in the core grading loop.
+2. **Inconsistent pass/fail semantics** (D2) — the same attempt can be "failed" and "passed"
+    on two screens.
+3. **Lesson content is write-only** (D4); essay feedback is write-only (D6) — features the data
+    model and teacher UI promise but the student side never receives.
+4. **Heartbeat-loss = auto-flagging** (D3) — unfair outcomes for flaky connections; hardcoded
+    risk values leak magic numbers back into the integrity system.
+5. **No delivery channels for notifications** (email/SMS/push) — in-app only; students who don't
+    log in never learn an exam was published.
+6. **Lazy-only lifecycle processing** — no job expires/grades attempts at the deadline, no
+    scheduler finalizes competitions or sends "window closing" reminders; everything happens on
+    someone's next request.
+7. **No soft deletes / recovery** for accounts, enrollments, or content (batch-delete exists!).
+8. **Weak account-recovery story** — no forgot-password, no email verification, no 2FA, `min:8`
+    the only password policy.
+9. **Synchronous notification fan-out** in request cycle (publish exam → N notifies).
+10. **Docs drift** between README, `docs/API.md`, and the phase reports (§2.2-7).
+11. **Analytics limited** — averages/pass rates exist; no trends over time, distribution,
+    question-level analysis (item difficulty/discrimination), or export.
+12. **Single-teacher operational assumptions** baked into flows (hardcoded academic years,
+    co-teaching as all-or-nothing), while the product README positions a platform.
+
+---
+
+## 6. Forgotten features & functions — important for this system
+
+Grouped by impact. "Missing" = not present at all; "present-but-unwired" = built on one side and
+never delivered on the other (the most embarrassing class of gap, because the schema and UIs
+already promise it).
+
+### 6.1 Present-but-unwired (fix first — cheap wins)
+
+| # | Feature | Evidence | Impact |
+|---|---|---|---|
+| 1 | **Lesson text content to students** | `content` writable (`CreateLessonRequest`, teacher form) but `LessonResource` omits it; no student lesson endpoint; `Student/Lesson.vue` never renders it | Teachers author materials students can never read |
+| 2 | **Essay feedback to students** | `feedback`/`graded_at` saved by `GradeEssayAnswerAction`, exposed only in teacher `ExamAttemptDetailResource` | Grading effort wasted; students can't learn from mistakes |
+| 3 | **Answer review after grading** | Even after `grades_published`, student resources omit per-question correctness/correct option | Students can't review which questions they got wrong |
+| 4 | **Multi-select questions** | Type in enum + teacher checkboxes; single `option_id` model/grading (D1) | Misgraded exams |
+| 5 | **Lesson title on direct lesson load** | `ProgressController::show` missing `->load('lesson')` (D5) | UI falls back to generic heading |
+| 6 | **Academic year list** | Hardcoded in `StudentRegistrationController::show` vs `AcademicYear` enum (D9) | Drift |
+| 7 | **API.md coverage** | Stops at Phase 2 while the API has ~200 endpoints | Integrators misled |
+
+### 6.2 Identity, account & security (very important)
+
+- **Self-service password reset (forgot password)** — today only a teacher/admin can reset.
+  A locked-out student has no self-recovery path at all. (Email/OTP channel required.)
+- **Email verification / valid contact channel** — `MAIL_MAILER=log`; `email_verified_at` exists
+  but is unused; no message ever leaves the box.
+- **2FA (TOTP) for admin/teacher accounts** — these accounts hold grades and PII.
+- **Password policy hardening** — length-only rule; add complexity/breach-list checks, optional
+  expiry, and "must change temporary password" enforcement on first login
+  (`must_change_password` exists in the model — verify it is actually enforced at login).
+- **Session & device management** — list/revoke active Sanctum tokens per account ("log out all
+  devices" exists implicitly on reset; no visibility UI).
+- **Login/security audit log** — who logged in, from where, failed attempts, admin actions
+  (password resets, grade publications, disqualifications) in an append-only trail. The integrity
+  review trail proves the pattern exists — it should cover the whole privileged surface.
+
+### 6.3 Assessment & content (core academic value)
+
+- **True/False question type** (and completion of multi-select) — the paper authoring tool is
+  otherwise good; missing basic types forces MCQ-only exams.
+- **Question bank** — save questions once, reuse across exams/courses; tags, difficulty levels,
+  search. (`ExamTemplate` only stores counts+marks — it is a skeleton, not a bank.)
+- **Randomized variants** — per-student question sampling from the bank; item shuffling already
+  exists, sampling does not.
+- **Question import/export** — CSV/Excel/Word/GIFT/QTI; export a paper to PDF/print
+  (offline exams are still the reality in this market).
+- **Grading toolbox** — partial credit & negative marking, per-option marks, manual score
+  override for MCQ with audit, regrade-and-republish flow, curve/adjustment.
+- **Proactive exam lifecycle job** — auto-submit saved answers when `expires_at` passes (grace
+  submit) instead of lazy expiry that discards work (D8); "time left" already server-authoritative.
+- **Exam scheduling calendar** — visible timetable of windows for students/teachers
+  (`starts_at/ends_at` exist; no calendar surface).
+- **Result exports & report cards** — class result sheets (CSV/PDF), per-student transcripts,
+  printable reports; currently only credential sheets are printable.
+- **Assignments/homework** — file upload submissions (PDF/photos), deadlines, teacher grading
+  with feedback. Very important for a real school workflow; entirely absent.
+- **Lesson file attachments** — PDFs, slides, worksheets on a lesson (only videos attach today).
+
+### 6.4 Learning experience
+
+- **Progress gating enforcement** — roadmap computes "locked" states (`BuildCourseRoadmapAction`)
+  but lesson access isn't forced in order; decide whether locks are informational or enforced.
+- **Discussion / Q&A per lesson** — student questions, teacher answers; the single biggest
+  engagement lever for an async LMS.
+- **Personal notes & bookmarks** — timestamped notes on videos/lessons.
+- **Certificates of completion** — auto-issued PDF on course completion; high motivational value,
+  trivial to generate.
+- **Student answer review & study mode** — after grades publish, walk through the paper with
+  correct answers, feedback, and explanations (`reference_answer` on essays is also never shown
+  to anyone — another unwired field worth checking).
+- **Search** — across courses, lessons, exams (catalog search is client-side on one page only).
+
+### 6.5 Communication & delivery
+
+- **Real notification delivery** — email at minimum; WhatsApp (the `PhoneNumber`/wa.me helpers
+  prove demand), and Web Push for the installed PWA (no FCM/VAPID today).
+- **Notification preferences & quiet hours**; **scheduled reminders** — "exam window opens in
+  1h / closes in 30m", "grades published", "renewal due" (partially exists),
+  "competition ending".
+- **Teacher broadcast announcements** to a course or cohort (only 1:1 `students/{id}/notify`
+  exists).
+
+### 6.6 Competition & engagement
+
+- **Team competitions**; **badges/awards**; **public shareable (privacy-safe) leaderboard links**
+  for marketing; **seasonal rankings** across competitions.
+- **Scheduled competition lifecycle job** — proactive finalization + "final results" notification
+  instead of lazy-on-read.
+
+### 6.7 Operations, admin & scale
+
+- **Bulk student import (CSV/Excel)** — `batch-delete` exists without its inverse; onboarding
+  hundreds of students by hand is the top operator pain.
+- **Data export / account deletion (GDPR-ish)** — "export my data", right-to-be-forgotten flows.
+- **Soft deletes / archive** for students, courses, exams (recoverability; today one click
+  destroys history).
+- **Audit dashboard** — admin view of staff actions, integrity outcomes, login anomalies.
+- **Metrics & error tracking** — app metrics (attempt failure rates, heartbeat timeouts,
+  queue depth), external error tracking, uptime monitoring beyond `/up`.
+- **Caching layer (Redis)** for leaderboards/analytics at cohort scale; **queue workers** for
+  notification fan-out, exports, and lifecycle jobs (already configured `QUEUE_CONNECTION=database`
+  but nothing is queued).
+- **OpenAPI spec generated from code** (replace hand-maintained API.md), Postman collection.
+- **Localization of API messages** — backend messages are English-only while the UI is AR/EN.
+- **Integrations** — Google Classroom/LTI, Zoom/Meet live sessions, webhooks.
+- **Video pipeline** (declared out of scope, but strategically important): transcoding/HLS,
+  CDN signing, adaptive bitrate — the current player points at external providers.
+
+### 6.8 Explicitly deferred by the README (keep, but plan)
+
+Webcam/mic/screen proctoring, AI cheating classification, subscriptions & payments, advanced
+analytics, AI features, video streaming/transcoding. If this product goes commercial, the
+payment/subscription layer and email infrastructure become prerequisites, not extras.
+
+---
+
+## 7. Priority recommendations
+
+**P0 — correctness (days):**
+1. Fix or remove `multiple_choice` (D1) + tighten publish validation (`count === 1` for single).
+2. Unify "passed" semantics in one domain method (D2).
+3. Expose lesson `content` and essay `feedback` to students (D4, D6); load `lesson` in
+   `ProgressController::show` (D5).
+4. Stop treating heartbeat loss as cheating: expire/freeze instead of terminate+flag; move
+   termination risk points into `config/integrity.php` with honest event types (D3).
+5. Grade against full-precision percentages (D7).
+
+**P1 — trust & fairness (1–2 weeks):** forgot-password + email delivery, auto-submit-at-deadline
+job (D8), soft deletes, staff audit log, result exports (CSV/PDF).
+
+**P2 — product completeness (1–2 months):** question bank + import/export, True/False + real
+multi-select with partial credit, assignments, lesson attachments, certificates, reminders +
+web push, bulk student import, answer review for students.
+
+**P3 — scale & platform (ongoing):** queues for fan-out, Redis caching, OpenAPI pipeline,
+metrics/error tracking, integrations, video pipeline.
+
+---
+
+*End of analysis. All defect claims (§3.2) are traceable to the cited files and were confirmed
+by direct code reading on branch `arena/01a0efd9-teacher-system`.*
