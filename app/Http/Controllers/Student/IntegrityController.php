@@ -39,8 +39,10 @@ class IntegrityController extends Controller
         return $this->success([
             'recorded' => $result['event'] !== null,
             'deduplicated' => $result['deduplicated'],
+            'counted' => (bool) $result['counted'],
             'warning_count' => $result['warning_count'],
             'warning_threshold' => $result['warning_threshold'],
+            'remaining_warnings' => max(0, $result['warning_threshold'] - $result['warning_count']),
             'terminated' => $result['terminated'],
         ], 'Integrity event recorded.', 201);
     }

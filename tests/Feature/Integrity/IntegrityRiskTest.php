@@ -108,4 +108,28 @@ class IntegrityRiskTest extends ApiTestCase
         $this->assertSame(2, $attempt->risk_score);
         $this->assertSame(1, $attempt->integrityEvents()->count());
     }
+
+    public function test_tab_switch_and_window_blur_burst_deduplicates_and_does_not_double_count_warnings(): void
+    {
+        [$student, , , , $attempt] = $this->enrolledStudentWithStartedAttempt();
+
+        $first = $this->postEvent($student, $attempt, ['event_type' => 'TAB_SWITCH']);
+        $first->assertStatus(201)
+            ->assertJsonPath('data.deduplicated', false)
+            ->assertJsonPath('data.counted', true)
+            ->assertJsonPath('data.warning_count', 1)
+            ->assertJsonPath('data.remaining_warnings', 4);
+
+        // Immediate subsequent blur (e.g. browser fires both on tab change)
+        $second = $this->postEvent($student, $attempt, ['event_type' => 'WINDOW_BLUR']);
+        $second->assertStatus(201)
+            ->assertJsonPath('data.deduplicated', true)
+            ->assertJsonPath('data.counted', false)
+            ->assertJsonPath('data.warning_count', 1)
+            ->assertJsonPath('data.remaining_warnings', 4);
+
+        $attempt->refresh();
+        $this->assertSame(1, (int) $attempt->violation_warnings);
+        $this->assertSame(1, $attempt->integrityEvents()->count());
+    }
 }

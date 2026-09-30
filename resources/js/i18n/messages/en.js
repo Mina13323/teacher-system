@@ -1240,7 +1240,7 @@ export default {
         integrityStrictBody: 'Leaving this screen, switching tabs, or minimizing the app is recorded. A first-time interruption only warns you — the exam ends only after repeated confirmed violations. A network problem never counts against you.',
         integrityMonitorBody: 'Leaving this screen, switching tabs, or minimizing the app is recorded and reviewed by your teacher.',
         integrityViolationCount: 'Recorded interruptions: {n}',
-        warningCount: 'Warning {n} of {total} — repeated interruptions may end your exam.',
+        warningCount: 'Warning {n} of {total} ({remaining} remaining) — leaving the exam screen may end your exam.',
         multiSelectHint: 'Select all that apply — you can choose more than one option.',
         connectionLostTitle: 'Connection lost — your exam is safe',
         connectionLostBody: 'Your answers are saved on this device and will sync automatically when the connection returns. Keep answering — nothing is lost.',

@@ -57,10 +57,11 @@ const {
 } = useExamIntegrity({
     getAttemptId: () => attempt.value?.id ?? null,
     getRules: () => integrityRules.value,
-    onWarning: (count, threshold) => {
+    onWarning: (count, threshold, remaining) => {
         warningCount.value = count;
         warningThreshold.value = threshold;
-        toast.error(t('examTake.warningCount', { n: count, total: threshold }));
+        const rem = typeof remaining === 'number' ? remaining : Math.max(0, threshold - count);
+        toast.error(t('examTake.warningCount', { n: count, total: threshold, remaining: rem }));
     },
     onTerminate: async () => {
         // ONLY the server ends the attempt (warning threshold exceeded).
@@ -671,7 +672,11 @@ onBeforeUnmount(() => {
                     {{ integrityRules.terminate_on_violation ? $t('examTake.integrityStrictBody') : $t('examTake.integrityMonitorBody') }}
                 </p>
                 <p v-if="warningCount" class="text-xs mt-1.5 font-semibold">
-                    ⚠️ {{ $t('examTake.warningCount', { n: warningCount, total: warningThreshold ?? integrityRules.violation_warning_threshold ?? 5 }) }}
+                    ⚠️ {{ $t('examTake.warningCount', {
+                        n: warningCount,
+                        total: warningThreshold ?? integrityRules.violation_warning_threshold ?? 5,
+                        remaining: Math.max(0, (warningThreshold ?? integrityRules.violation_warning_threshold ?? 5) - warningCount)
+                    }) }}
                 </p>
             </div>
 

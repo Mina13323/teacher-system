@@ -74,7 +74,9 @@ export function useExamIntegrity(options = {}) {
 
     /** Latest report time per event type — burst collapse only (never once-per-session). */
     const lastReportedAt = new Map();
+    let lastDepartureAt = 0;
     let blurTimer = null;
+    let pendingWarning = null;
 
     function rules() {
         return getRules() || {};
@@ -88,6 +90,14 @@ export function useExamIntegrity(options = {}) {
         if (warningThreshold.value !== null) return warningThreshold.value;
         const fromRules = rules().violation_warning_threshold;
         return typeof fromRules === 'number' ? fromRules : 5;
+    }
+
+    function flushPendingWarning() {
+        if (pendingWarning) {
+            const { count, threshold, remaining } = pendingWarning;
+            pendingWarning = null;
+            onWarning(count, threshold, remaining);
+        }
     }
 
     /**
@@ -119,8 +129,19 @@ export function useExamIntegrity(options = {}) {
             if (typeof data.warning_threshold === 'number') {
                 warningThreshold.value = data.warning_threshold;
             }
-            if (data.warning_count !== undefined && data.warning_threshold !== undefined && !data.terminated) {
-                onWarning(data.warning_count, data.warning_threshold);
+            // Only fire onWarning when the event was actually counted as a violation
+            if (data.counted && typeof data.warning_count === 'number' && data.warning_count > 0 && !data.terminated) {
+                const threshold = typeof data.warning_threshold === 'number' ? data.warning_threshold : effectiveThreshold();
+                const remaining = typeof data.remaining_warnings === 'number'
+                    ? data.remaining_warnings
+                    : Math.max(0, threshold - data.warning_count);
+
+                // If the user is currently on another tab, wait until they return to show the warning toast
+                if (document.hidden) {
+                    pendingWarning = { count: data.warning_count, threshold, remaining };
+                } else {
+                    onWarning(data.warning_count, threshold, remaining);
+                }
             }
             if (data.terminated) {
                 onTerminate('THRESHOLD_TERMINATION');
@@ -145,6 +166,13 @@ export function useExamIntegrity(options = {}) {
      */
     function record(type, metadata = {}, options = {}) {
         const nowMs = Date.now();
+
+        // Collapse TAB_SWITCH and WINDOW_BLUR firing together for the same departure.
+        if (type === 'TAB_SWITCH' || type === 'WINDOW_BLUR') {
+            if (nowMs - lastDepartureAt < BURST_MS) return;
+            lastDepartureAt = nowMs;
+        }
+
         const last = lastReportedAt.get(type) || 0;
         if (nowMs - last < BURST_MS) return;
         lastReportedAt.set(type, nowMs);
@@ -169,14 +197,24 @@ export function useExamIntegrity(options = {}) {
                 // honest source label.
                 record('TAB_SWITCH', { source: 'visibilitychange' });
             }
-        } else if (rules().detect_tab_switch) {
-            // Returning is informative for review but is not a violation.
-            report('WINDOW_FOCUS', { source: 'visibilitychange' });
+        } else {
+            // Flush any warning that arrived while tab was hidden so student sees it
+            flushPendingWarning();
+            if (rules().detect_tab_switch) {
+                // Returning is informative for review but is not a violation.
+                report('WINDOW_FOCUS', { source: 'visibilitychange' });
+            }
         }
     }
 
     function onBlur() {
         if (!rules().detect_window_blur) return;
+
+        // When document is hidden and detect_tab_switch is enabled,
+        // onVisibilityChange already records TAB_SWITCH for this exact departure.
+        if (document.hidden && rules().detect_tab_switch) {
+            return;
+        }
 
         // A blur while the page is still visible is often transient on mobile
         // (on-screen keyboard, a notification shade, a phone call banner).
@@ -196,6 +234,7 @@ export function useExamIntegrity(options = {}) {
 
     function onFocus() {
         clearTimeout(blurTimer);
+        flushPendingWarning();
         if (!document.hidden) {
             report('WINDOW_FOCUS', { source: 'window.focus' });
         }
@@ -279,6 +318,7 @@ export function useExamIntegrity(options = {}) {
         started.value = false;
 
         clearTimeout(blurTimer);
+        pendingWarning = null;
 
         document.removeEventListener('visibilitychange', onVisibilityChange);
         document.removeEventListener('copy', onCopy);

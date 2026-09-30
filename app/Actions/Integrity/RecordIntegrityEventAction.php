@@ -194,11 +194,23 @@ class RecordIntegrityEventAction
     {
         $window = $this->riskConfig->deduplicationWindowSeconds();
 
-        return ExamIntegrityEvent::query()
+        $query = ExamIntegrityEvent::query()
             ->where('attempt_id', $attempt->getKey())
-            ->where('event_type', $type->value)
-            ->where('created_at', '>=', now()->subSeconds($window))
-            ->exists();
+            ->where('created_at', '>=', now()->subSeconds($window));
+
+        // When a student leaves the tab, browsers fire visibilitychange (TAB_SWITCH)
+        // and window.blur (WINDOW_BLUR) at the same time. Treat them as the same departure
+        // event so a single departure is never recorded twice or double-counted.
+        if (in_array($type, [IntegrityEventType::TabSwitch, IntegrityEventType::WindowBlur], true)) {
+            $query->whereIn('event_type', [
+                IntegrityEventType::TabSwitch->value,
+                IntegrityEventType::WindowBlur->value,
+            ]);
+        } else {
+            $query->where('event_type', $type->value);
+        }
+
+        return $query->exists();
     }
 
     private function settingEnabled(ExamAttempt $attempt, string $key): bool
