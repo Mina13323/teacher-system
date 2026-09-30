@@ -580,6 +580,8 @@ function attemptTone(status) {
                     />
                     <div class="ms-auto flex items-center gap-2">
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
                     </div>
                 </div>

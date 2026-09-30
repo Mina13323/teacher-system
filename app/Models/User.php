@@ -129,6 +129,11 @@ class User extends Authenticatable
     /**
      * Courses created by the user (typically a teacher).
      */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(\App\Models\PushSubscription::class);
+    }
+
     public function courses(): HasMany
     {
         return $this->hasMany(Course::class, 'created_by');

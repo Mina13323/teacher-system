@@ -46,6 +46,13 @@ export const notifications = {
     markAllRead: () => api.post('/notifications/read-all'),
 };
 
+// ---- Web Push (P2) ----------------------------------------------------------
+export const push = {
+    subscriptions: () => api.get('/push-subscriptions'),
+    subscribe: (payload) => api.post('/push-subscriptions', payload),
+    unsubscribe: (id) => api.delete(`/push-subscriptions/${id}`),
+};
+
 // ---- Student --------------------------------------------------------------
 export const student = {
     // Assignments (P2)
@@ -221,8 +228,10 @@ export const teacher = {
 
     // Attempts grouped by student (P1 attempt-management UX)
     attemptsGrouped: (examId, params) => api.get(`/teacher/exams/${examId}/attempts/grouped`, params),
-    exportResults: (examId, format = 'csv') =>
-        downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${format === 'print' ? 'html' : 'csv'}`),
+    exportResults: (examId, format = 'csv') => {
+        const ext = { csv: 'csv', xlsx: 'xlsx', pdf: 'pdf', print: 'html' }[format] || 'csv';
+        return downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${ext}`);
+    },
 
     // Bulk student import (validate -> preview -> confirm -> report)
     importStudentsPreview: (csv) => api.post('/teacher/students/import/preview', { csv }),

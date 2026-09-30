@@ -1,9 +1,11 @@
 <script setup>
 import { onMounted } from 'vue';
+import { usePushNotifications } from '@/composables/usePushNotifications';
 import { formatDateTime } from '@/utils/format';
 import { storeToRefs } from 'pinia';
 import { useNotificationsStore } from '@/stores/notifications';
 import { useToast } from '@/composables/toast';
+import { useI18n } from 'vue-i18n';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -14,6 +16,7 @@ import Icon from '@/components/ui/Icon.vue';
 const store = useNotificationsStore();
 const { items, meta, loading, error } = storeToRefs(store);
 const toast = useToast();
+const { t } = useI18n();
 
 function iconFor(type) {
     if (type === 'exam_published') return 'clipboard';
@@ -59,7 +62,21 @@ async function loadPage(page) {
     await store.fetch({ page });
 }
 
-onMounted(() => store.fetch());
+const pushState = usePushNotifications();
+
+async function togglePush() {
+    const ok = pushState.subscribed.value ? await pushState.disable() : await pushState.enable();
+    if (ok) {
+        toast.success(pushState.subscribed.value ? t('notifications.pushEnabled') : t('notifications.pushDisabled'));
+    } else {
+        toast.error(t('notifications.pushUnavailable'));
+    }
+}
+
+onMounted(() => {
+    store.fetch();
+    pushState.refresh();
+});
 </script>
 
 <template>
@@ -70,6 +87,22 @@ onMounted(() => store.fetch());
                 <p class="text-sm text-ink-500">{{ $t('notifications.subtitle') }}</p>
             </div>
             <AppButton v-if="items.length" variant="outline" @click="readAll">{{ $t('notifications.markAllRead') }}</AppButton>
+        </div>
+
+        <!-- Web Push opt-in with graceful fallback to in-app notifications -->
+        <div v-if="pushState.supported.value" class="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-sm">
+            <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-ink-800">{{ $t('notifications.pushTitle') }}</p>
+                <p class="text-xs text-ink-400">{{ $t('notifications.pushHint') }}</p>
+            </div>
+            <AppButton
+                :variant="pushState.subscribed.value ? 'outline' : 'primary'"
+                size="sm"
+                :loading="pushState.busy.value"
+                @click="togglePush"
+            >
+                {{ pushState.subscribed.value ? $t('notifications.pushDisable') : $t('notifications.pushEnable') }}
+            </AppButton>
         </div>
 
         <LoadingSpinner v-if="loading" />

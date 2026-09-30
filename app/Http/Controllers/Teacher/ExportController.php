@@ -6,6 +6,9 @@ use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
+use App\Services\Export\SimplePdfWriter;
+use App\Services\Export\TrueTypeFont;
+use App\Services\Export\XlsxWriter;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -17,9 +20,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * is written to the audit trail with the row count.
  *
  * `csv` streams directly (memory-safe) and is the canonical machine format.
- * `print` renders a self-contained print-friendly HTML sheet (use the
- * browser's Print -> PDF for a PDF copy) — a deliberate no-dependency choice:
- * the project ships no PDF library and adding one is a deployment decision.
+ * `xlsx` emits a real Office Open XML workbook via the dependency-free
+ * `XlsxWriter` (pure-PHP ZIP + SpreadsheetML, full Unicode).
+ * `pdf` emits a real PDF via the dependency-free `SimplePdfWriter`, which
+ * embeds `resources/fonts/DejaVuSans.ttf` and shapes Arabic text in-process —
+ * no pdf lib, no network. `print` renders the print-friendly HTML sheet for
+ * the browser's own Print -> PDF path (kept for compatibility).
  */
 class ExportController extends Controller
 {
@@ -46,6 +52,22 @@ class ExportController extends Controller
             'format' => $format,
             'rows' => (string) $rows->count(),
         ]);
+
+        if ($format === 'xlsx') {
+            $xlsx = $this->resultsXlsx($exam, $rows);
+
+            return response($xlsx)
+                ->header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                ->header('Content-Disposition', 'attachment; filename="exam-'.$exam->id.'-results.xlsx"');
+        }
+
+        if ($format === 'pdf') {
+            $pdf = $this->resultsPdf($exam, $rows);
+
+            return response($pdf)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'attachment; filename="exam-'.$exam->id.'-results.pdf"');
+        }
 
         if ($format === 'print') {
             return response($this->printableHtml($exam, $rows))
@@ -95,6 +117,101 @@ class ExportController extends Controller
             $attempt->integrity_status?->value,
             (int) $attempt->violation_warnings,
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function columnHeaders(): array
+    {
+        return [
+            'attempt_id', 'student_id', 'student_name', 'student_code', 'email',
+            'status', 'outcome', 'score', 'percentage', 'passed',
+            'started_at', 'submitted_at', 'grades_published_at',
+            'end_reason', 'integrity_status', 'violation_warnings',
+        ];
+    }
+
+    /**
+     * @param  iterable<int, array<string|null>>  $rows
+     */
+    private function resultsXlsx(Exam $exam, $rows): string
+    {
+        $xlsx = new XlsxWriter('Results');
+        $headers = $this->columnHeaders();
+        $xlsx->addRow($headers);
+        $xlsx->setHeaderRow(1);
+        foreach ($rows as $row) {
+            $xlsx->addRow($row);
+        }
+
+        return $xlsx->output();
+    }
+
+    /**
+     * @param  iterable<int, array<string|null>>  $rows
+     */
+    private function resultsPdf(Exam $exam, $rows): string
+    {
+        $font = TrueTypeFont::load(base_path('resources/fonts/DejaVuSans.ttf'));
+        $pdf = new SimplePdfWriter($font, true);
+
+        $headers = $this->columnHeaders();
+        // Column widths (points) sized for A4 landscape; ids/dates are compact.
+        $widths = [38, 40, 112, 58, 118, 52, 62, 34, 38, 32, 76, 76, 76, 62, 56, 34];
+
+        $margin = 24.0;
+        $pageW = $pdf->width() - 2 * $margin;
+        $scale = $pageW / array_sum($widths);
+        $widths = array_map(fn ($w) => $w * $scale, $widths);
+
+        $drawHeader = function () use ($pdf, $headers, $widths, $margin, $exam) {
+            $pdf->text($margin, 28, 'Exam results — '.$exam->title, 13, '#5B3A21');
+            $pdf->text($margin, 46, 'Generated: '.now()->toDateTimeString(), 8, '#8a8a8a');
+            $x = $margin;
+            $pdf->rect($margin, 58, array_sum($widths), 18, '#EDE6DC');
+            foreach ($headers as $i => $h) {
+                $pdf->text($x + 2, 70, $this->clipCell($pdf, $h, $widths[$i], 7), 7, '#3a2a1a');
+                $x += $widths[$i];
+            }
+        };
+
+        $drawHeader();
+        $y = 88;
+        $rowH = 16;
+        $pageH = $pdf->height() - 24;
+        $alt = false;
+        foreach ($rows as $row) {
+            if ($y + $rowH > $pageH) {
+                $pdf->addPage();
+                $drawHeader();
+                $y = 88;
+            }
+            if ($alt) {
+                $pdf->rect($margin, $y - 8, array_sum($widths), $rowH, '#FAF7F2');
+            }
+            $alt = ! $alt;
+            $x = $margin;
+            foreach ($row as $i => $cell) {
+                $pdf->text($x + 2, $y + 3, $this->clipCell($pdf, (string) ($cell ?? ''), $widths[$i], 7), 7, '#222222');
+                $x += $widths[$i];
+            }
+            $y += $rowH;
+        }
+
+        return $pdf->output();
+    }
+
+    private function clipCell(SimplePdfWriter $pdf, string $text, float $width, float $size): string
+    {
+        if ($pdf->measure($text, $size) <= $width - 4) {
+            return $text;
+        }
+        while ($text !== '' && $pdf->measure($text.'…', $size) > $width - 2) {
+            $text = mb_substr($text, 0, -1, 'UTF-8');
+        }
+
+        return $text === '' ? '' : $text.'…';
     }
 
     /**

@@ -86,6 +86,59 @@ class ResultExportTest extends ApiTestCase
         $this->assertSame('1', $log->metadata['rows']);
     }
 
+    public function test_xlsx_export_is_a_real_workbook_with_rows(): void
+    {
+        [$teacher, $exam, $student, $attempt] = $this->examWithOneAttempt();
+
+        $res = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/results/export?format=xlsx")
+            ->assertStatus(200);
+
+        $this->assertStringContainsString('spreadsheetml', $res->headers->get('Content-Type'));
+        $xlsx = $res->getContent();
+        // ZIP local-file magic
+        $this->assertStringStartsWith('PK', $xlsx);
+        // XlsxWriter stores entries uncompressed, so workbook parts are visible.
+        $this->assertStringContainsString('[Content_Types].xml', $xlsx);
+        $this->assertStringContainsString('Export Student', $xlsx);
+        $this->assertStringContainsString('attempt_id', $xlsx);
+        $this->assertStringContainsString((string) $attempt->id, $xlsx);
+    }
+
+    public function test_pdf_export_is_a_real_pdf_with_embedded_font(): void
+    {
+        [$teacher, $exam] = $this->examWithOneAttempt();
+
+        $res = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/results/export?format=pdf")
+            ->assertStatus(200);
+
+        $this->assertSame('application/pdf', $res->headers->get('Content-Type'));
+        $pdf = $res->getContent();
+        $this->assertStringStartsWith('%PDF-1.4', $pdf);
+        $this->assertStringContainsString('/FontFile2', $pdf);
+        $this->assertStringContainsString('/CIDFontType2', $pdf);
+        $this->assertStringContainsString('%%EOF', $pdf);
+    }
+
+    public function test_pdf_export_handles_arabic_names(): void
+    {
+        [$teacher, $exam] = $this->examWithOneAttempt();
+
+        $arabicStudent = $this->createUserWithRole(UserRole::Student, ['name' => 'أحمد محمد']);
+        $course = $exam->course;
+        $this->actingAs($arabicStudent, 'sanctum')
+            ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->actingAs($arabicStudent, 'sanctum')
+            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+
+        $res = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/results/export?format=pdf")
+            ->assertStatus(200);
+
+        $this->assertStringStartsWith('%PDF-1.4', $res->getContent());
+    }
+
     public function test_printable_export_renders_html_sheet(): void
     {
         [$teacher, $exam] = $this->examWithOneAttempt();

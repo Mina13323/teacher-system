@@ -283,6 +283,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('notifications/{notification}/read', [NotificationController::class, 'read']);
     Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
 
+    // Web Push subscriptions (per-user; VAPID public key returned for the browser).
+    Route::get('push-subscriptions', [\App\Http\Controllers\PushSubscriptionController::class, 'index']);
+    Route::post('push-subscriptions', [\App\Http\Controllers\PushSubscriptionController::class, 'store']);
+    Route::delete('push-subscriptions/{subscription}', [\App\Http\Controllers\PushSubscriptionController::class, 'destroy']);
+
     // Submission file download (own submission or staff of the course — policy).
     Route::get('assignment-submissions/{submission}/file', [\App\Http\Controllers\Student\AssignmentController::class, 'downloadFile']);
     Route::get('lesson-attachments/{attachment}/file', [TeacherLessonAttachmentController::class, 'downloadFile']);

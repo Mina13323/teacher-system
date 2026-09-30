@@ -10,6 +10,8 @@ export default defineConfig({
             // Keep the running exam/app stable until the user explicitly
             // chooses the visible refresh action in PwaUpdateToast.
             registerType: 'prompt',
+            // Keep Web Push handlers alive across generateSW rebuilds.
+            importScripts: ['/push-sw.js'],
             includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png'],
             manifest: {
                 name: 'El Masry — Geography & History',

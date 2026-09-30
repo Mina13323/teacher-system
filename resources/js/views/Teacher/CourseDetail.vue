@@ -70,8 +70,153 @@ const units = computed(() => {
     });
 });
 
+// ---- Assignments (P2 admin): create, publish, review, grade ----
+const assignments = ref([]);
+const assignmentsBusy = ref(false);
+const assignmentModal = ref(false);
+const assignmentBusy = ref(false);
+const assignmentErrors = ref({});
+const assignmentForm = reactive({ id: null, title: '', description: '', due_at: '', points: 10, is_published: false });
+
+const submissionsModal = ref(false);
+const submissions = ref([]);
+const submissionsBusy = ref(false);
+const submissionsFor = ref(null);
+
+const gradeModal = ref(false);
+const gradeBusy = ref(false);
+const gradeTarget = ref(null);
+const gradeForm = reactive({ score: null, feedback: '' });
+
+const confirmDeleteAssignment = ref(false);
+const deleteAssignmentTarget = ref(null);
+
+async function loadAssignments() {
+    assignmentsBusy.value = true;
+    try {
+        const res = await teacher.courseAssignments(courseId);
+        assignments.value = res.items || res.data || res || [];
+    } catch {
+        assignments.value = [];
+    } finally {
+        assignmentsBusy.value = false;
+    }
+}
+
+function openAssignment(assignment = null) {
+    assignmentForm.id = assignment?.id || null;
+    assignmentForm.title = assignment?.title || '';
+    assignmentForm.description = assignment?.description || '';
+    assignmentForm.due_at = assignment?.due_at ? String(assignment.due_at).slice(0, 16) : '';
+    assignmentForm.points = assignment?.points ?? 10;
+    assignmentForm.is_published = Boolean(assignment?.is_published);
+    assignmentErrors.value = {};
+    assignmentModal.value = true;
+}
+
+async function saveAssignment() {
+    assignmentBusy.value = true;
+    assignmentErrors.value = {};
+    const payload = {
+        title: assignmentForm.title,
+        description: assignmentForm.description || null,
+        due_at: assignmentForm.due_at || null,
+        points: assignmentForm.points,
+        is_published: assignmentForm.is_published,
+    };
+    try {
+        if (assignmentForm.id) await teacher.updateAssignment(assignmentForm.id, payload);
+        else await teacher.createAssignment(courseId, payload);
+        toast.success(assignmentForm.id ? t('assignments.updated') : t('assignments.created'));
+        assignmentModal.value = false;
+        await loadAssignments();
+    } catch (e) {
+        assignmentErrors.value = fieldErrors(e);
+        toast.error(e.isValidation ? '' : e.message);
+    } finally {
+        assignmentBusy.value = false;
+    }
+}
+
+async function togglePublish(a) {
+    try {
+        if (a.is_published) await teacher.unpublishAssignment(a.id);
+        else await teacher.publishAssignment(a.id);
+        toast.success(a.is_published ? t('assignments.unpublished') : t('assignments.published'));
+        await loadAssignments();
+    } catch (e) {
+        toast.error(e.message);
+    }
+}
+
+function askDeleteAssignment(a) {
+    deleteAssignmentTarget.value = a;
+    confirmDeleteAssignment.value = true;
+}
+
+async function deleteAssignment() {
+    const a = deleteAssignmentTarget.value;
+    if (!a) return;
+    try {
+        await teacher.deleteAssignment(a.id);
+        toast.success(t('assignments.deleted'));
+        confirmDeleteAssignment.value = false;
+        await loadAssignments();
+    } catch (e) {
+        toast.error(e.message);
+    }
+}
+
+async function openSubmissions(a) {
+    submissionsFor.value = a;
+    submissionsModal.value = true;
+    submissionsBusy.value = true;
+    try {
+        const res = await teacher.assignmentSubmissions(a.id);
+        submissions.value = res.items || res.data || res || [];
+    } catch (e) {
+        toast.error(e.message);
+        submissions.value = [];
+    } finally {
+        submissionsBusy.value = false;
+    }
+}
+
+function openGrade(sub) {
+    gradeTarget.value = sub;
+    gradeForm.score = sub.score;
+    gradeForm.feedback = sub.feedback || '';
+    gradeModal.value = true;
+}
+
+async function saveGrade() {
+    const sub = gradeTarget.value;
+    if (!sub) return;
+    gradeBusy.value = true;
+    try {
+        await teacher.gradeAssignment(sub.id, { score: gradeForm.score, feedback: gradeForm.feedback || null });
+        toast.success(t('assignments.graded'));
+        gradeModal.value = false;
+        if (submissionsFor.value) await openSubmissions(submissionsFor.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        gradeBusy.value = false;
+    }
+}
+
+async function downloadSubmissionFile(sub) {
+    try {
+        const { downloadFile } = await import('@/api/client');
+        await downloadFile(`/assignment-submissions/${sub.id}/file`, sub.file?.name || 'submission');
+    } catch (e) {
+        toast.error(e.message);
+    }
+}
+
 const tabs = computed(() => [
     { key: 'content', label: t('courses.contentTab') },
+    { key: 'assignments', label: t('nav.assignments') },
     { key: 'exams', label: t('courses.examsTab') },
     { key: 'students', label: t('courses.studentsTab') },
 ]);
@@ -80,6 +225,7 @@ async function refresh() {
     await run();
     loadExams(1);
     loadStudents(1);
+    loadAssignments();
 }
 
 // ---- Unit modal ----
@@ -391,7 +537,7 @@ async function doEnroll() {
     }
 }
 
-onMounted(async () => { await run(); });
+onMounted(async () => { await run(); await loadAssignments(); });
 </script>
 
 <template>
@@ -462,6 +608,42 @@ onMounted(async () => { await run(); });
                                 </div>
                             </div>
                             <AppButton variant="outline" size="sm" @click="openLesson(unit)">{{ $t('courses.addLessonLabel') }}</AppButton>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assignments tab: the full staff loop — create, publish, review, grade -->
+            <div v-else-if="tab === 'assignments'" class="space-y-4">
+                <div class="flex justify-end"><AppButton @click="openAssignment()">{{ $t('assignments.create') }}</AppButton></div>
+                <LoadingSpinner v-if="assignmentsBusy" />
+                <EmptyState v-else-if="!assignments.length" icon="clipboard" :title="$t('assignments.emptyTeacherTitle')" :message="$t('assignments.emptyTeacherMessage')">
+                    <AppButton @click="openAssignment()">{{ $t('assignments.create') }}</AppButton>
+                </EmptyState>
+                <div v-else class="space-y-3">
+                    <div v-for="a in assignments" :key="a.id" class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+                        <div class="flex flex-wrap items-start gap-3">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-semibold text-ink-800" dir="auto">{{ a.title }}</p>
+                                <p class="mt-0.5 text-xs text-ink-400">
+                                    {{ $t('assignments.due') }}: {{ a.due_at ? formatDate(a.due_at) : '—' }}
+                                    · {{ $t('assignments.points') }}: {{ a.points }}
+                                    <template v-if="a.counts">
+                                        · {{ $t('assignments.counts', a.counts) }}
+                                    </template>
+                                </p>
+                            </div>
+                            <AppBadge :tone="a.is_published ? 'success' : 'warning'">
+                                {{ a.is_published ? $t('status.published') : $t('status.draft') }}
+                            </AppBadge>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <AppButton variant="outline" size="sm" @click="openSubmissions(a)">📥 {{ $t('assignments.submissions') }}</AppButton>
+                                <AppButton variant="outline" size="sm" @click="togglePublish(a)">
+                                    {{ a.is_published ? $t('assignments.unpublish') : $t('assignments.publish') }}
+                                </AppButton>
+                                <AppButton variant="outline" size="sm" @click="openAssignment(a)">{{ $t('common.edit') }}</AppButton>
+                                <AppButton variant="outline" size="sm" class="border-rose-300 text-rose-700 hover:bg-rose-50" @click="askDeleteAssignment(a)">{{ $t('common.delete') }}</AppButton>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -577,6 +759,86 @@ onMounted(async () => { await run(); });
         </AppModal>
 
         <!-- Enroll student modal -->
+        <!-- Assignment create/edit -->
+        <AppModal :open="assignmentModal" :title="assignmentForm.id ? $t('assignments.edit') : $t('assignments.create')" size="lg" @close="assignmentModal = false">
+            <form class="space-y-4" @submit.prevent="saveAssignment">
+                <AppInput v-model="assignmentForm.title" :label="$t('assignments.titleLabel')" required id="assignment-title" :error="assignmentErrors.title" />
+                <AppTextarea v-model="assignmentForm.description" :label="$t('assignments.descriptionLabel')" :rows="4" id="assignment-desc" :error="assignmentErrors.description" />
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <AppInput v-model="assignmentForm.due_at" type="datetime-local" :label="$t('assignments.dueAt')" id="assignment-due" :error="assignmentErrors.due_at" />
+                    <AppInput v-model.number="assignmentForm.points" type="number" min="1" :label="$t('assignments.pointsLabel')" required id="assignment-points" :error="assignmentErrors.points" />
+                </div>
+                <label class="flex items-center gap-2 text-sm text-ink-700">
+                    <input v-model="assignmentForm.is_published" type="checkbox" class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" />
+                    {{ $t('status.published') }}
+                </label>
+                <div class="flex justify-end gap-2">
+                    <AppButton variant="outline" @click="assignmentModal = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton type="submit" :loading="assignmentBusy">{{ $t('common.save') }}</AppButton>
+                </div>
+            </form>
+        </AppModal>
+
+        <!-- Submissions review -->
+        <AppModal :open="submissionsModal" :title="$t('assignments.submissionsTitle')" size="xl" @close="submissionsModal = false">
+            <LoadingSpinner v-if="submissionsBusy" />
+            <EmptyState v-else-if="!submissions.length" icon="clipboard" :title="$t('assignments.noSubmissionsTitle')" :message="$t('assignments.noSubmissionsMessage')" />
+            <div v-else class="overflow-auto rounded-lg border border-ink-100">
+                <table class="w-full text-sm">
+                    <thead class="bg-ink-50 text-ink-500">
+                        <tr>
+                            <th class="px-3 py-2 text-start">{{ $t('students.name') }}</th>
+                            <th class="px-3 py-2 text-start">{{ $t('assignments.submittedAt') }}</th>
+                            <th class="px-3 py-2 text-start">{{ $t('assignments.submissionStatus') }}</th>
+                            <th class="px-3 py-2 text-start">{{ $t('assignments.grade') }}</th>
+                            <th class="px-3 py-2 text-start">{{ $t('common.actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-ink-100">
+                        <tr v-for="sub in submissions" :key="sub.id">
+                            <td class="px-3 py-2" dir="auto">{{ sub.student?.name }}</td>
+                            <td class="px-3 py-2">{{ sub.submitted_at ? formatDate(sub.submitted_at) : '—' }}
+                                <AppBadge v-if="sub.is_late" tone="danger">{{ $t('assignments.lateBadge') }}</AppBadge>
+                            </td>
+                            <td class="px-3 py-2">{{ sub.status }}</td>
+                            <td class="px-3 py-2">{{ sub.score ?? '—' }}</td>
+                            <td class="px-3 py-2">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <AppButton v-if="sub.file" variant="ghost" size="sm" @click="downloadSubmissionFile(sub)">📎</AppButton>
+                                    <AppButton variant="outline" size="sm" @click="openGrade(sub)">📝 {{ $t('assignments.gradeAction') }}</AppButton>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </AppModal>
+
+        <!-- Grade submission -->
+        <AppModal :open="gradeModal" :title="$t('assignments.gradeTitle')" size="md" @close="gradeModal = false">
+            <form class="space-y-4" @submit.prevent="saveGrade">
+                <p class="text-sm text-ink-500">
+                    {{ $t('assignments.gradeOutOf', { max: submissionsFor?.points ?? gradeTarget?.assignment?.points ?? 0 }) }}
+                </p>
+                <AppInput v-model.number="gradeForm.score" type="number" min="0" step="0.5" :label="$t('assignments.scoreLabel')" required id="grade-score" />
+                <AppTextarea v-model="gradeForm.feedback" :label="$t('assignments.feedbackLabel')" :rows="4" id="grade-feedback" />
+                <div class="flex justify-end gap-2">
+                    <AppButton variant="outline" @click="gradeModal = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton type="submit" :loading="gradeBusy">{{ $t('assignments.publishGrade') }}</AppButton>
+                </div>
+            </form>
+        </AppModal>
+
+        <ConfirmDialog
+            :open="confirmDeleteAssignment"
+            :title="$t('assignments.deleteTitle')"
+            :message="$t('assignments.deleteMessage')"
+            confirm-text="حذف"
+            tone="danger"
+            @close="confirmDeleteAssignment = false"
+            @confirm="deleteAssignment"
+        />
+
         <AppModal :open="enrollModal" :title="$t('courses.enrollStudent')" size="md" @close="enrollModal = false">
             <form class="space-y-4" @submit.prevent="doEnroll">
                 <AppSelect

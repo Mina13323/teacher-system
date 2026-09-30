@@ -504,7 +504,9 @@ first, then drop added columns); nothing in the up path requires data deletion.
 New: `AttemptOutcomeTest` (11), `MultipleChoiceGradingTest` (13), `StudentAnswerReviewTest` (5),
 `StudentLessonContentTest` (6), `ExamHardeningRegressionTest` (4), `InterruptionFairnessTest` (10),
 `AutoSubmitAtDeadlineTest` (8), `AuditLogTest`, `SoftDeleteRecoveryTest`, `AttemptSearchGroupingTest`,
-`ResultExportTest`, `BulkStudentImportTest`, `AssignmentLifecycleTest` (8), `LessonAttachmentTest` (4),
+`ResultExportTest` (+XLSX/PDF cases), `WebPushTest` (subscription IDOR, idempotent
+subscribe, quiet-hour suppression, aes128gcm framing + VAPID header, dead-endpoint
+pruning), `BulkStudentImportTest`, `AssignmentLifecycleTest` (8), `LessonAttachmentTest` (4),
 `CertificateTest` (6), `ReminderDispatchTest` (5). Legacy suites pinned (no tests deleted;
 behaviour changes intentional and documented in the suites).
 
@@ -523,9 +525,9 @@ not run locally (registry blocked); all JS was `node --check`-clean and SFC scri
 **FIXED** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete.
 **FIXED** — P2 backend: assignments, lesson attachments, certificates, scheduled reminders, notification preferences (API + tests).
 **FIXED (UI)** — student assignments (submit/resubmit/feedback), student certificates (claim/verify), lesson attachments download, teacher grouped attempts + export + import dialog + lesson attachment upload/delete.
-**PARTIAL** — Teacher assignment administration UI (create/publish/grade screens): backend endpoints + policies + tests are complete and used by the student flow; the staff screens are not built yet (API contract documented in §"P2 assignment contract"). Attempting them superficially would have risked the P0/P1 quality bar.
-**PARTIAL** — Exports: CSV (server-scoped) + print-to-PDF HTML are provided; native PDF/XLSX libraries are not installable in this environment and were deliberately not faked.
-**DEFERRED** — Web Push: no push server/VAPID credentials exist in the environment; the reminder system delivers **in-app database notifications** with the same scheduler and preference model, so Web Push can be added later as a pure channel (documented in commit `1f98880`).
+**FIXED** — Teacher assignment administration: CourseDetail → Assignments tab with create/edit modal (title, description, due date, points, publish flag), publish/unpublish, recoverable delete (ConfirmDialog copy states submissions/grades are kept), submissions review modal (student, late badge, status, score, file download), grade modal (score + feedback). Uses the existing assignment endpoints/policies; i18n EN/AR complete.
+**FIXED** — Native exports: `format=xlsx` emits a real Office Open XML workbook via the dependency-free `XlsxWriter` (pure-PHP stored ZIP + SpreadsheetML, full Unicode — Arabic preserved); `format=pdf` emits a real `application/pdf` via the dependency-free `SimplePdfWriter`, which embeds `resources/fonts/DejaVuSans.ttf` (DejaVu license in `resources/fonts/LICENSE-DejaVu.txt`) as a CIDFontType2/Identity-H font and shapes Arabic in-process (`ArabicText`: contextual presentation forms incl. lam-alef ligatures + RTL run re-ordering). CSV and the print-HTML sheet remain for compatibility. Tests assert PDF magic + `/FontFile2` + Arabic-name generation and XLSX ZIP structure + row content.
+**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent per endpoint, IDOR-safe), PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests).
 **DEFERRED** — assignment file preview in browser (download exists); competition-group leaderboard pagination (data model ready).
 
 ### Production deployment safety
@@ -544,6 +546,11 @@ not run locally (registry blocked); all JS was `node --check`-clean and SFC scri
    legacy fields and add `outcome`/`passed` without renaming anything.
 6. **Zero-downtime order**: migrate → deploy code → ensure scheduler running. Old code
    ignores the new columns; new code handles legacy NULLs (raw percentage, expiry mode).
+7. **Web Push**: run `php artisan push:vapid-keys` and set `VAPID_PUBLIC_KEY`,
+   `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` in `.env`. Without them, push silently
+   stays off and in-app notifications continue — nothing breaks.
+8. **PDF font**: `resources/fonts/DejaVuSans.ttf` ships in the repository
+   (with its license) so PDF export needs no runtime font installation.
 
 ---
 
