@@ -9,6 +9,11 @@ import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { formatDate } from '@/utils/format';
+
+function fmtDate(iso) {
+    return formatDate(iso);
+}
 
 const { t } = useI18n();
 const { loading, error, data, run } = useAsync(async () => {
@@ -16,6 +21,8 @@ const { loading, error, data, run } = useAsync(async () => {
     return {
         ...res,
         recent_courses: toList(res.recent_courses).items,
+        flagged_attempts: toList(res.flagged_attempts).items,
+        upcoming_exams: toList(res.upcoming_exams).items,
     };
 });
 onMounted(() => run());
@@ -55,6 +62,48 @@ const shortcuts = computed(() => [
                 <StatCard :label="$t('dashboard.lessonsTeaching')" :value="data.total_lessons" icon="layers" tone="sky" :hint="`${data.total_units} ${$t('dashboard.units')}`" />
                 <StatCard :label="$t('dashboard.drafts')" :value="data.draft_count" icon="clipboard" tone="amber" />
             </div>
+
+            <div class="grid gap-5 sm:grid-cols-3">
+                <StatCard :label="$t('dashboard.activeAttempts')" :value="data.active_attempts_count" icon="clipboard" tone="sky" />
+                <StatCard :label="$t('dashboard.pendingEssayGrading')" :value="data.pending_essay_grading" icon="layers" tone="amber" />
+                <StatCard :label="$t('dashboard.assignmentsNeedingGrading')" :value="data.assignments_needing_grading" icon="check" tone="emerald" />
+            </div>
+
+            <AppCard :title="$t('dashboard.flaggedAttempts')">
+                <template v-if="data.flagged_attempts.length">
+                    <router-link
+                        v-for="a in data.flagged_attempts"
+                        :key="a.id"
+                        :to="a.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate font-medium text-ink-800" dir="auto">{{ a.student }} — {{ a.exam }}</p>
+                            <p class="text-xs text-ink-400">{{ a.end_reason }}<template v-if="a.resumed_at"> · {{ fmtDate(a.resumed_at) }}</template></p>
+                        </div>
+                        <AppBadge tone="danger">{{ $t('dashboard.flaggedOpen') }}</AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.flaggedAttemptsEmpty') }}</p>
+            </AppCard>
+
+            <AppCard :title="$t('dashboard.upcomingExams')">
+                <template v-if="data.upcoming_exams.length">
+                    <router-link
+                        v-for="e in data.upcoming_exams"
+                        :key="e.id"
+                        :to="e.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate font-medium text-ink-800" dir="auto">{{ e.title }}</p>
+                            <p class="text-xs text-ink-400">{{ $t('dashboard.startsAt', { date: fmtDate(e.starts_at) }) }}</p>
+                        </div>
+                        <AppBadge tone="info">{{ $t('dashboard.openExam') }}</AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.upcomingExamsEmpty') }}</p>
+            </AppCard>
 
             <AppCard :title="$t('dashboard.recentCourses')">
                 <template v-if="data.recent_courses.length">

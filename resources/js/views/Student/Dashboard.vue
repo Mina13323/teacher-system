@@ -8,6 +8,7 @@ import EmptyState from '@/components/ui/EmptyState.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import StatCard from '@/components/ui/StatCard.vue';
+import AppCard from '@/components/ui/AppCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
 
@@ -19,6 +20,10 @@ const { loading, error, data, run } = useAsync(async () => {
         ...res,
         recently_accessed_lessons: toList(res.recently_accessed_lessons).items,
         courses: toList(res.courses).items,
+        upcoming_exams: toList(res.upcoming_exams).items,
+        pending_results: toList(res.pending_results).items,
+        recent_grades: toList(res.recent_grades).items,
+        assignments_due: toList(res.assignments_due).items,
     };
 });
 onMounted(() => run());
@@ -138,5 +143,83 @@ function fmtDate(iso) {
                 </router-link>
             </div>
         </template>
+
+        <!-- Dashboard payloads (Phase 4/5) — additive blocks: upcoming exams,
+             results awaiting publication, recent grades, assignments due. -->
+        <div class="grid gap-5 lg:grid-cols-2">
+            <AppCard :title="$t('dashboard.upcomingExams')">
+                <template v-if="data.upcoming_exams.length">
+                    <router-link
+                        v-for="e in data.upcoming_exams"
+                        :key="e.id"
+                        :to="e.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate font-medium text-ink-800" dir="auto">{{ e.title }}</p>
+                            <p class="text-xs text-ink-400">{{ $t('dashboard.startsAt', { date: fmtDate(e.starts_at) }) }}</p>
+                        </div>
+                        <AppBadge tone="info">{{ $t('dashboard.openExam') }}</AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.upcomingExamsEmpty') }}</p>
+            </AppCard>
+
+            <AppCard :title="$t('dashboard.pendingResults')">
+                <template v-if="data.pending_results.length">
+                    <router-link
+                        v-for="a in data.pending_results"
+                        :key="a.id"
+                        :to="a.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div>
+                            <p class="font-medium text-ink-800">#{{ a.id }}</p>
+                            <p class="text-xs text-ink-400">{{ fmtDate(a.submitted_at) }}</p>
+                        </div>
+                        <AppBadge tone="warning">{{ $t('dashboard.pendingResults') }}</AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.pendingResultsEmpty') }}</p>
+            </AppCard>
+
+            <AppCard :title="$t('dashboard.recentGrades')">
+                <template v-if="data.recent_grades.length">
+                    <router-link
+                        v-for="a in data.recent_grades"
+                        :key="a.id"
+                        :to="a.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div>
+                            <p class="font-medium text-ink-800">#{{ a.id }}</p>
+                            <p class="text-xs text-ink-400">{{ fmtDate(a.published_at) }}</p>
+                        </div>
+                        <AppBadge :tone="a.outcome === 'passed' ? 'success' : 'neutral'">
+                            {{ $t('dashboard.scoreValue', { value: a.percentage + '%' }) }}
+                        </AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.recentGradesEmpty') }}</p>
+            </AppCard>
+
+            <AppCard :title="$t('dashboard.assignmentsDue')">
+                <template v-if="data.assignments_due.length">
+                    <router-link
+                        v-for="a in data.assignments_due"
+                        :key="a.id"
+                        :to="a.url"
+                        class="flex items-center justify-between rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                    >
+                        <div>
+                            <p class="font-medium text-ink-800" dir="auto">{{ a.title }}</p>
+                            <p class="text-xs text-ink-400">{{ $t('dashboard.dueOn', { date: fmtDate(a.due_at) }) }}</p>
+                        </div>
+                        <AppBadge tone="warning">{{ a.points }}★</AppBadge>
+                    </router-link>
+                </template>
+                <p v-else class="py-6 text-center text-sm text-ink-400">{{ $t('dashboard.assignmentsDueEmpty') }}</p>
+            </AppCard>
+        </div>
     </div>
 </template>

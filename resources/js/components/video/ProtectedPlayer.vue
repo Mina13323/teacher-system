@@ -203,6 +203,8 @@ onMounted(() => {
     document.addEventListener('fullscreenchange', onFullscreenChange);
     // A lightweight DevTools heuristic poll.
     devtoolsTimer = setInterval(detectDevtools, 1500);
+    // Visible-watch estimate for sandboxed embeds (exact for <video>, see above).
+    bookmarkTimer = setInterval(tickPositionEstimate, 1000);
 });
 
 let devtoolsTimer = null;
@@ -222,11 +224,60 @@ onBeforeUnmount(() => {
 
     if (wmTimer) clearInterval(wmTimer);
     if (devtoolsTimer) clearInterval(devtoolsTimer);
+    if (bookmarkTimer) clearInterval(bookmarkTimer);
+    if (bookmarkHideTimer) clearTimeout(bookmarkHideTimer);
 
     // Cleared from memory on unmount. Nothing is persisted.
     mediaRef.value = null;
     session.value = null;
 });
+
+// ---- Video-timestamp bookmarking (Phase 4 §33 UI hook) ---------------------
+const videoEl = ref(null);
+const positionSeconds = ref(0);
+const bookmarkState = ref(''); // '' | 'saving' | 'saved' | 'failed'
+let bookmarkTimer = null;
+let bookmarkHideTimer = null;
+
+// Self-hosted video reports the exact currentTime. YouTube embeds are
+// sandboxed (no Iframe API in this player), so we keep an honest visible-
+// watch estimate — the saved label shows exactly what is stored.
+function syncFromVideo() {
+    if (videoEl.value && Number.isFinite(videoEl.value.currentTime)) {
+        positionSeconds.value = Math.floor(videoEl.value.currentTime);
+    }
+}
+
+function tickPositionEstimate() {
+    if (provider.value !== 'youtube') return;
+    if (document.visibilityState === 'visible') {
+        positionSeconds.value = Math.min(positionSeconds.value + 1, 86400);
+    }
+}
+
+const positionLabel = computed(() => {
+    const s = Math.max(0, Math.floor(positionSeconds.value));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+});
+
+async function saveBookmark() {
+    if (bookmarkState.value === 'saving') return;
+    bookmarkState.value = 'saving';
+    try {
+        await student.addBookmark({
+            video_id: props.videoId,
+            position_seconds: Math.min(86400, Math.max(0, Math.floor(positionSeconds.value))),
+            label: positionLabel.value,
+        });
+        bookmarkState.value = 'saved';
+    } catch {
+        bookmarkState.value = 'failed';
+    }
+    if (bookmarkHideTimer) clearTimeout(bookmarkHideTimer);
+    bookmarkHideTimer = setTimeout(() => { bookmarkState.value = ''; }, 2500);
+}
 
 function badgeTone(eventType) {
     if (eventType === 'devtools') return 'danger';
@@ -256,14 +307,45 @@ function badgeTone(eventType) {
             />
             <video
                 v-else
+                ref="videoEl"
                 :src="storageSrc"
                 controls
+                @timeupdate="syncFromVideo"
+                @seeked="syncFromVideo"
+                @loadedmetadata="syncFromVideo"
                 class="absolute inset-0 h-full w-full select-none"
                 controlslist="nodownload noplaybackrate noremoteplayback"
                 disablePictureInPicture
                 disableRemotePlayback
                 @contextmenu.prevent
             />
+
+            <!-- Video-timestamp bookmark (Phase 4 §33): one click saves the
+                 current moment to the student's personal bookmarks. -->
+            <div class="absolute end-3 top-3 z-20 flex items-center gap-2">
+                <span
+                    v-if="bookmarkState"
+                    class="rounded-full bg-black/70 px-2.5 py-0.5 text-[11px] text-white"
+                    :class="{ 'bg-emerald-600/80': bookmarkState === 'saved', 'bg-rose-600/80': bookmarkState === 'failed' }"
+                >
+                    {{
+                        bookmarkState === 'saving'
+                            ? $t('lesson.videoBookmarkSaving')
+                            : bookmarkState === 'saved'
+                                ? $t('lesson.videoBookmarkSaved', { time: positionLabel })
+                                : $t('lesson.videoBookmarkFailed')
+                    }}
+                </span>
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-black/85 focus:outline-none focus:ring-2 focus:ring-white/60"
+                    :disabled="bookmarkState === 'saving'"
+                    @click="saveBookmark"
+                >
+                    <span aria-hidden="true">🔖</span>
+                    <span>{{ $t('lesson.videoBookmarkBtn') }} · {{ positionLabel }}</span>
+                </button>
+            </div>
 
             <!-- Privacy Shield on blur / screen-capture attempt -->
             <div
