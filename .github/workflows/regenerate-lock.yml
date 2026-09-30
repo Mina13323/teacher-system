@@ -1,0 +1,53 @@
+# One-shot utility: regenerate composer.lock against the platform pinned in
+# composer.json (config.platform.php = 8.3.33). Run manually (workflow_dispatch):
+#
+#   gh workflow run regenerate-lock.yml --ref <branch>
+#
+# The lock committed at fd55e33 was resolved on a PHP 8.4 machine and therefore
+# contains symfony/* v8.x (requires php >= 8.4.1), which the CI matrix (8.2 /
+# 8.3) and the pinned platform cannot install. This job re-resolves the tree
+# under the manifest's own platform pin, proves `composer install` + the test
+# suite work with the result, and uploads the new lock as an artifact to be
+# committed.
+name: Regenerate composer.lock
+
+on:
+  workflow_dispatch:
+
+jobs:
+  regenerate:
+    name: Re-resolve for platform 8.3.33
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP (matches config.platform.php)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, fileinfo, mbstring, pdo, pdo_sqlite, sqlite3, bcmath, intl
+          coverage: none
+
+      - name: Re-resolve dependency tree
+        run: composer update --no-interaction --no-progress
+
+      - name: Lock is in sync with composer.json
+        run: composer validate --no-check-publish --strict || composer validate --no-check-publish
+
+      - name: Fresh install from the new lock
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Test suite must pass with the new lock
+        run: php artisan test
+
+      - name: Upload regenerated lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: composer-lock
+          path: composer.lock
