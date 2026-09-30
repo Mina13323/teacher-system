@@ -53,6 +53,10 @@ jobs:
     name: Regenerate composer.lock (opt-in)
     if: contains(github.event.head_commit.message, '[regen-lock]')
     runs-on: ubuntu-latest
+    # The lock must land on the branch; artifact download is not reliable from
+    # every environment, so the job commits the file back with the repo token.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -77,19 +81,36 @@ jobs:
       - name: Fresh install from the new lock
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Commit the regenerated lock to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add composer.lock
+          if git diff --cached --quiet; then
+            echo "composer.lock unchanged"
+          else
+            git commit -m "chore(deps): regenerate composer.lock for platform PHP 8.3.33"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
       - name: Prepare environment
         run: |
           cp .env.example .env
           php artisan key:generate
 
       - name: Test suite must pass with the new lock
-        run: php artisan test
-
-      - name: Upload regenerated lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: composer-lock
-          path: composer.lock
+        run: |
+          set -o pipefail
+          php artisan test 2>&1 | tee test-output.log
+          code=${PIPESTATUS[0]}
+          {
+            echo "## php artisan test (tail)"
+            echo '```'
+            tail -n 120 test-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
 
       - name: Upload composer logs (always)
         if: always()
