@@ -70,6 +70,18 @@ jobs:
               [ "$n" -gt 45 ] && break
               echo "::error::FAILIDX $f $(tr '\n' '~' < "$f")"
             done
+            # Unique server-side exceptions behind the 500s (cluster view).
+            if [ -f storage/logs/laravel.log ]; then
+              grep -oE 'testing\.ERROR: [^{]+' storage/logs/laravel.log | sed 's/ *$//' | sort | uniq -c | sort -rn > exc.txt || true
+              split -b 3500 exc.txt excchunk_ || true
+              n=0
+              for f in excchunk_*; do
+                [ -e "$f" ] || continue
+                n=$((n+1))
+                [ "$n" -gt 40 ] && break
+                echo "::error::EXCIDX $f $(tr '\n' '~' < "$f")"
+              done
+            fi
           fi
           exit $code
 
@@ -153,6 +165,18 @@ jobs:
               [ "$n" -gt 45 ] && break
               echo "::error::FAILIDX $f $(tr '\n' '~' < "$f")"
             done
+            # Unique server-side exceptions behind the 500s (cluster view).
+            if [ -f storage/logs/laravel.log ]; then
+              grep -oE 'testing\.ERROR: [^{]+' storage/logs/laravel.log | sed 's/ *$//' | sort | uniq -c | sort -rn > exc.txt || true
+              split -b 3500 exc.txt excchunk_ || true
+              n=0
+              for f in excchunk_*; do
+                [ -e "$f" ] || continue
+                n=$((n+1))
+                [ "$n" -gt 40 ] && break
+                echo "::error::EXCIDX $f $(tr '\n' '~' < "$f")"
+              done
+            fi
           fi
           exit $code
 
