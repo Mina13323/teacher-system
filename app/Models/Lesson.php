@@ -35,6 +35,12 @@ class Lesson extends Model
         return $this->hasMany(LessonAttachment::class)->orderBy('position');
     }
 
+    /** PHASE 4 §31 — lesson Q&A threads (top-level questions + replies). */
+    public function questions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(LessonQuestion::class)->whereNull('parent_id')->orderBy('created_at');
+    }
+
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class)->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);

@@ -42,6 +42,6 @@ class IntegrityController extends Controller
             'warning_count' => $result['warning_count'],
             'warning_threshold' => $result['warning_threshold'],
             'terminated' => $result['terminated'],
-        ], 'Integrity event recorded.', 201);
+        ], 'Integrity event recorded.');
     }
 }

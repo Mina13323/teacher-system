@@ -109,7 +109,7 @@ class AttemptController extends Controller
 
         $warningCount = (int) $attempt->violation_warnings;
         $terminateOnViolation = (bool) ($attempt->integritySetting?->terminate_on_violation ?? true);
-        $thresholdReached = $warningCount > $threshold && $terminateOnViolation;
+        $thresholdReached = $warningCount >= $threshold && $terminateOnViolation;
 
         if ($attempt->status->isInProgress() && $thresholdReached) {
             $terminated = $this->terminateAttempt->execute($attempt, 'THRESHOLD_TERMINATION', [

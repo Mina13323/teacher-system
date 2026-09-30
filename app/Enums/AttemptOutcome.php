@@ -34,6 +34,31 @@ enum AttemptOutcome: string
         return $this === self::Passed || $this === self::Failed;
     }
 
+    public function isPassed(): bool
+    {
+        return $this === self::Passed;
+    }
+
+    public function isFailed(): bool
+    {
+        return $this === self::Failed;
+    }
+
+    public function isPendingReview(): bool
+    {
+        return $this === self::PendingReview;
+    }
+
+    public function isDisqualified(): bool
+    {
+        return $this === self::Disqualified;
+    }
+
+    public function isExpired(): bool
+    {
+        return $this === self::Expired;
+    }
+
     public function label(): string
     {
         return match ($this) {
