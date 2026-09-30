@@ -107,15 +107,11 @@ class Exam extends Model
     }
 
     /**
-     * Whether this exam runs on an official global-clock window.
-     *
-     * A partial window (only one of the two timestamps) is treated as NOT
-     * windowed here, but such a record cannot be created: the exam form
-     * requests reject it with a 422.
+     * Whether this exam has an official start and/or end window.
      */
     public function isWindowed(): bool
     {
-        return $this->starts_at !== null && $this->ends_at !== null;
+        return $this->starts_at !== null || $this->ends_at !== null;
     }
 
     /**
@@ -138,25 +134,51 @@ class Exam extends Model
     }
 
     /**
-     * The authoritative deadline that governs every attempt on this exam.
+     * The student's actual deadline must always be the earlier of:
+     *   started_at + duration_minutes
+     *   exam_window_end (ends_at)
      *
-     * Windowed exam:  min(starts_at + duration_minutes, ends_at)
-     * Legacy exam:    null — the caller falls back to started_at + duration_minutes
+     * In other words:
+     *   effective_deadline = min(started_at + duration, ends_at)
      *
-     * This is deliberately independent of when any individual student enters,
-     * so a late entry receives only the time that is actually left.
+     * The exam window end is a hard deadline that active attempts cannot exceed.
      */
-    public function effectiveDeadline(): ?Carbon
+    public function calculateAttemptExpiry(Carbon $startedAt): ?Carbon
     {
-        if (! $this->isWindowed()) {
-            return null;
+        $durationMinutes = (int) $this->duration_minutes;
+        $candidate = $durationMinutes > 0
+            ? $startedAt->copy()->addMinutes($durationMinutes)
+            : null;
+
+        if ($this->ends_at !== null) {
+            if ($candidate === null) {
+                return $this->ends_at->copy();
+            }
+
+            return $candidate->lessThan($this->ends_at)
+                ? $candidate
+                : $this->ends_at->copy();
         }
 
-        $globalDeadline = $this->starts_at->copy()->addMinutes($this->duration_minutes);
+        return $candidate;
+    }
 
-        return $globalDeadline->lessThan($this->ends_at)
-            ? $globalDeadline
-            : $this->ends_at->copy();
+    /**
+     * The authoritative deadline that governs an attempt or the exam window.
+     *
+     * For an attempt with a start time:
+     *   effective_deadline = min(started_at + duration_minutes, ends_at)
+     *
+     * For the exam as a whole:
+     *   ends_at (the hard cutoff of the window, or null if no end window configured)
+     */
+    public function effectiveDeadline(?Carbon $startedAt = null): ?Carbon
+    {
+        if ($startedAt !== null) {
+            return $this->calculateAttemptExpiry($startedAt);
+        }
+
+        return $this->ends_at?->copy();
     }
 
     /**

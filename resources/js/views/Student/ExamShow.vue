@@ -28,10 +28,11 @@ onMounted(() => run());
  */
 function windowState() {
     const d = data.value;
-    if (!d?.starts_at || !d?.effective_deadline) return 'none';
+    if (!d) return 'none';
     const now = Date.now();
-    if (now < new Date(d.starts_at).getTime()) return 'not_open';
-    if (now >= new Date(d.effective_deadline).getTime()) return 'closed';
+    if (d.starts_at && now < new Date(d.starts_at).getTime()) return 'not_open';
+    const deadline = d.ends_at || d.effective_deadline;
+    if (deadline && now > new Date(deadline).getTime()) return 'closed';
     return 'open';
 }
 
@@ -87,11 +88,11 @@ function statusLabel(status) {
                     <div><dt class="text-ink-400">{{ $t('exams.passMark') }}</dt><dd class="font-semibold text-ink-800">{{ data.pass_percentage }}%</dd></div>
                     <div><dt class="text-ink-400">{{ $t('exams.attempts') }}</dt><dd class="font-semibold text-ink-800">{{ data.max_attempts }}</dd></div>
                 </dl>
-                <!-- Official window, shown only when the exam is windowed -->
-                <div v-if="data.starts_at" class="mt-4 rounded-lg border border-ink-200 bg-ink-50/60 px-4 py-3 text-sm">
+                <!-- Official window, shown when starts_at or ends_at is configured -->
+                <div v-if="data.starts_at || data.ends_at || data.effective_deadline" class="mt-4 rounded-lg border border-ink-200 bg-ink-50/60 px-4 py-3 text-sm">
                     <div class="flex flex-wrap gap-x-6 gap-y-1">
-                        <span class="text-ink-500">{{ $t('exams.opensAt') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.starts_at) }}</span></span>
-                        <span class="text-ink-500">{{ $t('exams.deadline') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.effective_deadline) }}</span></span>
+                        <span v-if="data.starts_at" class="text-ink-500">{{ $t('exams.opensAt') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.starts_at) }}</span></span>
+                        <span v-if="data.ends_at || data.effective_deadline" class="text-ink-500">{{ $t('exams.deadline') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.ends_at || data.effective_deadline) }}</span></span>
                     </div>
                     <p class="mt-1 text-xs text-ink-500">{{ $t('exams.windowStudentHint') }}</p>
                 </div>

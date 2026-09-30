@@ -9,8 +9,8 @@ use Illuminate\Support\Carbon;
  * Shared validation for the optional exam window (starts_at / ends_at).
  *
  * Rules:
- *  - both or neither (partial windows are rejected as ambiguous),
- *  - starts_at strictly before ends_at,
+ *  - starts_at and ends_at are independently optional.
+ *  - when both are present, starts_at must be strictly before ends_at.
  *  - both must be parseable dates (the `date` rule reports malformed input
  *    first, so we never parse an already-invalid value here).
  *
@@ -35,15 +35,6 @@ final class ExamWindowRules
 
         $hasStarts = filled($starts);
         $hasEnds = filled($ends);
-
-        if ($hasStarts !== $hasEnds) {
-            $validator->errors()->add(
-                'starts_at',
-                'An exam window requires both a start and an end time, or neither.'
-            );
-
-            return;
-        }
 
         if (! $hasStarts || ! $hasEnds) {
             return;

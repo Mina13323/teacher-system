@@ -183,7 +183,15 @@ class ExamAttempt extends Model
      */
     public function isExpired(): bool
     {
-        return $this->expires_at !== null && $this->expires_at->isPast();
+        if ($this->expires_at !== null && $this->expires_at->isPast()) {
+            return true;
+        }
+
+        if ($this->exam?->ends_at !== null && $this->exam->ends_at->isPast()) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

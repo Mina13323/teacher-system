@@ -24,9 +24,9 @@ class AttemptController extends Controller
 
         if ($attempt->status?->isInProgress()) {
             $exam = $attempt->exam;
-            if ($attempt->expires_at === null && $attempt->started_at !== null && $exam && (int) $exam->duration_minutes > 0) {
-                $computedExpiry = $attempt->started_at->copy()->addMinutes((int) $exam->duration_minutes);
-                if ($computedExpiry->isPast()) {
+            if ($attempt->expires_at === null && $attempt->started_at !== null && $exam) {
+                $computedExpiry = $exam->calculateAttemptExpiry($attempt->started_at);
+                if ($computedExpiry && $computedExpiry->isPast()) {
                     $attempt->expires_at = $computedExpiry;
                     $attempt->save();
                 }

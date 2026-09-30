@@ -35,6 +35,8 @@ class StudentExamDetailResource extends JsonResource
             // stays the sole authority: it re-checks the window on start and
             // rejects saves/submits on an expired attempt.
             'starts_at' => $this->starts_at?->toISOString(),
+            'ends_at' => $this->ends_at?->toISOString(),
+            'is_windowed' => $this->isWindowed(),
             'effective_deadline' => $this->effectiveDeadline()?->toISOString(),
             'questions_count' => $this->whenCounted('questions'),
             'my_attempts' => $this->whenLoaded('attempts', function () {

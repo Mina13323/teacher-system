@@ -83,24 +83,26 @@ class ExamWindowTest extends ApiTestCase
     }
 
     // ---------------------------------------------------------------------
-    // Windowed exam, ends_at far in the future => deadline = starts_at + 30.
+    // Windowed exam: entry receives MIN(started_at + duration, ends_at).
     // ---------------------------------------------------------------------
 
     /**
-     * @return array<string, array{0: string, 1: int}>  [entry offset, expected minutes left]
+     * @return array<string, array{0: string, 1: int, 2: string}> [entry offset, expected minutes left, expected expiry offset]
      */
     public static function lateEntryProvider(): array
     {
         return [
-            'entry at open' => ['0', 30],
-            'entry at 10:10' => ['10', 20],
-            'entry at 10:15' => ['15', 15],
-            'entry at 10:29' => ['29', 1],
+            'entry at open (10:00)' => ['0', 30, '30'],
+            'entry at 10:10' => ['10', 30, '40'],
+            'entry at 10:15' => ['15', 30, '45'],
+            'entry at 13:45 (15m before window close)' => ['225', 15, '240'],
+            'entry at 13:59 (1m before window close)' => ['239', 1, '240'],
+            'entry at 14:00 (exact window close)' => ['240', 0, '240'],
         ];
     }
 
     #[DataProvider('lateEntryProvider')]
-    public function test_windowed_entry_receives_only_the_time_left(string $offset, int $minutesLeft): void
+    public function test_windowed_entry_receives_min_of_duration_and_window_end(string $offset, int $minutesLeft, string $expiryOffset): void
     {
         [$student, $exam] = $this->enrolledStudent([
             'starts_at' => self::OPENS,
@@ -117,8 +119,8 @@ class ExamWindowTest extends ApiTestCase
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
 
         $this->assertTrue(
-            $attempt->expires_at->equalTo($this->at('30')),
-            'A windowed attempt must expire at the global deadline, not at entry + duration.'
+            $attempt->expires_at->equalTo($this->at($expiryOffset)),
+            "Attempt started at +{$offset}m must expire at +{$expiryOffset}m."
         );
         $this->assertSame(
             $minutesLeft,
@@ -127,30 +129,14 @@ class ExamWindowTest extends ApiTestCase
         );
     }
 
-    public function test_windowed_entry_exactly_at_deadline_is_rejected(): void
+    public function test_windowed_entry_after_window_end_is_rejected(): void
     {
         [$student, $exam] = $this->enrolledStudent([
             'starts_at' => self::OPENS,
             'ends_at' => '2026-10-10 14:00:00',
         ]);
 
-        $this->travelTo($this->at('30'));
-
-        $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
-            ->assertStatus(422);
-
-        $this->assertDatabaseCount('exam_attempts', 0);
-    }
-
-    public function test_windowed_entry_after_deadline_is_rejected(): void
-    {
-        [$student, $exam] = $this->enrolledStudent([
-            'starts_at' => self::OPENS,
-            'ends_at' => '2026-10-10 14:00:00',
-        ]);
-
-        $this->travelTo($this->at('31'));
+        $this->travelTo($this->at('241')); // 14:01
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/exams/{$exam->id}/start")
@@ -173,6 +159,72 @@ class ExamWindowTest extends ApiTestCase
             ->assertStatus(422);
 
         $this->assertDatabaseCount('exam_attempts', 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Midnight-crossing window example (10:00 PM -> 02:00 AM, 180 min duration)
+    // ---------------------------------------------------------------------
+
+    public function test_midnight_crossing_window_and_effective_deadlines(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $exam = $this->makePublishedExam($teacher, $course, [
+            'duration_minutes' => 180,
+            'starts_at' => '2026-10-10 22:00:00',
+            'ends_at' => '2026-10-11 02:00:00',
+        ]);
+
+        // Student 1 enters at 10:00 PM -> gets full 180 min -> expires 01:00 AM
+        $student1 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student1, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-10 22:00:00', 'UTC'));
+        $this->actingAs($student1, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attempt1 = ExamAttempt::where('student_id', $student1->id)->sole();
+        $this->assertSame('2026-10-11T01:00:00.000000Z', $attempt1->expires_at->toISOString());
+        $this->assertSame(180, (int) $attempt1->started_at->diffInMinutes($attempt1->expires_at));
+
+        // Student 2 enters at 11:00 PM -> 11:00 PM + 180m = 02:00 AM -> expires 02:00 AM
+        $student2 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student2, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-10 23:00:00', 'UTC'));
+        $this->actingAs($student2, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attempt2 = ExamAttempt::where('student_id', $student2->id)->sole();
+        $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt2->expires_at->toISOString());
+        $this->assertSame(180, (int) $attempt2->started_at->diffInMinutes($attempt2->expires_at));
+
+        // Student 3 enters at 12:00 AM -> 12:00 AM + 180m = 03:00 AM, capped at 02:00 AM -> 120 min left!
+        $student3 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student3, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-11 00:00:00', 'UTC'));
+        $this->actingAs($student3, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attempt3 = ExamAttempt::where('student_id', $student3->id)->sole();
+        $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt3->expires_at->toISOString());
+        $this->assertSame(120, (int) $attempt3->started_at->diffInMinutes($attempt3->expires_at));
+
+        // Student 4 enters at 01:00 AM -> capped at 02:00 AM -> 60 min left!
+        $student4 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student4, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-11 01:00:00', 'UTC'));
+        $this->actingAs($student4, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attempt4 = ExamAttempt::where('student_id', $student4->id)->sole();
+        $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt4->expires_at->toISOString());
+        $this->assertSame(60, (int) $attempt4->started_at->diffInMinutes($attempt4->expires_at));
+
+        // Student 5 enters at 02:00 AM -> allowed, 0 min left!
+        $student5 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-11 02:00:00', 'UTC'));
+        $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $attempt5 = ExamAttempt::where('student_id', $student5->id)->sole();
+        $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt5->expires_at->toISOString());
+        $this->assertSame(0, (int) $attempt5->started_at->diffInMinutes($attempt5->expires_at));
+
+        // Student 6 tries to enter at 02:01 AM -> rejected with 422!
+        $student6 = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($student6, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
+        $this->travelTo(Carbon::parse('2026-10-11 02:01:00', 'UTC'));
+        $this->actingAs($student6, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(422);
     }
 
     // ---------------------------------------------------------------------
@@ -217,14 +269,14 @@ class ExamWindowTest extends ApiTestCase
         $this->assertSame(1, (int) $attempt->started_at->diffInMinutes($attempt->expires_at));
     }
 
-    public function test_entry_at_a_tight_ends_at_is_rejected(): void
+    public function test_entry_after_a_tight_ends_at_is_rejected(): void
     {
         [$student, $exam] = $this->enrolledStudent([
             'starts_at' => self::OPENS,
             'ends_at' => '2026-10-10 10:20:00',
         ]);
 
-        $this->travelTo($this->at('20'));
+        $this->travelTo($this->at('21'));
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/exams/{$exam->id}/start")
@@ -301,21 +353,23 @@ class ExamWindowTest extends ApiTestCase
     // Window validation.
     // ---------------------------------------------------------------------
 
-    public function test_partial_window_is_rejected_on_create(): void
+    public function test_single_timestamp_window_is_supported_on_create(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
 
-        $this->actingAs($teacher, 'sanctum')
+        $res = $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/courses/{$course->id}/exams", [
-                'title' => 'Windowed exam',
+                'title' => 'Start-only windowed exam',
                 'duration_minutes' => 30,
                 'starts_at' => self::OPENS,
             ])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['starts_at']);
+            ->assertStatus(201);
 
-        $this->assertDatabaseCount('exams', 0);
+        $exam = Exam::where('id', $res->json('data.id'))->sole();
+        $this->assertNotNull($exam->starts_at);
+        $this->assertNull($exam->ends_at);
+        $this->assertTrue($exam->isWindowed());
     }
 
     public function test_inverted_window_is_rejected_on_create(): void
@@ -352,7 +406,7 @@ class ExamWindowTest extends ApiTestCase
             ->assertJsonValidationErrors(['ends_at']);
     }
 
-    public function test_partial_update_cannot_leave_half_a_window(): void
+    public function test_partial_update_can_set_single_boundary(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
         $course = $this->createCourse($teacher, ['status' => 'published']);
@@ -360,10 +414,12 @@ class ExamWindowTest extends ApiTestCase
 
         $this->actingAs($teacher, 'sanctum')
             ->putJson("/api/v1/teacher/exams/{$exam->id}", ['ends_at' => '2026-10-10 14:00:00'])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['starts_at']);
+            ->assertStatus(200);
 
-        $this->assertNull($exam->fresh()->ends_at);
+        $this->assertSame(
+            Carbon::parse('2026-10-10 14:00:00', 'UTC')->toISOString(),
+            $exam->fresh()->ends_at?->toISOString()
+        );
     }
 
     public function test_a_complete_window_can_be_set_and_cleared(): void
@@ -417,7 +473,7 @@ class ExamWindowTest extends ApiTestCase
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
 
         $this->assertTrue($attempt->started_at->equalTo($this->at('10')));
-        $this->assertTrue($attempt->expires_at->equalTo($this->at('30')));
+        $this->assertTrue($attempt->expires_at->equalTo($this->at('40')));
     }
 
     // ---------------------------------------------------------------------
@@ -440,7 +496,7 @@ class ExamWindowTest extends ApiTestCase
             ->assertJsonPath('data.starts_at', $this->at('0')->toISOString())
             ->assertJsonPath('data.ends_at', Carbon::parse('2026-10-10 14:00:00', 'UTC')->toISOString())
             ->assertJsonPath('data.is_windowed', true)
-            ->assertJsonPath('data.effective_deadline', $this->at('30')->toISOString());
+            ->assertJsonPath('data.effective_deadline', Carbon::parse('2026-10-10 14:00:00', 'UTC')->toISOString());
     }
 
     public function test_student_resource_exposes_only_what_the_timer_needs(): void
@@ -454,9 +510,8 @@ class ExamWindowTest extends ApiTestCase
             ->getJson("/api/v1/student/exams/{$exam->id}")
             ->assertStatus(200)
             ->assertJsonPath('data.starts_at', $this->at('0')->toISOString())
-            ->assertJsonPath('data.effective_deadline', $this->at('30')->toISOString());
-
-        $this->assertArrayNotHasKey('ends_at', $response->json('data'));
+            ->assertJsonPath('data.ends_at', Carbon::parse('2026-10-10 14:00:00', 'UTC')->toISOString())
+            ->assertJsonPath('data.effective_deadline', Carbon::parse('2026-10-10 14:00:00', 'UTC')->toISOString());
     }
 
     // ---------------------------------------------------------------------

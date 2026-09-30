@@ -66,13 +66,9 @@ const expiryModeOptions = computed(() => [
 ]);
 
 const effectiveDeadline = computed(() => {
-    const starts = toIso(form.starts_at);
     const ends = toIso(form.ends_at);
-    if (!starts || !ends) return null;
-    const globalDeadline = new Date(new Date(starts).getTime() + Number(form.duration_minutes || 0) * 60000);
-    const cap = new Date(ends);
-    const deadline = globalDeadline < cap ? globalDeadline : cap;
-    return deadline;
+    if (!ends) return null;
+    return new Date(ends);
 });
 
 onMounted(async () => {

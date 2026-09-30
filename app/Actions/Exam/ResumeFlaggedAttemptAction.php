@@ -68,10 +68,18 @@ class ResumeFlaggedAttemptAction
             $timeRestored = 0;
             if ($previousExpiresAt !== null && $previousExpiresAt->isFuture()) {
                 // Deadline untouched — the student simply keeps the remainder.
+                if ($locked->exam?->ends_at !== null && $previousExpiresAt->greaterThan($locked->exam->ends_at)) {
+                    $locked->expires_at = $locked->exam->ends_at->copy();
+                }
             } elseif ($previousExpiresAt !== null) {
                 $remaining = (int) max(0, $previousExpiresAt->getTimestamp() - $terminatedAt->getTimestamp());
                 $timeRestored = $remaining;
-                $locked->expires_at = now()->addSeconds($remaining);
+                $newExpiresAt = now()->addSeconds($remaining);
+                if ($locked->exam?->ends_at !== null && $newExpiresAt->greaterThan($locked->exam->ends_at)) {
+                    $newExpiresAt = $locked->exam->ends_at->copy();
+                    $timeRestored = (int) max(0, $newExpiresAt->getTimestamp() - now()->getTimestamp());
+                }
+                $locked->expires_at = $newExpiresAt;
             }
 
             $locked->previous_end_reason = $locked->end_reason;

@@ -109,13 +109,10 @@ class StartExamAttemptAction
 
                 $startedAt = now();
 
-                // CORE INVARIANT: a windowed exam expires at its authoritative
-                // global deadline, never at (entry time + duration). A student
-                // entering late therefore receives only the time still left,
-                // and cannot gain extra time by delaying their entry.
-                $expiresAt = $exam->isWindowed()
-                    ? $exam->effectiveDeadline()
-                    : $startedAt->copy()->addMinutes($exam->duration_minutes);
+                // CORE INVARIANT:
+                // Student deadline = MIN(attempt_started_at + duration, exam_window_end)
+                // The exam window end is a hard deadline that active attempts cannot exceed.
+                $expiresAt = $exam->calculateAttemptExpiry($startedAt);
 
                 $attempt = ExamAttempt::create([
                     'exam_id' => $examId,
@@ -160,30 +157,21 @@ class StartExamAttemptAction
     /**
      * Enforce the official exam window against server time.
      *
-     * Legacy exams without a window are unaffected. For windowed exams:
-     *  - before starts_at            -> ExamWindowNotOpenException
-     *  - at/after the effective
-     *    deadline min(starts_at +
-     *    duration_minutes, ends_at)  -> ExamWindowClosedException
+     *  - If starts_at is configured: now < starts_at -> ExamWindowNotOpenException
+     *  - If ends_at is configured: now > ends_at     -> ExamWindowClosedException
      *
      * No value from the request is consulted, so a manipulated browser clock
      * cannot open or extend the window.
      */
     private function assertWindowAllowsStart(Exam $exam): void
     {
-        if (! $exam->isWindowed()) {
-            return;
-        }
-
         $now = now();
 
-        if ($now->lessThan($exam->starts_at)) {
+        if ($exam->starts_at !== null && $now->lessThan($exam->starts_at)) {
             throw new ExamWindowNotOpenException();
         }
 
-        $deadline = $exam->effectiveDeadline();
-
-        if ($deadline !== null && $now->greaterThanOrEqualTo($deadline)) {
+        if ($exam->ends_at !== null && $now->greaterThan($exam->ends_at)) {
             throw new ExamWindowClosedException();
         }
     }
