@@ -30,6 +30,11 @@ class Lesson extends Model
         ];
     }
 
+    public function attachments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(LessonAttachment::class)->orderBy('position');
+    }
+
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class)->withTrashed();

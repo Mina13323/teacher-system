@@ -16,6 +16,12 @@ Artisan::command('inspire', function () {
     ->everyMinute()
     ->withoutOverlapping(5);
 
+// Scheduled reminders (exam open/close, assignment due, competition ending):
+// hourly; idempotent per recipient via dedupe keys; quiet hours retry later.
+\Illuminate\Support\Facades\Schedule::command('reminders:dispatch')
+    ->hourlyAt(7)
+    ->withoutOverlapping(10);
+
 // Nightly rotating database backup. withoutOverlapping() stops a slow dump from
 // being stacked by the next run.
 \Illuminate\Support\Facades\Schedule::command('db:backup')

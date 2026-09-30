@@ -28,6 +28,8 @@ use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardControll
 use App\Http\Controllers\Teacher\ExamController as TeacherExamController;
 use App\Http\Controllers\Teacher\ExportController as TeacherExportController;
 use App\Http\Controllers\Teacher\BulkStudentImportController as TeacherBulkImportController;
+use App\Http\Controllers\Teacher\AssignmentController as TeacherAssignmentController;
+use App\Http\Controllers\Teacher\LessonAttachmentController as TeacherLessonAttachmentController;
 use App\Http\Controllers\Teacher\ExamTemplateController as TeacherExamTemplateController;
 use App\Http\Controllers\Teacher\LessonController as TeacherLessonController;
 use App\Http\Controllers\Teacher\OptionController as TeacherOptionController;
@@ -68,6 +70,11 @@ Route::prefix('auth')->group(function () {
 
 // A teacher-owned, revocable link for student self-registration. The opaque
 // token selects the teacher; no open generic registration endpoint exists.
+// Public certificate verification (minimum disclosure, rate limited).
+Route::prefix('public/certificates')->middleware('throttle:30,1')->group(function () {
+    Route::get('{code}', [\App\Http\Controllers\CertificateVerificationController::class, 'show']);
+});
+
 Route::prefix('public/student-registration/{token}')
     ->middleware('throttle:student-registration')
     ->group(function () {
@@ -117,6 +124,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('lessons/{lesson}/restore', [TeacherLessonController::class, 'restore'])->withTrashed();
     Route::patch('lessons/{lesson}/unpublish', [TeacherLessonController::class, 'unpublish']);
     Route::delete('lessons/{lesson}', [TeacherLessonController::class, 'destroy']);
+    Route::get('lessons/{lesson}/attachments', [TeacherLessonAttachmentController::class, 'index']);
+    Route::post('lessons/{lesson}/attachments', [TeacherLessonAttachmentController::class, 'store']);
+    Route::put('lesson-attachments/{attachment}', [TeacherLessonAttachmentController::class, 'update']);
+    Route::delete('lesson-attachments/{attachment}', [TeacherLessonAttachmentController::class, 'destroy']);
 
     // Videos (nested under a lesson)
     Route::get('lessons/{lesson}/videos', [TeacherVideoController::class, 'index']);
@@ -223,6 +234,17 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
 
     // Course enrollment management (teacher enrolls/manages students in courses;
     // assistants may also manage enrollments on behalf of the main teacher).
+    // ---- Assignments (P2) ----
+    Route::get('courses/{course}/assignments', [TeacherAssignmentController::class, 'index']);
+    Route::post('courses/{course}/assignments', [TeacherAssignmentController::class, 'store']);
+    Route::get('assignments/{assignment}', [TeacherAssignmentController::class, 'show']);
+    Route::put('assignments/{assignment}', [TeacherAssignmentController::class, 'update']);
+    Route::post('assignments/{assignment}/publish', [TeacherAssignmentController::class, 'publish']);
+    Route::post('assignments/{assignment}/unpublish', [TeacherAssignmentController::class, 'unpublish']);
+    Route::delete('assignments/{assignment}', [TeacherAssignmentController::class, 'destroy']);
+    Route::get('assignments/{assignment}/submissions', [TeacherAssignmentController::class, 'submissions']);
+    Route::post('assignment-submissions/{submission}/grade', [TeacherAssignmentController::class, 'grade']);
+
     Route::get('courses/{course}/students', [TeacherCourseStudentController::class, 'index']);
     Route::post('courses/{course}/students', [TeacherCourseStudentController::class, 'store']);
     Route::delete('courses/{course}/students/{student}', [TeacherCourseStudentController::class, 'destroy']);
@@ -260,6 +282,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'read']);
     Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+
+    // Submission file download (own submission or staff of the course — policy).
+    Route::get('assignment-submissions/{submission}/file', [\App\Http\Controllers\Student\AssignmentController::class, 'downloadFile']);
+    Route::get('lesson-attachments/{attachment}/file', [TeacherLessonAttachmentController::class, 'downloadFile']);
 });
 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
@@ -298,6 +324,20 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
     Route::post('attempts/{attempt}/answers', [StudentAttemptController::class, 'answer']);
     Route::post('attempts/{attempt}/submit', [StudentAttemptController::class, 'submit']);
     Route::post('attempts/{attempt}/heartbeat', [StudentAttemptController::class, 'heartbeat']);
+
+    // ---- Assignments (P2) ----
+    Route::get('assignments', [\App\Http\Controllers\Student\AssignmentController::class, 'index']);
+    Route::get('assignments/{assignment}', [\App\Http\Controllers\Student\AssignmentController::class, 'show']);
+    Route::post('assignments/{assignment}/submit', [\App\Http\Controllers\Student\AssignmentController::class, 'submit']);
+
+    // ---- Certificates (P2) ----
+    // ---- Notification preferences (P2) ----
+    Route::get('notification-preferences', [\App\Http\Controllers\Student\NotificationPreferenceController::class, 'show']);
+    Route::put('notification-preferences', [\App\Http\Controllers\Student\NotificationPreferenceController::class, 'update']);
+
+    Route::get('certificates', [\App\Http\Controllers\Student\CertificateController::class, 'index']);
+    Route::get('courses/{course}/certificate', [\App\Http\Controllers\Student\CertificateController::class, 'showForCourse']);
+    Route::post('courses/{course}/certificate', [\App\Http\Controllers\Student\CertificateController::class, 'issue']);
     Route::post('attempts/{attempt}/terminate', [StudentAttemptController::class, 'terminate']);
 
     // Integrity event recording (rate limited)

@@ -33,6 +33,7 @@ class User extends Authenticatable
         'avatar',
         'phone',
         'bio',
+        'notification_preferences',
         'student_code',
         'academic_year',
         'academic_subject',
@@ -64,6 +65,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'notification_preferences' => 'array',
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
