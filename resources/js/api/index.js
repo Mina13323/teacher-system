@@ -251,9 +251,9 @@ export const teacher = {
         return downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${ext}`);
     },
 
-    // Bulk student import (validate -> preview -> confirm -> report)
-    importStudentsPreview: (csv) => api.post('/teacher/students/import/preview', { csv }),
-    importStudentsConfirm: (csv) => api.post('/teacher/students/import/confirm', { csv }),
+    // Bulk student import (CSV or XLSX -> validate -> preview -> confirm -> report)
+    importStudentsPreview: (input) => api.post('/teacher/students/import/preview', typeof input === 'string' ? { csv: input } : input),
+    importStudentsConfirm: (input) => api.post('/teacher/students/import/confirm', typeof input === 'string' ? { csv: input } : input),
 
     // Assignments (P2)
     courseAssignments: (courseId, params) => api.get(`/teacher/courses/${courseId}/assignments`, params),

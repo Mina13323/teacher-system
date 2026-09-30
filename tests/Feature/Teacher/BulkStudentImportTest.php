@@ -5,6 +5,8 @@ namespace Tests\Feature\Teacher;
 use App\Enums\UserRole;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\Export\XlsxWriter;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Tests\Feature\ApiTestCase;
 
@@ -128,5 +130,54 @@ CSV;
         $existing->refresh();
         $this->assertSame($originalName, $existing->name);
         $this->assertSame('existing.kid@example.com', $existing->email);
+    }
+
+    public function test_xlsx_base64_preview_and_confirm_import_students_including_arabic(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+
+        $writer = new XlsxWriter('Students');
+        $writer->setHeaderRow(1);
+        $writer->addRow(['name', 'email', 'phone']);
+        $writer->addRow(['مريم حسن', 'mariam.hassan@example.com', '0155555551']);
+        $writer->addRow(['Karim Nabil', 'karim.nabil@example.com', '0155555552']);
+        $writer->addRow(['Dup Phone', 'dup.xlsx@example.com', '0155555551']);
+        $xlsxBase64 = base64_encode($writer->output());
+
+        $preview = $this->actingAs($teacher, 'sanctum')
+            ->postJson('/api/v1/teacher/students/import/preview', ['xlsx_base64' => $xlsxBase64])
+            ->assertStatus(200);
+
+        $this->assertSame(2, $preview->json('data.summary.valid'));
+        $this->assertSame(1, $preview->json('data.summary.duplicate'));
+        $this->assertSame(3, $preview->json('data.summary.total'));
+
+        $confirm = $this->actingAs($teacher, 'sanctum')
+            ->postJson('/api/v1/teacher/students/import/confirm', ['xlsx_base64' => $xlsxBase64])
+            ->assertStatus(200);
+
+        $this->assertSame(2, $confirm->json('data.report.imported'));
+        $this->assertSame(1, $confirm->json('data.report.skipped_duplicates'));
+
+        $mariam = User::where('email', 'mariam.hassan@example.com')->first();
+        $this->assertNotNull($mariam);
+        $this->assertSame('مريم حسن', $mariam->name);
+    }
+
+    public function test_xlsx_multipart_file_upload_imports_students(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+
+        $writer = new XlsxWriter('Students');
+        $writer->addRow(['name', 'email', 'phone']);
+        $writer->addRow(['Nour Uploaded', 'nour.uploaded@example.com', '0166666661']);
+        $file = UploadedFile::fake()->createWithContent('students.xlsx', $writer->output());
+
+        $res = $this->actingAs($teacher, 'sanctum')
+            ->post('/api/v1/teacher/students/import/confirm', ['file' => $file], ['Accept' => 'application/json'])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $res->json('data.report.imported'));
+        $this->assertNotNull(User::where('email', 'nour.uploaded@example.com')->first());
     }
 }

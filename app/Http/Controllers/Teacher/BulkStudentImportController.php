@@ -7,13 +7,14 @@ use App\Actions\Auth\CreateStudentAction;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Export\XlsxReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 /**
- * Bulk student import from CSV (P1): validate -> preview -> confirm -> report.
+ * Bulk student import from CSV or XLSX (P1): validate -> preview -> confirm -> report.
  *
  * Design notes:
  *  - Stateless and idempotent-ish: `preview` never writes; `confirm` re-parses
@@ -118,23 +119,26 @@ class BulkStudentImportController extends Controller
      */
     private function parseAndValidate(Request $request): array
     {
-        $data = $request->validate([
-            'csv' => ['required', 'string', 'max:512000'],
-        ]);
+        $rawRows = $this->extractRawRows($request);
 
-        $lines = preg_split('/\r\n|\r|\n/', trim($data['csv']));
-        $lines = array_values(array_filter($lines, fn ($l) => trim((string) $l) !== ''));
+        if ($rawRows === []) {
+            abort(422, 'The import payload contains no student rows.');
+        }
 
-        if (count($lines) > 1000) {
+        if (count($rawRows) > 1001) {
             abort(422, 'A single import is limited to 1000 rows.');
         }
 
         // Optional header row: only consumed when it actually looks like one —
         // a headerless file's first student must never be dropped.
-        $first = array_map('trim', str_getcsv((string) $lines[0]));
-        $hasHeader = isset($first[0]) && mb_strtolower($first[0]) === 'name';
+        $first = array_map(fn ($v) => trim((string) $v), $rawRows[0]);
+        $hasHeader = isset($first[0]) && in_array(mb_strtolower($first[0]), ['name', 'الاسم', 'student name'], true);
         if ($hasHeader) {
-            array_shift($lines);
+            array_shift($rawRows);
+        }
+
+        if (count($rawRows) > 1000) {
+            abort(422, 'A single import is limited to 1000 rows.');
         }
 
         $rows = [];
@@ -142,8 +146,8 @@ class BulkStudentImportController extends Controller
         $seenPhones = [];
         $seenCodes = [];
 
-        foreach ($lines as $i => $line) {
-            $cells = array_map('trim', str_getcsv((string) $line));
+        foreach ($rawRows as $i => $rawCells) {
+            $cells = array_map(fn ($v) => trim((string) $v), $rawCells);
             $row = [
                 'line' => $i + ($hasHeader ? 2 : 1),
                 'name' => $cells[0] ?? '',
@@ -201,6 +205,69 @@ class BulkStudentImportController extends Controller
         }
 
         return $rows;
+    }
+
+    /**
+     * Extract 2D array of string cells from CSV text, base64 XLSX, or uploaded file (.xlsx/.csv).
+     *
+     * @return list<list<string>>
+     */
+    private function extractRawRows(Request $request): array
+    {
+        if ($request->hasFile('file')) {
+            $request->validate([
+                'file' => ['required', 'file', 'max:2048'],
+            ]);
+            $file = $request->file('file');
+            $bytes = (string) file_get_contents($file->getRealPath());
+            $ext = strtolower((string) $file->getClientOriginalExtension());
+
+            if ($ext === 'xlsx' || substr($bytes, 0, 2) === 'PK') {
+                try {
+                    return XlsxReader::readRows($bytes);
+                } catch (\InvalidArgumentException $e) {
+                    abort(422, $e->getMessage());
+                }
+            }
+
+            return $this->parseCsvLines($bytes);
+        }
+
+        if ($request->filled('xlsx_base64')) {
+            $data = $request->validate([
+                'xlsx_base64' => ['required', 'string', 'max:2097152'],
+            ]);
+            $b64 = (string) preg_replace('#^data:[^;]+;base64,#i', '', trim($data['xlsx_base64']));
+            $bytes = base64_decode($b64, true);
+            if ($bytes === false || substr($bytes, 0, 2) !== 'PK') {
+                abort(422, 'Invalid XLSX file content.');
+            }
+            try {
+                return XlsxReader::readRows($bytes);
+            } catch (\InvalidArgumentException $e) {
+                abort(422, $e->getMessage());
+            }
+        }
+
+        $data = $request->validate([
+            'csv' => ['required', 'string', 'max:512000'],
+        ]);
+
+        return $this->parseCsvLines($data['csv']);
+    }
+
+    /**
+     * @return list<list<string>>
+     */
+    private function parseCsvLines(string $csv): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', trim($csv)) ?: [];
+        $lines = array_values(array_filter($lines, fn ($l) => trim((string) $l) !== ''));
+
+        return array_map(
+            fn ($line) => array_map('trim', str_getcsv((string) $line)),
+            $lines,
+        );
     }
 
     /**

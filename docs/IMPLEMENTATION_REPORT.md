@@ -280,10 +280,10 @@ recovery happens inside `in_progress` by design.
 
 **COMPLETED** — Phase 1 in full (incl. §11-14 resume/override + multi-session).
 **COMPLETED** — Phase 2: queue foundation, scheduler core, web push, soft
-deletes, audit coverage for privileged mutations, bulk import (CSV),
-exports (CSV/XLSX/PDF/print + queueing).
+deletes, audit coverage for privileged mutations, bulk import (CSV + XLSX),
+exports (CSV/XLSX/PDF/print + queueing), student & teacher dashboard UI blocks.
 **COMPLETED** — Phase 4 backend + core UI: Q&A, notes, bookmarks (lesson
-level), search, roadmap enforcement switch + tests.
+level + ProtectedPlayer video-timestamp UI hook), search, roadmap enforcement switch + tests.
 **COMPLETED** — Phase 5: metrics, observability context, performance indexes,
 safe catalog cache, OpenAPI, queue job hardening.
 **COMPLETED** — Verification gate: full test suite green (710 tests / 3314
@@ -296,16 +296,10 @@ dependency resolution ONLY). Post-migration, remove the suppressions and
 re-verify the full suite.
 
 **PARTIALLY COMPLETED**
-- Dashboard *payloads* are done; the student/teacher dashboard **UI** still
-  renders the old cards (new keys are additive and unused by the current
-  views). Backend-only for the new blocks — flagged here per the
-  no-false-completeness rule.
-- Video-timestamp bookmarking: API + storage complete; the player UI hook
-  (bookmark-at-current-second button inside ProtectedPlayer) is not wired.
 - Failed-login audit events: logins are rate-limited and successful logins are
-  audited; per-failure audit rows would let an attacker bloat the trail —
-  failures live in the rate-limiter logs instead (deliberate).
-- XLSX **import** for bulk students (CSV is supported; XLSX parsing is not).
+  audited; per-failure DB audit rows would let an unauthenticated attacker
+  bloat the audit table — failures live in the rate-limiter logs instead
+  (deliberate security trade-off).
 
 **DEFERRED**
 - Competition finalization job (the competition-ending *reminder* window

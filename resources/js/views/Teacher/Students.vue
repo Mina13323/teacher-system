@@ -29,20 +29,54 @@ const authRole = route.path.startsWith('/assistant') ? 'assistant' : 'teacher';
 // ---- Bulk student import (P1): paste CSV -> preview -> confirm -> report ----
 const importOpen = ref(false);
 const importCsv = ref('');
+const importXlsxBase64 = ref('');
+const importFileName = ref('');
 const importBusy = ref(false);
 const importPreview = ref(null); // { preview: [], summary: {} }
 const importReport = ref(null); // { report: {}, credentials: [] }
 
 function resetImport() {
     importCsv.value = '';
+    importXlsxBase64.value = '';
+    importFileName.value = '';
     importPreview.value = null;
     importReport.value = null;
+}
+
+function onImportFileChange(e) {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    importFileName.value = file.name;
+    const isXlsx = file.name.toLowerCase().endsWith('.xlsx');
+    const reader = new FileReader();
+    reader.onload = () => {
+        const result = String(reader.result || '');
+        if (isXlsx) {
+            const idx = result.indexOf(',');
+            importXlsxBase64.value = idx >= 0 ? result.slice(idx + 1) : result;
+        } else {
+            importXlsxBase64.value = '';
+            importCsv.value = result;
+        }
+    };
+    if (isXlsx) reader.readAsDataURL(file);
+    else reader.readAsText(file);
+}
+
+function clearImportFile() {
+    importXlsxBase64.value = '';
+    importFileName.value = '';
+}
+
+function buildImportPayload() {
+    if (importXlsxBase64.value) return { xlsx_base64: importXlsxBase64.value };
+    return { csv: importCsv.value };
 }
 
 async function previewImport() {
     importBusy.value = true;
     try {
-        importPreview.value = await teacher.importStudentsPreview(importCsv.value);
+        importPreview.value = await teacher.importStudentsPreview(buildImportPayload());
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -53,7 +87,7 @@ async function previewImport() {
 async function confirmImport() {
     importBusy.value = true;
     try {
-        const res = await teacher.importStudentsConfirm(importCsv.value);
+        const res = await teacher.importStudentsConfirm(buildImportPayload());
         importReport.value = res;
         importPreview.value = null;
         toast.success(t('students.importComplete'));
@@ -1040,10 +1074,22 @@ onMounted(() => load(1));
             <div class="space-y-4">
                 <template v-if="!importPreview && !importReport">
                     <p class="text-sm text-ink-500">{{ $t('students.importHint') }}</p>
-                    <AppTextarea v-model="importCsv" :rows="8" :placeholder="$t('students.importPlaceholder')" id="import-csv" />
+                    <div class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-ink-200 bg-ink-50/50 p-3">
+                        <label class="cursor-pointer rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-medium text-ink-700 shadow-sm hover:bg-ink-50">
+                            📁 {{ $t('students.importFileLabel') }}
+                            <input type="file" accept=".xlsx,.csv" class="hidden" @change="onImportFileChange" />
+                        </label>
+                        <span v-if="importFileName" class="text-xs font-medium text-emerald-700">
+                            {{ $t('students.importFileSelected', { name: importFileName }) }}
+                        </span>
+                        <button v-if="importFileName" type="button" class="text-xs text-rose-600 hover:underline" @click="clearImportFile">
+                            {{ $t('students.importFileClear') }}
+                        </button>
+                    </div>
+                    <AppTextarea v-if="!importXlsxBase64" v-model="importCsv" :rows="8" :placeholder="$t('students.importPlaceholder')" id="import-csv" />
                     <div class="flex justify-end gap-2">
                         <AppButton variant="outline" @click="closeImport">{{ $t('common.cancel') }}</AppButton>
-                        <AppButton :loading="importBusy" :disabled="!importCsv.trim()" @click="previewImport">{{ $t('students.importPreviewBtn') }}</AppButton>
+                        <AppButton :loading="importBusy" :disabled="!importCsv.trim() && !importXlsxBase64" @click="previewImport">{{ $t('students.importPreviewBtn') }}</AppButton>
                     </div>
                 </template>
 
