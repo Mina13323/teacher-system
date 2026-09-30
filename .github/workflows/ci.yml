@@ -32,6 +32,18 @@ jobs:
           extensions: dom, fileinfo, mbstring, pdo, pdo_sqlite, sqlite3, bcmath, intl
           coverage: none
 
+      - name: Lint PHP files (parse check, no dependencies needed)
+        run: |
+          fails=0
+          while IFS= read -r -d '' f; do
+            out=$(php -l "$f" 2>&1) || { echo "::error::${out}"; echo "$out"; fails=1; }
+          done < <(find app tests database bootstrap routes config -name '*.php' -print0)
+          if [ "$fails" -ne 0 ]; then
+            echo "PHP parse errors found."
+            exit 1
+          fi
+          echo "All PHP files parse cleanly."
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
@@ -41,7 +53,14 @@ jobs:
           php artisan key:generate
 
       - name: Run tests
-        run: php artisan test
+        run: |
+          set -o pipefail
+          php artisan test 2>&1 | tee test-output.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$(tail -c 3000 test-output.log | tr '\n' '~')"
+          fi
+          exit $code
 
   # Lock hygiene (opt-in): re-resolves composer.lock against the platform
   # pinned in composer.json (config.platform.php = 8.3.33). Only runs when the
@@ -110,6 +129,9 @@ jobs:
             tail -n 120 test-output.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$(tail -c 3000 test-output.log | tr '\n' '~')"
+          fi
           exit $code
 
       - name: Upload composer logs (always)
