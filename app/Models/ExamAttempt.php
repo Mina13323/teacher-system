@@ -60,6 +60,7 @@ class ExamAttempt extends Model
             'integrity_status' => IntegrityStatus::class,
             'started_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'scored_at' => 'datetime',
             'expires_at' => 'datetime',
             'last_heartbeat_at' => 'datetime',
             'grades_published_at' => 'datetime',

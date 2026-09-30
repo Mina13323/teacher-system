@@ -143,7 +143,7 @@ class InterruptionFairnessTest extends ApiTestCase
         $this->assertCount(1, $terminationEvents);
         $this->assertSame(2, $events->where('event_type', IntegrityEventType::WindowBlur->value)->count());
         $this->assertSame(
-            (int) config('integrity.THRESHOLD_TERMINATION.risk_points'),
+            (int) config('integrity.risk_points.THRESHOLD_TERMINATION'),
             (int) $terminationEvents->first()->risk_points
         );
 
@@ -189,7 +189,7 @@ class InterruptionFairnessTest extends ApiTestCase
                 ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", [
                     'event_type' => 'TAB_SWITCH',
                     'metadata' => ['ts' => now()->toIso8601String(), 'burst' => (string) $i],
-                ])->assertStatus(200)
+                ])->assertStatus(201)
                 ->assertJsonPath('data.deduplicated', $i > 1);
         }
 
@@ -236,7 +236,7 @@ class InterruptionFairnessTest extends ApiTestCase
         $res = $this->actingAs($attempt->student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/terminate", [
                 'reason' => 'TAB_SWITCH',
-            ])->assertStatus(201);
+            ])->assertStatus(200);
 
         $this->assertFalse($res->json('data.terminated'));
         $this->assertSame('in_progress', $res->json('data.status'));

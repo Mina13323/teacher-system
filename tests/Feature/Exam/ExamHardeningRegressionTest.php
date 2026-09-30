@@ -206,7 +206,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $eventTypes = $attempt->integrityEvents()->pluck('event_type')->map(fn ($v) => $v instanceof \BackedEnum ? $v->value : $v)->all();
         $this->assertSame(['THRESHOLD_TERMINATION'], $eventTypes);
         $this->assertSame(
-            (int) config('integrity.THRESHOLD_TERMINATION.risk_points'),
+            (int) config('integrity.risk_points.THRESHOLD_TERMINATION'),
             (int) $attempt->integrityEvents()->first()->risk_points
         );
 

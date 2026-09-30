@@ -90,6 +90,9 @@ class GradeExamAttemptAction
                 }
             }
 
+            // Idempotency sentinel (P0.12): the FIRST grading run stamps
+            // scored_at; repeated finalization must never rewrite it.
+            $attempt->scored_at = $attempt->scored_at ?? now();
             $attempt->save();
 
             return $attempt->fresh();

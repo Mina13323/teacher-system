@@ -240,7 +240,7 @@ class AutoSubmitAtDeadlineTest extends ApiTestCase
 
     public function test_starting_new_attempt_finalizes_stale_attempt_per_policy(): void
     {
-        [$student, $attempt] = $this->startedAttemptPastDeadline(['expiry_mode' => 'auto_submit'], [0 => true, 1 => true]);
+        [$student, $attempt] = $this->startedAttemptPastDeadline(['expiry_mode' => 'auto_submit', 'max_attempts' => 2], [0 => true, 1 => true]);
 
         // The stale in-progress attempt is past its deadline; starting a new
         // one must finalize it first instead of silently blocking or discarding.
