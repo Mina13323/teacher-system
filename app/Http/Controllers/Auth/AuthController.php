@@ -32,6 +32,12 @@ class AuthController extends Controller
 
         $token = $user->createToken($request->input('device_name', 'mobile'))->plainTextToken;
 
+        // §29 security event — actor is the authenticating user (not yet
+        // session-authenticated here, so it is passed explicitly).
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('auth.login', $user, [
+            'device' => substr((string) $request->input('device_name', 'mobile'), 0, 60),
+        ], $user);
+
         return $this->success([
             'user' => new UserResource($user->load('roles')),
             'token' => $token,
@@ -49,6 +55,8 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
+
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('auth.logout', $request->user(), [], $request->user());
 
         return $this->success(null, 'Logged out successfully.');
     }

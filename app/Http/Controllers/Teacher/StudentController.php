@@ -240,6 +240,11 @@ class StudentController extends Controller
 
         $student->load(['roles', 'latestAccessPeriod']);
 
+        // Never log credentials — identity only.
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('student.create', $student, [
+            'student_code' => (string) ($student->student?->student_code ?? ''),
+        ]);
+
         $response = [
             'success' => true,
             'message' => 'Student created.',

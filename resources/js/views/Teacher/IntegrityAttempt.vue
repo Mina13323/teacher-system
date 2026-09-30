@@ -33,6 +33,7 @@ const reviewErrors = ref({});
 const reviewBusy = ref(false);
 
 const decisionOptions = () => [
+    { value: 'RESUME', label: t('integrity.resumeAttempt') },
     { value: 'CLEARED', label: t('integrity.cleared') },
     { value: 'FLAGGED', label: t('integrity.flagged') },
 ];

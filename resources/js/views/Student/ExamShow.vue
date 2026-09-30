@@ -40,6 +40,9 @@ async function start() {
     startNotice.value = '';
     try {
         const attempt = await student.startExam(route.params.id);
+        if (attempt.already_open) {
+            toast.success(t('exams.alreadyOpen'));
+        }
         router.push(`/student/attempts/${attempt.id}`);
     } catch (e) {
         const state = windowState();

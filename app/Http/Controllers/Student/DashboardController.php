@@ -65,6 +65,62 @@ class DashboardController extends Controller
                     ->get()
             ),
             'courses' => StudentCourseResource::collection($courses),
+
+            // §36 — actionable tasks (not decoration): what to do next.
+            'upcoming_exams' => \App\Models\Exam::query()
+                ->whereIn('course_id', $courseIds)
+                ->where('status', 'published')
+                ->where(function ($q) {
+                    $q->whereBetween('starts_at', [now(), now()->addDays(7)])
+                        ->orWhere(fn ($w) => $w->whereNotNull('ends_at')->where('ends_at', '>', now())->whereNull('starts_at'));
+                })
+                ->orderBy('starts_at')
+                ->limit(5)
+                ->get(['id', 'title', 'course_id', 'starts_at', 'ends_at'])
+                ->map(fn ($e) => [
+                    'id' => $e->id, 'title' => $e->title, 'course_id' => $e->course_id,
+                    'starts_at' => $e->starts_at?->toISOString(), 'ends_at' => $e->ends_at?->toISOString(),
+                    'url' => "/student/exams/{$e->id}",
+                ]),
+            'pending_results' => \App\Models\ExamAttempt::query()
+                ->where('student_id', $userId)
+                ->whereIn('status', ['submitted', 'grading'])
+                ->whereNull('grades_published_at')
+                ->orderByDesc('submitted_at')
+                ->limit(5)
+                ->get(['id', 'exam_id', 'submitted_at', 'end_reason'])
+                ->map(fn ($a) => [
+                    'id' => $a->id, 'exam_id' => $a->exam_id,
+                    'submitted_at' => $a->submitted_at?->toISOString(), 'end_reason' => $a->end_reason,
+                    'url' => "/student/attempts/{$a->id}",
+                ]),
+            'recent_grades' => \App\Models\ExamAttempt::query()
+                ->where('student_id', $userId)
+                ->whereNotNull('grades_published_at')
+                ->orderByDesc('grades_published_at')
+                ->limit(5)
+                ->with('exam:id,pass_percentage,title')
+                ->get()
+                ->map(fn ($a) => [
+                    'id' => $a->id, 'exam_id' => $a->exam_id,
+                    'score' => $a->score, 'percentage' => $a->percentage,
+                    'outcome' => $a->outcome()->value,
+                    'published_at' => $a->grades_published_at?->toISOString(),
+                    'url' => "/student/attempts/{$a->id}",
+                ]),
+            'assignments_due' => \App\Models\Assignment::query()
+                ->whereIn('course_id', $courseIds)
+                ->where('is_published', true)
+                ->where('due_at', '>=', now()->subDays(7))
+                ->whereDoesntHave('submissions', fn ($s) => $s->where('student_id', $userId))
+                ->orderBy('due_at')
+                ->limit(5)
+                ->get(['id', 'title', 'course_id', 'due_at', 'points'])
+                ->map(fn ($a) => [
+                    'id' => $a->id, 'title' => $a->title, 'course_id' => $a->course_id,
+                    'due_at' => $a->due_at?->toISOString(), 'points' => $a->points,
+                    'url' => '/student/assignments',
+                ]),
         ], 'Dashboard retrieved.');
     }
 }

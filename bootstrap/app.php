@@ -43,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Guarantee JSON rendering for every API request.
         $middleware->api(prepend: [
+            \App\Http\Middleware\LogContextMiddleware::class,
             ForceJsonResponse::class,
         ]);
 
@@ -60,6 +61,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // §42 error tracking: every reported exception carries the request's
+        // structured context (request_id, route, role, attempt) via
+        // Log::withContext — and nothing sensitive is ever added to it.
+        $exceptions->reportable(function (\Throwable $e) {
+            // Context is already attached by LogContextMiddleware; this hook
+            // exists so future error-tracker integrations (Sentry etc.) can
+            // read the same context in one place.
+        });
+
         // Render all errors as JSON for API requests.
         $exceptions->shouldRenderJsonWhen(function (Request $request) {
             return $request->is('api/*') || $request->expectsJson();

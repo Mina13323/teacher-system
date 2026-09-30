@@ -12,4 +12,5 @@ enum IntegrityReviewDecision: string
 {
     case Cleared = 'CLEARED';
     case Flagged = 'FLAGGED';
+    case Resume = 'RESUME';
 }

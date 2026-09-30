@@ -204,6 +204,11 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::get('students', [TeacherStudentController::class, 'index']);
     Route::post('students', [TeacherStudentController::class, 'store']);
     Route::post('students/batch-delete', [TeacherStudentController::class, 'batchDestroy']);
+    // Queued export status + download (requester-only).
+    Route::get('exports/{export}', [\App\Http\Controllers\Teacher\ExportController::class, 'show']);
+    Route::get('exports/{export}/download', [\App\Http\Controllers\Teacher\ExportController::class, 'download']);
+
+    // Bulk student import
     Route::post('students/import/preview', [TeacherBulkImportController::class, 'preview']);
     Route::post('students/import/confirm', [TeacherBulkImportController::class, 'confirm']);
     Route::get('student-registration-link', [StudentRegistrationLinkController::class, 'show']);
@@ -273,6 +278,9 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::patch('students/{student}/deactivate', [AdminStudentController::class, 'deactivate']);
     Route::post('students/{student}/reset-password', [AdminStudentController::class, 'resetPassword']);
     Route::get('students/{student}/analytics', [AdminStudentController::class, 'analytics']);
+    // PHASE 5 §40-41 — operational metrics snapshot (admin only).
+    Route::get('metrics', \App\Http\Controllers\Admin\MetricsController::class);
+
     Route::get('audit-logs', [AdminAuditLogController::class, 'index']);
 });
 
@@ -282,6 +290,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'read']);
     Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+
+    // PHASE 4 §34 — role-scoped search.
+    Route::get('search', \App\Http\Controllers\SearchController::class);
+
+    // PHASE 4 §31 — lesson Q&A (policy: enrolled / course staff / moderation).
+    Route::get('lessons/{lesson}/questions', [\App\Http\Controllers\LessonQuestionController::class, 'index']);
+    Route::post('lessons/{lesson}/questions', [\App\Http\Controllers\LessonQuestionController::class, 'store']);
+    Route::post('lesson-questions/{question}/replies', [\App\Http\Controllers\LessonQuestionController::class, 'reply']);
+    Route::delete('lesson-questions/{question}', [\App\Http\Controllers\LessonQuestionController::class, 'destroy']);
 
     // Web Push subscriptions (per-user; VAPID public key returned for the browser).
     Route::get('push-subscriptions', [\App\Http\Controllers\PushSubscriptionController::class, 'index']);
@@ -337,6 +354,15 @@ Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
 
     // ---- Certificates (P2) ----
     // ---- Notification preferences (P2) ----
+    // PHASE 4 §32/§33 — private notes + personal bookmarks (owner-only).
+    Route::get('notes', [\App\Http\Controllers\Student\NoteController::class, 'index']);
+    Route::post('notes', [\App\Http\Controllers\Student\NoteController::class, 'store']);
+    Route::put('notes/{note}', [\App\Http\Controllers\Student\NoteController::class, 'update']);
+    Route::delete('notes/{note}', [\App\Http\Controllers\Student\NoteController::class, 'destroy']);
+    Route::get('bookmarks', [\App\Http\Controllers\Student\BookmarkController::class, 'index']);
+    Route::post('bookmarks', [\App\Http\Controllers\Student\BookmarkController::class, 'store']);
+    Route::delete('bookmarks/{bookmark}', [\App\Http\Controllers\Student\BookmarkController::class, 'destroy']);
+
     Route::get('notification-preferences', [\App\Http\Controllers\Student\NotificationPreferenceController::class, 'show']);
     Route::put('notification-preferences', [\App\Http\Controllers\Student\NotificationPreferenceController::class, 'update']);
 

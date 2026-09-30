@@ -8,7 +8,7 @@ use App\Models\Exam;
 use App\Models\User;
 use App\Notifications\ScheduledReminderNotification;
 use App\Services\NotificationPreferences;
-use App\Services\Push\WebPushSender;
+use App\Jobs\SendWebPushJob;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -45,11 +45,8 @@ class DispatchRemindersCommand extends Command
 
     private int $skipped = 0;
 
-    private ?WebPushSender $push = null;
-
-    public function handle(NotificationPreferences $preferences, WebPushSender $push): int
+    public function handle(NotificationPreferences $preferences): int
     {
-        $this->push = $push;
 
         $this->dispatchExamOpenings($preferences);
         $this->dispatchExamClosings($preferences);
@@ -245,16 +242,18 @@ class DispatchRemindersCommand extends Command
             url: $url,
         ));
 
-        // Web Push is a best-effort extra channel for the same reminder:
-        // identical preference gating above already applied, and the database
-        // notification remains the durable record. Disabled automatically
-        // when VAPID keys are absent (graceful fallback).
-        if ($this->push !== null && $this->push->isEnabled()) {
-            $this->push->sendToUser($user, $title, $message, $url, [
-                'kind' => $kind,
-                'dedupe_key' => $personalKey,
-            ]);
-        }
+        // Web Push is a best-effort QUEUED extra channel for the same
+        // reminder (§25): identical preference gating already applied above,
+        // the database notification remains the durable record, and the job
+        // is unique per (user, dedupe key) so retries can never double-push.
+        SendWebPushJob::dispatch(
+            $user->getKey(),
+            $title,
+            $message,
+            $url,
+            ['kind' => $kind, 'dedupe_key' => $personalKey],
+            $personalKey,
+        );
 
         $this->sent++;
     }

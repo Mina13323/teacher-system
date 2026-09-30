@@ -13,7 +13,8 @@ const nav = computed(() => [
     { label: t('nav.competitions'), to: '/teacher/competitions', icon: 'trophy' },
     { label: t('nav.analytics'), to: '/teacher/analytics', icon: 'chart' },
     { label: t('nav.integrity'), to: '/teacher/integrity', icon: 'shield' },
-    { label: t('nav.notifications'), to: '/teacher/notifications', icon: 'bell' },
+    { label: t('nav.search'), to: '/teacher/search', icon: 'compass' },
+        { label: t('nav.notifications'), to: '/teacher/notifications', icon: 'bell' },
     { label: t('nav.profile'), to: '/teacher/profile', icon: 'user' },
 ]);
 </script>

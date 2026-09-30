@@ -46,6 +46,15 @@ export const notifications = {
     markAllRead: () => api.post('/notifications/read-all'),
 };
 
+// ---- PHASE 4: lesson Q&A + role-scoped search --------------------------------
+export const learning = {
+    questions: (lessonId, params) => api.get(`/lessons/${lessonId}/questions`, params),
+    ask: (lessonId, payload) => api.post(`/lessons/${lessonId}/questions`, payload),
+    reply: (questionId, payload) => api.post(`/lesson-questions/${questionId}/replies`, payload),
+    moderate: (questionId) => api.delete(`/lesson-questions/${questionId}`),
+    search: (params) => api.get('/search', params),
+};
+
 // ---- Web Push (P2) ----------------------------------------------------------
 export const push = {
     subscriptions: () => api.get('/push-subscriptions'),
@@ -66,6 +75,15 @@ export const student = {
     issueCertificate: (courseId) => api.post(`/student/courses/${courseId}/certificate`),
     courseCertificate: (courseId) => api.get(`/student/courses/${courseId}/certificate`),
     verifyCertificate: (code) => api.get(`/public/certificates/${encodeURIComponent(code)}`),
+
+    // PHASE 4 §32/§33 — private notes + personal bookmarks
+    notes: (params) => api.get('/student/notes', params),
+    saveNote: (payload) => api.post('/student/notes', payload),
+    updateNote: (id, payload) => api.put(`/student/notes/${id}`, payload),
+    deleteNote: (id) => api.delete(`/student/notes/${id}`),
+    bookmarks: (params) => api.get('/student/bookmarks', params),
+    addBookmark: (payload) => api.post('/student/bookmarks', payload),
+    deleteBookmark: (id) => api.delete(`/student/bookmarks/${id}`),
 
     // Notification preferences (P2)
     notificationPreferences: () => api.get('/student/notification-preferences'),

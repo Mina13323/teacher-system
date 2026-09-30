@@ -87,6 +87,12 @@ class ExamAttemptResource extends JsonResource
                 fn () => $this->resource->outcome()->isPassed()
             ),
             'end_reason' => $this->end_reason,
+            'resumed_at' => $this->resumed_at?->toISOString(),
+            'resumed_by' => $this->resumed_by,
+            'resume_note' => $this->resume_note,
+            'previous_end_reason' => $this->previous_end_reason,
+            'previous_expires_at' => $this->previous_expires_at?->toISOString(),
+            'time_restored_seconds' => $this->time_restored_seconds,
             'questions' => $this->attemptQuestions->map(function ($attemptQuestion) use ($answersByQuestion) {
                 $answer = $answersByQuestion->get($attemptQuestion->question_id);
                 // Multi-select aware selection set (falls back to the legacy

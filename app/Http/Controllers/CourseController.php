@@ -16,12 +16,12 @@ class CourseController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $courses = Course::query()
-            ->published()
-            ->with('creator')
-            ->withCount(['units', 'lessons'])
-            ->latest()
-            ->paginate($this->perPage($request, 15));
+        // §44: published-catalog pages are cache-safe (60s TTL, flushed on any
+        // course save). Academic state is never cached — only public metadata.
+        $courses = app(\App\Services\CourseCatalogCache::class)->page(
+            max(1, (int) $request->query('page', 1)),
+            $this->perPage($request, 15),
+        );
 
         return $this->success(CourseResource::collection($courses), 'Courses retrieved.');
     }

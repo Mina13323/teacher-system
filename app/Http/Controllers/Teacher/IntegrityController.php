@@ -91,12 +91,21 @@ class IntegrityController extends Controller
     {
         $decision = IntegrityReviewDecision::from($request->validated('decision'));
 
-        $review = $this->reviewAttempt->execute(
-            $request->user(),
-            $attempt,
-            $decision,
-            $request->validated('note')
-        );
+        try {
+            $review = $this->reviewAttempt->execute(
+                $request->user(),
+                $attempt,
+                $decision,
+                $request->validated('note')
+            );
+        } catch (\DomainException $e) {
+            // e.g. RESUME on an attempt that is not integrity-terminated.
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'data' => null,
+            ], 422);
+        }
 
         return $this->success(
             new IntegrityReviewResource($review),

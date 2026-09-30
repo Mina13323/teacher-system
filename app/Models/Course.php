@@ -12,6 +12,13 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Course extends Model
 {
+    /** PHASE 5 §44 — invalidate the published-catalog cache on any change. */
+    protected static function booted(): void
+    {
+        static::saved(fn () => \App\Services\CourseCatalogCache::flush());
+        static::deleted(fn () => \App\Services\CourseCatalogCache::flush());
+    }
+
     /** @use HasFactory<\Database\Factories\CourseFactory> */
     use HasFactory;
 

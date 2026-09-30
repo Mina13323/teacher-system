@@ -12,6 +12,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import Icon from '@/components/ui/Icon.vue';
+import LessonExtras from '@/components/learning/LessonExtras.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -93,6 +94,9 @@ onMounted(() => run());
 
             <div v-if="!videos.length" class="space-y-6">
                 <EmptyState icon="play" :title="$t('lesson.noVideosTitle')" :message="$t('lesson.noVideosMessage')" />
+
+                <!-- PHASE 4: notes, Q&A and bookmark -->
+                <LessonExtras class="mt-6" :lesson-id="lessonId" />
 
                 <!-- Lesson attachments -->
                 <div v-if="attachments.length" class="mt-4 rounded-xl border border-ink-100 bg-white p-4 shadow-sm">

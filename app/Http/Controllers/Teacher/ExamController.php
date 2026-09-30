@@ -47,6 +47,11 @@ class ExamController extends Controller
     {
         $exam = $this->createExam->execute($course, $request->user(), $request->validated());
 
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('exam.create', $exam, [
+            'course_id' => (string) $course->getKey(),
+            'title' => (string) $exam->title,
+        ]);
+
         return $this->success(
             new ExamResource($exam->load(['course', 'creator', 'lesson'])->loadCount(['questions', 'attempts'])),
             'Exam created.',
@@ -67,6 +72,10 @@ class ExamController extends Controller
     public function update(UpdateExamRequest $request, Exam $exam): JsonResponse
     {
         $exam = $this->updateExam->execute($exam, $request->validated());
+
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('exam.update', $exam, [
+            'title' => (string) $exam->title,
+        ]);
 
         return $this->success(
             new ExamResource($exam->load(['course', 'creator', 'lesson'])->loadCount(['questions', 'attempts'])),

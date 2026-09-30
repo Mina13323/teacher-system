@@ -26,6 +26,7 @@ const nav = computed(() => {
     items.push(
         { label: t('nav.analytics'), to: '/student/analytics', icon: 'chart' },
         { label: t('nav.certificates'), to: '/student/certificates', icon: 'award' },
+        { label: t('nav.search'), to: '/student/search', icon: 'compass' },
         { label: t('nav.notifications'), to: '/student/notifications', icon: 'bell' },
         { label: t('nav.profile'), to: '/student/profile', icon: 'user' }
     );

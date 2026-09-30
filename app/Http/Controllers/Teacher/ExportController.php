@@ -6,9 +6,9 @@ use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
-use App\Services\Export\SimplePdfWriter;
-use App\Services\Export\TrueTypeFont;
-use App\Services\Export\XlsxWriter;
+use App\Jobs\GenerateResultExportJob;
+use App\Models\Export;
+use App\Services\Export\ResultExportBuilder;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -29,8 +29,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ExportController extends Controller
 {
+    /** Exports above this many rows are queued instead of streamed (§24/§25). */
+    private const SYNC_ROW_LIMIT = 500;
+
     public function __construct(
         private readonly RecordAuditLogAction $auditLog,
+        private readonly ResultExportBuilder $builder,
     ) {
     }
 
@@ -40,13 +44,32 @@ class ExportController extends Controller
 
         $format = $request->string('format', 'csv')->toString();
 
-        $rows = $exam->attempts()
-            ->with(['student'])
-            ->orderBy('student_id')
-            ->orderBy('id')
-            ->get()
-            ->map(fn ($attempt) => $this->rowFor($attempt))
-            ->values();
+        $rows = $this->builder->rows($exam);
+
+        // Large sheets are generated on the queue: the HTTP request returns
+        // immediately with an export record to poll (never a long request).
+        if ($format !== 'print' && $rows->count() > self::SYNC_ROW_LIMIT) {
+            $export = Export::create([
+                'requested_by' => $request->user()->getKey(),
+                'kind' => 'results',
+                'format' => $format,
+                'subject_type' => Exam::class,
+                'subject_id' => $exam->getKey(),
+                'status' => 'queued',
+            ]);
+
+            GenerateResultExportJob::dispatch($export->getKey());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Export queued — it will be ready shortly.',
+                'data' => [
+                    'export_id' => $export->getKey(),
+                    'status' => 'queued',
+                    'rows' => $rows->count(),
+                ],
+            ], 202);
+        }
 
         $this->auditLog->execute('results.export', $exam, [
             'format' => $format,
@@ -54,7 +77,7 @@ class ExportController extends Controller
         ]);
 
         if ($format === 'xlsx') {
-            $xlsx = $this->resultsXlsx($exam, $rows);
+            $xlsx = $this->builder->xlsx($rows);
 
             return response($xlsx)
                 ->header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -62,7 +85,7 @@ class ExportController extends Controller
         }
 
         if ($format === 'pdf') {
-            $pdf = $this->resultsPdf($exam, $rows);
+            $pdf = $this->builder->pdf($exam, $rows);
 
             return response($pdf)
                 ->header('Content-Type', 'application/pdf')
@@ -91,127 +114,37 @@ class ExportController extends Controller
         }, 'exam-'.$exam->id.'-results.csv', ['Content-Type' => 'text/csv; charset=utf-8']);
     }
 
-    /**
-     * @return list<string|null>
-     */
-    private function rowFor(\App\Models\ExamAttempt $attempt): array
+    /** Status of a queued export (only the requester may see it). */
+    public function show(Request $request, Export $export): \Illuminate\Http\JsonResponse
     {
-        $outcome = $attempt->outcome();
-        $definitive = in_array($outcome->value, ['passed', 'failed'], true);
+        abort_unless($export->requested_by === $request->user()->getKey(), 403);
 
-        return [
-            $attempt->id,
-            $attempt->student_id,
-            $attempt->student?->name,
-            $attempt->student?->student_code,
-            $attempt->student?->email,
-            $attempt->status instanceof ExamAttemptStatus ? $attempt->status->value : (string) $attempt->status,
-            $outcome->value,
-            $attempt->score,
-            $attempt->percentage,
-            $definitive ? ($outcome->value === 'passed' ? 'true' : 'false') : '',
-            $attempt->started_at?->toISOString(),
-            $attempt->submitted_at?->toISOString(),
-            $attempt->grades_published_at?->toISOString(),
-            $attempt->end_reason,
-            $attempt->integrity_status?->value,
-            (int) $attempt->violation_warnings,
-        ];
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'export_id' => $export->getKey(),
+                'status' => $export->status,
+                'format' => $export->format,
+                'rows' => $export->row_count,
+                'error' => $export->error,
+                'finished_at' => $export->finished_at?->toISOString(),
+                'download_url' => $export->status === 'done'
+                    ? "/api/v1/teacher/exports/{$export->getKey()}/download"
+                    : null,
+            ],
+        ]);
     }
 
-    /**
-     * @return list<string>
-     */
-    private function columnHeaders(): array
+    /** Stream a finished export file (private disk, requester-only). */
+    public function download(Request $request, Export $export)
     {
-        return [
-            'attempt_id', 'student_id', 'student_name', 'student_code', 'email',
-            'status', 'outcome', 'score', 'percentage', 'passed',
-            'started_at', 'submitted_at', 'grades_published_at',
-            'end_reason', 'integrity_status', 'violation_warnings',
-        ];
-    }
+        abort_unless($export->requested_by === $request->user()->getKey(), 403);
+        abort_unless($export->status === 'done' && $export->file_path, 404, 'Export not ready.');
 
-    /**
-     * @param  iterable<int, array<string|null>>  $rows
-     */
-    private function resultsXlsx(Exam $exam, $rows): string
-    {
-        $xlsx = new XlsxWriter('Results');
-        $headers = $this->columnHeaders();
-        $xlsx->addRow($headers);
-        $xlsx->setHeaderRow(1);
-        foreach ($rows as $row) {
-            $xlsx->addRow($row);
-        }
-
-        return $xlsx->output();
-    }
-
-    /**
-     * @param  iterable<int, array<string|null>>  $rows
-     */
-    private function resultsPdf(Exam $exam, $rows): string
-    {
-        $font = TrueTypeFont::load(base_path('resources/fonts/DejaVuSans.ttf'));
-        $pdf = new SimplePdfWriter($font, true);
-
-        $headers = $this->columnHeaders();
-        // Column widths (points) sized for A4 landscape; ids/dates are compact.
-        $widths = [38, 40, 112, 58, 118, 52, 62, 34, 38, 32, 76, 76, 76, 62, 56, 34];
-
-        $margin = 24.0;
-        $pageW = $pdf->width() - 2 * $margin;
-        $scale = $pageW / array_sum($widths);
-        $widths = array_map(fn ($w) => $w * $scale, $widths);
-
-        $drawHeader = function () use ($pdf, $headers, $widths, $margin, $exam) {
-            $pdf->text($margin, 28, 'Exam results — '.$exam->title, 13, '#5B3A21');
-            $pdf->text($margin, 46, 'Generated: '.now()->toDateTimeString(), 8, '#8a8a8a');
-            $x = $margin;
-            $pdf->rect($margin, 58, array_sum($widths), 18, '#EDE6DC');
-            foreach ($headers as $i => $h) {
-                $pdf->text($x + 2, 70, $this->clipCell($pdf, $h, $widths[$i], 7), 7, '#3a2a1a');
-                $x += $widths[$i];
-            }
-        };
-
-        $drawHeader();
-        $y = 88;
-        $rowH = 16;
-        $pageH = $pdf->height() - 24;
-        $alt = false;
-        foreach ($rows as $row) {
-            if ($y + $rowH > $pageH) {
-                $pdf->addPage();
-                $drawHeader();
-                $y = 88;
-            }
-            if ($alt) {
-                $pdf->rect($margin, $y - 8, array_sum($widths), $rowH, '#FAF7F2');
-            }
-            $alt = ! $alt;
-            $x = $margin;
-            foreach ($row as $i => $cell) {
-                $pdf->text($x + 2, $y + 3, $this->clipCell($pdf, (string) ($cell ?? ''), $widths[$i], 7), 7, '#222222');
-                $x += $widths[$i];
-            }
-            $y += $rowH;
-        }
-
-        return $pdf->output();
-    }
-
-    private function clipCell(SimplePdfWriter $pdf, string $text, float $width, float $size): string
-    {
-        if ($pdf->measure($text, $size) <= $width - 4) {
-            return $text;
-        }
-        while ($text !== '' && $pdf->measure($text.'…', $size) > $width - 2) {
-            $text = mb_substr($text, 0, -1, 'UTF-8');
-        }
-
-        return $text === '' ? '' : $text.'…';
+        return \Illuminate\Support\Facades\Storage::disk('local')->download(
+            $export->file_path,
+            'exam-export-'.$export->getKey().'.'.$export->format
+        );
     }
 
     /**

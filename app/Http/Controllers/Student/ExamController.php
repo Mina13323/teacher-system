@@ -84,9 +84,18 @@ class ExamController extends Controller
 
         $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 
+        // §14 multiple sessions: a second tab/device must land on the SAME
+        // attempt (unique active_key enforces it at the DB level). Tell the
+        // client explicitly so it can explain — never silently duplicate.
+        $alreadyOpen = ! $attempt->wasRecentlyCreated;
+        $payload = (new ExamAttemptResource($attempt))->resolve();
+        $payload['already_open'] = $alreadyOpen;
+
         return $this->success(
-            new ExamAttemptResource($attempt),
-            'Attempt started.',
+            $payload,
+            $alreadyOpen
+                ? 'This exam is already open in another session — your saved attempt was restored.'
+                : 'Attempt started.',
             201
         );
     }

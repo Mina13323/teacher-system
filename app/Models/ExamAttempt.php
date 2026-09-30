@@ -45,6 +45,12 @@ class ExamAttempt extends Model
         // How the attempt ended (submitted_by_student, auto_submit_at_deadline,
         // expired, integrity_threshold, ...). Server-set only.
         'end_reason',
+        'resumed_at',
+        'resumed_by',
+        'resume_note',
+        'previous_end_reason',
+        'previous_expires_at',
+        'time_restored_seconds',
     ];
 
     protected function casts(): array
@@ -63,6 +69,9 @@ class ExamAttempt extends Model
             'pass_percentage' => 'integer',
             'risk_score' => 'integer',
             'violation_warnings' => 'integer',
+        'resumed_at' => 'datetime',
+        'previous_expires_at' => 'datetime',
+        'time_restored_seconds' => 'integer',
         ];
     }
 

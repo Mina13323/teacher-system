@@ -44,6 +44,8 @@ class ProfileController extends Controller
             $request->string('password')->toString(),
         );
 
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('auth.password_change', $request->user(), [], $request->user());
+
         return $this->success(null, 'Password changed.');
     }
 }

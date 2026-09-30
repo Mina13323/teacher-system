@@ -1,0 +1,262 @@
+openapi: 3.0.3
+info:
+  title: Teacher-System LMS API
+  version: "1.0.0"
+  description: |
+    Laravel 11 REST API for the El Masry LMS (courses, lessons, exams, attempts,
+    integrity, grading, notifications, assignments, exports, Q&A, notes, search).
+    This contract is generated-maintained alongside `routes/api.php`; when they
+    disagree, the code wins and this file is the defect.
+
+    Authorisation model: every route is `auth:sanctum` unless marked public.
+    Role gates (student / teacher / assistant / admin) plus per-resource
+    policies (ownership) are enforced server-side; nothing here is client-trust.
+
+    Response envelope: `{ success, message, data, meta?, links? }`.
+servers:
+  - url: /api/v1
+security:
+  - sanctum: []
+tags:
+  - name: Auth
+  - name: Courses & Lessons
+  - name: Exams & Attempts
+  - name: Integrity
+  - name: Grading
+  - name: Assignments
+  - name: Learning (Q&A, notes, bookmarks, search)
+  - name: Notifications
+  - name: Operations (exports, audit, metrics)
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (rate limited)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Token + user }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      responses: { '200': { description: User } }
+  /courses:
+    get:
+      tags: [Courses & Lessons]
+      summary: Published course catalog (cached 60s)
+      responses: { '200': { description: Paginated courses } }
+  /student/courses/{courseId}/enroll:
+    post:
+      tags: [Courses & Lessons]
+      summary: Enroll in a course
+      parameters: [{ $ref: '#/components/parameters/courseId' }]
+      responses:
+        '201': { description: Enrolled }
+        '409': { description: Duplicate enrollment }
+  /student/lessons/{lessonId}:
+    get:
+      tags: [Courses & Lessons]
+      summary: Lesson content (title + body + attachments), policy-gated
+      description: Honors roadmap enforcement when the course enables it.
+      parameters: [{ $ref: '#/components/parameters/lessonId' }]
+      responses:
+        '200': { description: Lesson }
+        '403': { description: Locked (roadmap) or not enrolled }
+  /teacher/exams/{examId}/questions:
+    post:
+      tags: [Exams & Attempts]
+      summary: Create exam question (single_choice/multiple_choice/essay)
+      description: Publish validation enforces exactly 1 correct option for single_choice and ≥2 for multiple_choice.
+      parameters: [{ $ref: '#/components/parameters/examId' }]
+      responses: { '201': { description: Question } }
+  /student/exams/{examId}/start:
+    post:
+      tags: [Exams & Attempts]
+      summary: Start (or resume) an attempt
+      description: |
+        Idempotent per (student, exam): an existing in-progress attempt is
+        returned with `already_open: true` (unique `active_key` enforces this
+        at the database level). Never creates attempt #2 on reconnect.
+      parameters: [{ $ref: '#/components/parameters/examId' }]
+      responses: { '201': { description: Attempt (created or restored) } }
+  /student/attempts/{attemptId}:
+    get:
+      tags: [Exams & Attempts]
+      summary: Attempt state for recovery (server-authoritative timer)
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      responses: { '200': { description: Attempt with snapshot + saved answers } }
+  /student/attempts/{attemptId}/answers:
+    post:
+      tags: [Exams & Attempts]
+      summary: Save/autosave an answer (idempotent upsert per question)
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      responses: { '200': { description: Saved answer } }
+  /student/attempts/{attemptId}/heartbeat:
+    post:
+      tags: [Integrity]
+      summary: Heartbeat — connectivity signal only, NEVER an integrity event
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      responses: { '200': { description: Server time + remaining seconds } }
+  /student/attempts/{attemptId}/integrity-events:
+    post:
+      tags: [Integrity]
+      summary: Report a confirmed visibility/exit event (warn-first policy)
+      description: Network loss and heartbeat timeouts are never accepted here as violation types.
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      responses: { '200': { description: Warning state (warning_count, threshold) } }
+  /student/attempts/{attemptId}/submit:
+    post:
+      tags: [Exams & Attempts]
+      summary: Submit voluntarily (end_reason=submitted_by_student)
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      responses: { '200': { description: Submitted } }
+  /teacher/exams/{examId}/attempts/grouped:
+    get:
+      tags: [Grading]
+      summary: Attempts grouped by student (best/latest/integrity/pending)
+      parameters:
+        - { $ref: '#/components/parameters/examId' }
+        - { name: search, in: query, schema: { type: string } }
+      responses: { '200': { description: Students[] + summary } }
+  /teacher/attempts/{attemptId}/integrity/review:
+    post:
+      tags: [Integrity]
+      summary: Teacher decision — RESUME / CLEARED / FLAGGED
+      description: |
+        RESUME re-opens the SAME attempt (history immutable, audited as
+        `attempt.resume_flagged`). FLAGGED records `attempt.disqualify`.
+      parameters: [{ $ref: '#/components/parameters/attemptId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: { type: string, enum: [RESUME, CLEARED, FLAGGED] }
+                note: { type: string }
+      responses: { '201': { description: Review recorded } }
+  /teacher/exams/{examId}/results/export:
+    get:
+      tags: [Operations (exports, audit, metrics)]
+      summary: Export results (csv|xlsx|pdf|print), rows>500 queued (202)
+      parameters:
+        - { $ref: '#/components/parameters/examId' }
+        - { name: format, in: query, schema: { type: string, enum: [csv, xlsx, pdf, print] } }
+      responses:
+        '200': { description: File }
+        '202': { description: Queued — poll /teacher/exports/{id} }
+  /student/assignments:
+    get:
+      tags: [Assignments]
+      summary: My assignments with submission state
+      responses: { '200': { description: Assignments } }
+  /student/assignments/{id}/submit:
+    post:
+      tags: [Assignments]
+      summary: Submit text and/or file (upsert until graded)
+      responses:
+        '201': { description: Submitted }
+        '422': { description: Already graded }
+  /lessons/{lessonId}/questions:
+    get:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Lesson Q&A threads
+      parameters: [{ $ref: '#/components/parameters/lessonId' }]
+      responses: { '200': { description: Questions + replies } }
+    post:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Ask a question
+      parameters: [{ $ref: '#/components/parameters/lessonId' }]
+      responses: { '201': { description: Question } }
+  /lesson-questions/{questionId}/replies:
+    post:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Answer a question (student or course staff)
+      parameters: [{ $ref: '#/components/parameters/questionId' }]
+      responses: { '201': { description: Reply } }
+  /lesson-questions/{questionId}:
+    delete:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Moderate (soft delete, history kept)
+      parameters: [{ $ref: '#/components/parameters/questionId' }]
+      responses: { '200': { description: Removed } }
+  /student/notes:
+    get:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: My private notes (owner-only)
+      responses: { '200': { description: Notes } }
+    post:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Create a private note (course/lesson/video timestamp)
+      responses: { '201': { description: Note } }
+  /student/bookmarks:
+    get:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: My bookmarks
+      responses: { '200': { description: Bookmarks } }
+    post:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Bookmark a lesson or video timestamp (idempotent)
+      responses: { '201': { description: Bookmark } }
+  /search:
+    get:
+      tags: [Learning (Q&A, notes, bookmarks, search)]
+      summary: Role-scoped search (courses/units/lessons/videos/exams/students)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - { name: type, in: query, schema: { type: string } }
+      responses: { '200': { description: Grouped results } }
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: My notifications
+      responses: { '200': { description: Paginated notifications } }
+  /push-subscriptions:
+    get:
+      tags: [Notifications]
+      summary: My push subscriptions + VAPID public key
+      responses: { '200': { description: Subscriptions } }
+    post:
+      tags: [Notifications]
+      summary: Store a browser push subscription (idempotent per endpoint)
+      responses: { '201': { description: Stored } }
+  /admin/audit-logs:
+    get:
+      tags: [Operations (exports, audit, metrics)]
+      summary: Append-only staff audit trail (admin)
+      responses: { '200': { description: Paginated audit entries } }
+  /admin/metrics:
+    get:
+      tags: [Operations (exports, audit, metrics)]
+      summary: Operational metrics snapshot (admin)
+      responses: { '200': { description: Metrics } }
+  /public/certificates/{code}:
+    get:
+      tags: [Courses & Lessons]
+      summary: Public certificate verification (minimum disclosure)
+      security: []
+      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: valid, code, student_name, course_title, issued_at }
+        '404': { description: Unknown code }
+components:
+  securitySchemes:
+    sanctum:
+      type: http
+      scheme: bearer
+  parameters:
+    courseId: { name: courseId, in: path, required: true, schema: { type: integer } }
+    lessonId: { name: lessonId, in: path, required: true, schema: { type: integer } }
+    examId: { name: examId, in: path, required: true, schema: { type: integer } }
+    attemptId: { name: attemptId, in: path, required: true, schema: { type: integer } }
+    questionId: { name: questionId, in: path, required: true, schema: { type: integer } }

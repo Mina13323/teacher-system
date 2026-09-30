@@ -38,6 +38,7 @@ class DashboardController extends Controller
         // Every figure is one aggregate query. This used to load every course the
         // teacher owns — with three withCount subqueries attached to each — and
         // then sum the results in PHP, purely to render five numbers.
+        $examIds = \App\Models\Exam::query()->whereIn('course_id', $courseIds)->pluck('id');
         return $this->success([
             'courses_count' => $courses()->count(),
             'published_count' => $courses()->where('status', CourseStatus::Published->value)->count(),
@@ -61,6 +62,49 @@ class DashboardController extends Controller
                     ->limit(5)
                     ->get()
             ),
+
+            // §37 — the work queue: things that need the teacher's hand.
+            'active_attempts_count' => \App\Models\ExamAttempt::query()
+                ->whereIn('exam_id', $examIds)
+                ->where('status', 'in_progress')
+                ->count(),
+            'pending_essay_grading' => \App\Models\ExamAttempt::query()
+                ->whereIn('exam_id', $examIds)
+                ->where('status', 'grading')
+                ->whereHas('answers', fn ($a) => $a->whereNull('graded_at'))
+                ->count(),
+            'flagged_attempts' => \App\Models\ExamAttempt::query()
+                ->whereIn('exam_id', $examIds)
+                ->where('integrity_status', 'flagged')
+                ->with(['student:id,name,student_code', 'exam:id,title'])
+                ->orderByDesc('updated_at')
+                ->limit(5)
+                ->get()
+                ->map(fn ($a) => [
+                    'id' => $a->id,
+                    'student' => $a->student?->name,
+                    'exam' => $a->exam?->title,
+                    'end_reason' => $a->end_reason,
+                    'resumed_at' => $a->resumed_at?->toISOString(),
+                    'url' => "/teacher/integrity/attempts/{$a->id}",
+                ]),
+            'upcoming_exams' => \App\Models\Exam::query()
+                ->whereIn('course_id', $courseIds)
+                ->where('status', 'published')
+                ->where('starts_at', '>=', now())
+                ->where('starts_at', '<=', now()->addDays(7))
+                ->orderBy('starts_at')
+                ->limit(5)
+                ->get(['id', 'title', 'starts_at', 'ends_at'])
+                ->map(fn ($e) => [
+                    'id' => $e->id, 'title' => $e->title,
+                    'starts_at' => $e->starts_at?->toISOString(),
+                    'url' => "/teacher/exams/{$e->id}",
+                ]),
+            'assignments_needing_grading' => \App\Models\AssignmentSubmission::query()
+                ->whereHas('assignment', fn ($a) => $a->whereIn('course_id', $courseIds))
+                ->where('status', 'submitted')
+                ->count(),
         ], 'Dashboard retrieved.');
     }
 }

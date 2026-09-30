@@ -72,7 +72,12 @@ class LessonPolicy
             return false;
         }
 
-        return app(EnrollmentService::class)->isEnrolled($user, $course->getKey());
+        if (! app(EnrollmentService::class)->isEnrolled($user, $course->getKey())) {
+            return false;
+        }
+
+        // §35: roadmap enforcement is opt-in per course (default informational).
+        return app(\App\Services\RoadmapGate::class)->allows($user, $lesson);
     }
 
     private function canManageCourse(User $user, Course $course): bool
