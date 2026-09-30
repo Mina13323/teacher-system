@@ -92,6 +92,21 @@ class LessonController extends Controller
         return $this->success(null, 'Lessons reordered.');
     }
 
+    public function restore(Lesson $lesson): JsonResponse
+    {
+        $this->authorize('update', $lesson);
+
+        if ($lesson->trashed()) {
+            $lesson->restore();
+        }
+
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('lesson.restore', $lesson, [
+            'title' => $lesson->title ?? null,
+        ]);
+
+        return $this->success(null, 'Lesson restored.');
+    }
+
     public function destroy(Lesson $lesson): JsonResponse
     {
         $this->authorize('delete', $lesson);

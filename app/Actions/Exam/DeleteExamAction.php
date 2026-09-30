@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Exceptions\ResourceDeletionBlockedException;
 use App\Models\Competition;
 use App\Models\Exam;
@@ -24,6 +25,11 @@ use App\Models\ExamAttempt;
  */
 class DeleteExamAction
 {
+    public function __construct(
+        private readonly RecordAuditLogAction $auditLog,
+    ) {
+    }
+
     public function execute(Exam $exam): void
     {
         if (Competition::query()->where('exam_id', $exam->getKey())->exists()) {
@@ -37,6 +43,12 @@ class DeleteExamAction
                 'This exam has student attempts recorded and cannot be deleted. Archive it instead to preserve historical results.'
             );
         }
+
+        $this->auditLog->execute('exam.delete', $exam, [
+            'course_id' => $exam->course_id,
+            'title' => $exam->title,
+            'mode' => 'soft',
+        ]);
 
         $exam->delete();
     }

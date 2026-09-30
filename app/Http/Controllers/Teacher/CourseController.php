@@ -100,6 +100,18 @@ class CourseController extends Controller
         return $this->success(new CourseResource($course), 'Course unpublished.');
     }
 
+    /**
+     * Restores a soft-deleted course (and the content soft-deleted with it).
+     */
+    public function restore(\App\Models\Course $course): JsonResponse
+    {
+        $this->authorize('update', $course);
+
+        $course = app(\App\Actions\Course\RestoreCourseAction::class)->execute($course);
+
+        return $this->success(null, 'Course restored.');
+    }
+
     public function destroy(Course $course): JsonResponse
     {
         $this->authorize('delete', $course);

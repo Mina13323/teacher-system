@@ -68,7 +68,9 @@ class ExamAttempt extends Model
 
     public function exam(): BelongsTo
     {
-        return $this->belongsTo(Exam::class);
+        // withTrashed: historical attempts must keep showing their exam even
+        // after the exam is archived/soft-deleted.
+        return $this->belongsTo(Exam::class)->withTrashed();
     }
 
     public function student(): BelongsTo

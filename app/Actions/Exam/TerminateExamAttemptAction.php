@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Actions\Integrity\UpdateAttemptIntegrityStatusAction;
 use App\Enums\IntegrityEventType;
 use App\Enums\IntegrityStatus;
@@ -34,6 +35,7 @@ class TerminateExamAttemptAction
         private readonly GradeExamAttemptAction $gradeAttempt,
         private readonly UpdateAttemptIntegrityStatusAction $updateStatus,
         private readonly IntegrityRiskConfig $riskConfig,
+        private readonly RecordAuditLogAction $auditLog,
     ) {
     }
 
@@ -80,6 +82,14 @@ class TerminateExamAttemptAction
             $graded->integrity_status = IntegrityStatus::Flagged;
             $graded->end_reason = 'integrity_threshold';
             $graded->save();
+
+            $this->auditLog->execute('attempt.terminate', $graded, [
+                'reason' => $reason,
+                'end_reason' => 'integrity_threshold',
+                'student_id' => $graded->student_id,
+                'exam_id' => $graded->exam_id,
+                'warning_count' => $graded->violation_warnings,
+            ]);
 
             return $graded;
         });

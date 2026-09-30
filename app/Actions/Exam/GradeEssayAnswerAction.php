@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Enums\QuestionType;
 use App\Exceptions\InvalidAttemptStateException;
@@ -14,6 +15,7 @@ class GradeEssayAnswerAction
 {
     public function __construct(
         private readonly CalculateExamResultAction $calculateResult,
+        private readonly RecordAuditLogAction $auditLog,
     ) {
     }
 
@@ -83,6 +85,9 @@ class GradeEssayAnswerAction
 
             $attempt->score = $result['earned_points'];
             $attempt->percentage = $result['percentage'];
+            // Keep the full-precision pass/fail input in lockstep with the
+            // display percentage (outcome() reads raw_percentage first).
+            $attempt->raw_percentage = $result['raw_percentage'];
             $attempt->graded_by = $staffUser->getKey();
 
             if ($attempt->status->isSubmitted() && $result['requires_manual_grading']) {
@@ -91,6 +96,14 @@ class GradeEssayAnswerAction
 
             $attempt->save();
         });
+
+        $this->auditLog->execute('grade.essay', $attempt, [
+            'question_id' => $questionId,
+            'awarded_points' => $awardedPoints,
+            'max_points' => $attemptQuestion->points,
+            'has_feedback' => $feedback !== null ? '1' : '0',
+            'graded_by' => $staffUser->getKey(),
+        ], $staffUser);
 
         return $attempt->fresh(['answers.selectedOptions', 'attemptQuestions']);
     }

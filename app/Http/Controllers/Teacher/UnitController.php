@@ -71,6 +71,22 @@ class UnitController extends Controller
         return $this->success(null, 'Units reordered.');
     }
 
+    public function restore(Unit $unit): JsonResponse
+    {
+        $this->authorize('update', $unit);
+
+        if ($unit->trashed()) {
+            $unit->restore();
+        }
+        $unit->lessons()->onlyTrashed()->restore();
+
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('unit.restore', $unit, [
+            'title' => $unit->title ?? null,
+        ]);
+
+        return $this->success(null, 'Unit restored.');
+    }
+
     public function destroy(Unit $unit): JsonResponse
     {
         $this->authorize('delete', $unit);

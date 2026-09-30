@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Models\ExamAttempt;
 use App\Models\User;
@@ -12,6 +13,7 @@ class PublishExamGradesAction
 {
     public function __construct(
         private readonly CalculateExamResultAction $calculateResult,
+        private readonly RecordAuditLogAction $auditLog,
     ) {
     }
 
@@ -30,6 +32,9 @@ class PublishExamGradesAction
 
             $locked->score = $result['earned_points'];
             $locked->percentage = $result['percentage'];
+            // Keep the full-precision pass/fail input in lockstep with the
+            // display percentage (outcome() reads raw_percentage first).
+            $locked->raw_percentage = $result['raw_percentage'];
             $locked->status = ExamAttemptStatus::Published->value;
             // Preserve the original publication timestamp on re-publication so
             // repeated calls are idempotent and the audit trail is not rewritten.
@@ -47,6 +52,14 @@ class PublishExamGradesAction
         if ($firstPublication && $attempt->student) {
             $attempt->student->notify(new ResultAvailableNotification($attempt));
         }
+
+        $this->auditLog->execute('grade.publish', $attempt, [
+            'first_publication' => $firstPublication ? '1' : '0',
+            'student_id' => $attempt->student_id,
+            'exam_id' => $attempt->exam_id,
+            'score' => $attempt->score,
+            'percentage' => $attempt->percentage,
+        ], $staffUser);
 
         return $attempt->fresh();
     }

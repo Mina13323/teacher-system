@@ -69,12 +69,15 @@ class CompetitionDeletionGuardTest extends ApiTestCase
         $course = $this->createCourse($teacher, ['status' => 'published']);
 
         // A course with a normal exam (no competition) deletes fine.
-        Exam::factory()->create(['course_id' => $course->id, 'created_by' => $teacher->id]);
+        $exam = Exam::factory()->create(['course_id' => $course->id, 'created_by' => $teacher->id]);
 
         $this->actingAs($teacher, 'sanctum')
             ->deleteJson("/api/v1/teacher/courses/{$course->id}")
             ->assertStatus(200);
 
-        $this->assertDatabaseMissing('courses', ['id' => $course->id]);
+        // P1 soft-delete (documented change): recoverable delete, hidden not
+        // destroyed. Child exams are hidden with the course, nothing orphaned.
+        $this->assertSoftDeleted('courses', ['id' => $course->id]);
+        $this->assertSoftDeleted('exams', ['id' => $exam->id]);
     }
 }

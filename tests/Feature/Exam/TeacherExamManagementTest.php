@@ -222,6 +222,11 @@ class TeacherExamManagementTest extends ApiTestCase
             ->assertJsonPath('data.status', 'archived');
     }
 
+    /**
+     * P1 soft-delete (documented behavior change, docs §30): deleting an exam
+     * is RECOVERABLE — the row is hidden, not destroyed, so no history can be
+     * lost by a misclick. Hard destruction of exam data is no longer possible.
+     */
     public function test_teacher_can_delete_exam(): void
     {
         $teacher = $this->createUserWithRole(UserRole::Teacher);
@@ -232,7 +237,7 @@ class TeacherExamManagementTest extends ApiTestCase
             ->deleteJson("/api/v1/teacher/exams/{$exam->id}")
             ->assertStatus(200);
 
-        $this->assertDatabaseMissing('exams', ['id' => $exam->id]);
+        $this->assertSoftDeleted('exams', ['id' => $exam->id]);
     }
 
     public function test_teacher_cannot_manage_another_teachers_exam(): void

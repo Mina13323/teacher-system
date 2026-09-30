@@ -6,6 +6,7 @@ use App\Http\Controllers\StudentRegistrationController;
 use App\Http\Controllers\Teacher\StudentRegistrationLinkController;
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\StudentController as AdminStudentController;
 use App\Http\Controllers\Admin\TeacherController as AdminTeacherController;
@@ -25,6 +26,8 @@ use App\Http\Controllers\Teacher\CourseController as TeacherCourseController;
 use App\Http\Controllers\Teacher\IntegrityController as TeacherIntegrityController;
 use App\Http\Controllers\Teacher\DashboardController as TeacherDashboardController;
 use App\Http\Controllers\Teacher\ExamController as TeacherExamController;
+use App\Http\Controllers\Teacher\ExportController as TeacherExportController;
+use App\Http\Controllers\Teacher\BulkStudentImportController as TeacherBulkImportController;
 use App\Http\Controllers\Teacher\ExamTemplateController as TeacherExamTemplateController;
 use App\Http\Controllers\Teacher\LessonController as TeacherLessonController;
 use App\Http\Controllers\Teacher\OptionController as TeacherOptionController;
@@ -91,6 +94,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::get('courses/{course}', [TeacherCourseController::class, 'show']);
     Route::put('courses/{course}', [TeacherCourseController::class, 'update']);
     Route::patch('courses/{course}/publish', [TeacherCourseController::class, 'publish']);
+    Route::post('courses/{course}/restore', [TeacherCourseController::class, 'restore'])->withTrashed();
     Route::patch('courses/{course}/unpublish', [TeacherCourseController::class, 'unpublish']);
     Route::delete('courses/{course}', [TeacherCourseController::class, 'destroy']);
 
@@ -101,6 +105,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::get('units/{unit}', [TeacherUnitController::class, 'show']);
     Route::put('units/{unit}', [TeacherUnitController::class, 'update']);
     Route::delete('units/{unit}', [TeacherUnitController::class, 'destroy']);
+    Route::post('units/{unit}/restore', [TeacherUnitController::class, 'restore'])->withTrashed();
 
     // Lessons (nested under a unit)
     Route::get('units/{unit}/lessons', [TeacherLessonController::class, 'index']);
@@ -109,6 +114,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::get('lessons/{lesson}', [TeacherLessonController::class, 'show']);
     Route::put('lessons/{lesson}', [TeacherLessonController::class, 'update']);
     Route::patch('lessons/{lesson}/publish', [TeacherLessonController::class, 'publish']);
+    Route::post('lessons/{lesson}/restore', [TeacherLessonController::class, 'restore'])->withTrashed();
     Route::patch('lessons/{lesson}/unpublish', [TeacherLessonController::class, 'unpublish']);
     Route::delete('lessons/{lesson}', [TeacherLessonController::class, 'destroy']);
 
@@ -127,11 +133,14 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('courses/{course}/exams', [TeacherExamController::class, 'store']);
     Route::get('exams/{exam}', [TeacherExamController::class, 'show']);
     Route::put('exams/{exam}', [TeacherExamController::class, 'update']);
+    Route::post('exams/{exam}/restore', [TeacherExamController::class, 'restore'])->withTrashed();
     Route::post('exams/{exam}/publish', [TeacherExamController::class, 'publish']);
     Route::post('exams/{exam}/archive', [TeacherExamController::class, 'archive']);
     Route::delete('exams/{exam}', [TeacherExamController::class, 'destroy']);
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
+    Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    Route::get('exams/{exam}/results/export', [TeacherExportController::class, 'results']);
     Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
     Route::post('attempts/{attempt}/grade-essay', [TeacherAttemptController::class, 'gradeEssay']);
     Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
@@ -184,6 +193,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::get('students', [TeacherStudentController::class, 'index']);
     Route::post('students', [TeacherStudentController::class, 'store']);
     Route::post('students/batch-delete', [TeacherStudentController::class, 'batchDestroy']);
+    Route::post('students/import/preview', [TeacherBulkImportController::class, 'preview']);
+    Route::post('students/import/confirm', [TeacherBulkImportController::class, 'confirm']);
     Route::get('student-registration-link', [StudentRegistrationLinkController::class, 'show']);
     Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
     Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
@@ -240,6 +251,7 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::patch('students/{student}/deactivate', [AdminStudentController::class, 'deactivate']);
     Route::post('students/{student}/reset-password', [AdminStudentController::class, 'resetPassword']);
     Route::get('students/{student}/analytics', [AdminStudentController::class, 'analytics']);
+    Route::get('audit-logs', [AdminAuditLogController::class, 'index']);
 });
 
 // ---- Notifications (any authenticated user) ----------------------------------

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Models\ExamAttempt;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ class FinalizeExpiredAttemptAction
 {
     public function __construct(
         private readonly GradeExamAttemptAction $gradeAttempt,
+        private readonly RecordAuditLogAction $auditLog,
     ) {
     }
 
@@ -53,7 +55,16 @@ class FinalizeExpiredAttemptAction
                 $locked->end_reason = 'auto_submit_at_deadline';
                 $locked->save();
 
-                return $this->gradeAttempt->execute($locked->fresh());
+                $graded = $this->gradeAttempt->execute($locked->fresh());
+
+                $this->auditLog->execute('attempt.auto_submit', $graded, [
+                    'student_id' => $graded->student_id,
+                    'exam_id' => $graded->exam_id,
+                    'submitted_at' => $graded->submitted_at?->toISOString(),
+                    'score' => $graded->score,
+                ]);
+
+                return $graded;
             }
 
             // Legacy strict policy: the attempt is discarded ungraded.
@@ -61,6 +72,12 @@ class FinalizeExpiredAttemptAction
             $locked->active_key = null;
             $locked->end_reason = 'expired';
             $locked->save();
+
+            $this->auditLog->execute('attempt.expire', $locked, [
+                'student_id' => $locked->student_id,
+                'exam_id' => $locked->exam_id,
+                'policy' => 'expire',
+            ]);
 
             return $locked->fresh();
         });

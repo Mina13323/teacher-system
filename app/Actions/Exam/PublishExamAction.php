@@ -2,6 +2,7 @@
 
 namespace App\Actions\Exam;
 
+use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamStatus;
 use App\Enums\EnrollmentStatus;
 use App\Exceptions\ExamNotReadyToPublishException;
@@ -24,6 +25,11 @@ use App\Notifications\ExamPublishedNotification;
  */
 class PublishExamAction
 {
+    public function __construct(
+        private readonly RecordAuditLogAction $auditLog,
+    ) {
+    }
+
     public function execute(Exam $exam): Exam
     {
         $this->assertValid($exam);
@@ -32,6 +38,11 @@ class PublishExamAction
         $exam->save();
 
         $this->notifyEnrolledStudents($exam);
+
+        $this->auditLog->execute('exam.publish', $exam, [
+            'course_id' => $exam->course_id,
+            'title' => $exam->title,
+        ]);
 
         return $exam->fresh();
     }
