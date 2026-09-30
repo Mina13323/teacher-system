@@ -203,7 +203,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $this->assertSame('integrity_threshold', $attempt->end_reason);
 
         // Exactly one honest threshold event — no fabricated WINDOW_BLUR.
-        $eventTypes = $attempt->integrityEvents()->pluck('event_type')->all();
+        $eventTypes = $attempt->integrityEvents()->pluck('event_type')->map(fn ($v) => $v instanceof \BackedEnum ? $v->value : $v)->all();
         $this->assertSame(['THRESHOLD_TERMINATION'], $eventTypes);
         $this->assertSame(
             (int) config('integrity.THRESHOLD_TERMINATION.risk_points'),
