@@ -258,6 +258,23 @@ recovery happens inside `in_progress` by design.
   written to "pass around" a bug — where behaviour changed intentionally
   (warn-first termination, resume semantics) the tests encode the new contract
   and the change is documented.
+- **Runtime gate — RUN AND PASSED (2026-09-30)**: the full suite is green in
+  GitHub Actions — **710 tests / 3314 assertions, 0 failures, 0 errors** on
+  both PHP 8.2 and PHP 8.3 (`ci.yml`, commit `bf5e1f0`), alongside repo
+  guards and the production frontend build. Getting there was a root-cause
+  fix campaign, not test weakening: soft-delete traits actually applied on
+  `Course/Exam/Lesson/Unit`; the review payload reconciled to one contract
+  (stable keys, null values before publication — where two tests encoded
+  contradictory shapes the stable-payload contract won and both now assert
+  it); integrity-events creation returns **201** per the documented contract
+  while `/terminate` stays 200 (per-endpoint, not blanket); `scored_at`
+  exists via an additive migration and is stamped once as the
+  double-grading sentinel; `integrity.risk_points.*` config paths corrected;
+  competition ranking honours "flagged ≠ disqualified". Dependency lock is
+  stable (`laravel/framework` 11.57.0 pinned for platform PHP 8.3.33); the
+  seven acknowledged security advisories remain suppressed for dependency
+  resolution only — the honest remedy is the Laravel 12 migration listed
+  below.
 
 ## 10. Remaining work — COMPLETED / PARTIALLY COMPLETED / DEFERRED
 
@@ -269,6 +286,14 @@ exports (CSV/XLSX/PDF/print + queueing).
 level), search, roadmap enforcement switch + tests.
 **COMPLETED** — Phase 5: metrics, observability context, performance indexes,
 safe catalog cache, OpenAPI, queue job hardening.
+**COMPLETED** — Verification gate: full test suite green (710 tests / 3314
+assertions) on PHP 8.2 + 8.3 in CI, plus repo guards and frontend build.
+
+**TOP REMAINING (recommended next)** — Laravel 12 / `laravel/framework` 12.x
+migration: the only honest remedy for the seven acknowledged dependency
+advisories (`config.policy.advisories.ignore-id`, acknowledged for
+dependency resolution ONLY). Post-migration, remove the suppressions and
+re-verify the full suite.
 
 **PARTIALLY COMPLETED**
 - Dashboard *payloads* are done; the student/teacher dashboard **UI** still
