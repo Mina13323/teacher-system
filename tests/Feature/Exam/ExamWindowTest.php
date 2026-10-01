@@ -71,7 +71,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('45'));
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
@@ -113,7 +113,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($now);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
@@ -139,7 +139,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('241')); // 14:01
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(422);
 
         $this->assertDatabaseCount('exam_attempts', 0);
@@ -155,7 +155,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('-1'));
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(422);
 
         $this->assertDatabaseCount('exam_attempts', 0);
@@ -179,7 +179,7 @@ class ExamWindowTest extends ApiTestCase
         $student1 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student1, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-10 22:00:00', 'UTC'));
-        $this->actingAs($student1, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $this->actingAs($student1, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attempt1 = ExamAttempt::where('student_id', $student1->id)->sole();
         $this->assertSame('2026-10-11T01:00:00.000000Z', $attempt1->expires_at->toISOString());
         $this->assertSame(180, (int) $attempt1->started_at->diffInMinutes($attempt1->expires_at));
@@ -188,7 +188,7 @@ class ExamWindowTest extends ApiTestCase
         $student2 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student2, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-10 23:00:00', 'UTC'));
-        $this->actingAs($student2, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $this->actingAs($student2, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attempt2 = ExamAttempt::where('student_id', $student2->id)->sole();
         $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt2->expires_at->toISOString());
         $this->assertSame(180, (int) $attempt2->started_at->diffInMinutes($attempt2->expires_at));
@@ -197,7 +197,7 @@ class ExamWindowTest extends ApiTestCase
         $student3 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student3, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-11 00:00:00', 'UTC'));
-        $this->actingAs($student3, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $this->actingAs($student3, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attempt3 = ExamAttempt::where('student_id', $student3->id)->sole();
         $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt3->expires_at->toISOString());
         $this->assertSame(120, (int) $attempt3->started_at->diffInMinutes($attempt3->expires_at));
@@ -206,7 +206,7 @@ class ExamWindowTest extends ApiTestCase
         $student4 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student4, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-11 01:00:00', 'UTC'));
-        $this->actingAs($student4, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $this->actingAs($student4, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attempt4 = ExamAttempt::where('student_id', $student4->id)->sole();
         $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt4->expires_at->toISOString());
         $this->assertSame(60, (int) $attempt4->started_at->diffInMinutes($attempt4->expires_at));
@@ -215,7 +215,7 @@ class ExamWindowTest extends ApiTestCase
         $student5 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-11 02:00:00', 'UTC'));
-        $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+        $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attempt5 = ExamAttempt::where('student_id', $student5->id)->sole();
         $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt5->expires_at->toISOString());
         $this->assertSame(0, (int) $attempt5->started_at->diffInMinutes($attempt5->expires_at));
@@ -224,7 +224,7 @@ class ExamWindowTest extends ApiTestCase
         $student6 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student6, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-11 02:01:00', 'UTC'));
-        $this->actingAs($student6, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(422);
+        $this->actingAs($student6, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(422);
     }
 
     // ---------------------------------------------------------------------
@@ -241,7 +241,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('10'));
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
@@ -260,7 +260,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('19'));
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
@@ -279,7 +279,7 @@ class ExamWindowTest extends ApiTestCase
         $this->travelTo($this->at('21'));
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(422);
 
         $this->assertDatabaseCount('exam_attempts', 0);
@@ -298,12 +298,12 @@ class ExamWindowTest extends ApiTestCase
 
         $this->travelTo($this->at('0'));
         $first = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $this->travelTo($this->at('10'));
         $second = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $this->assertSame($first->json('data.id'), $second->json('data.id'));
@@ -328,7 +328,7 @@ class ExamWindowTest extends ApiTestCase
 
         $this->travelTo($this->at('0'));
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();
@@ -462,6 +462,7 @@ class ExamWindowTest extends ApiTestCase
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/exams/{$exam->id}/start", [
+                'rules_acknowledged' => true,
                 'started_at' => '2020-01-01T00:00:00.000000Z',
                 'expires_at' => '2099-01-01T00:00:00.000000Z',
                 'remaining_seconds' => 999999,
@@ -541,7 +542,7 @@ class ExamWindowTest extends ApiTestCase
             ->assertStatus(201);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('exam_id', $exam->id)->sole();

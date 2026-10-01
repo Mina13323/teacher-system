@@ -35,7 +35,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
         // Save a real answer first — it must survive termination AND resume.
@@ -49,7 +49,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
 
         // Confirmed repeated violations: exceed the frozen threshold, terminate.
         $attempt = ExamAttempt::findOrFail($attemptId);
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);
@@ -156,7 +156,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
         // Voluntary submit — must NOT be resumable.

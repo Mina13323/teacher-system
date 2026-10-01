@@ -87,6 +87,8 @@ class ExamAttemptResource extends JsonResource
                 fn () => $this->resource->outcome()->isPassed()
             ),
             'end_reason' => $this->end_reason,
+            'rules_acknowledged_at' => $this->rules_acknowledged_at?->toISOString(),
+            'violation_warnings' => (int) ($this->violation_warnings ?? 0),
             'resumed_at' => $this->resumed_at?->toISOString(),
             'resumed_by' => $this->resumed_by,
             'resume_note' => $this->resume_note,
@@ -108,6 +110,9 @@ class ExamAttemptResource extends JsonResource
                         : null,
                     'question_type' => $attemptQuestion->question_type ?? 'single_choice',
                     'points' => $attemptQuestion->points,
+                    'explanation_enabled' => (bool) $attemptQuestion->explanation_enabled,
+                    'explanation_required' => (bool) $attemptQuestion->explanation_required,
+                    'explanation' => $answer?->explanation,
                     'position' => $attemptQuestion->position,
                     'selected_option_id' => $answer?->option_id,
                     'selected_option_ids' => $selectedIds,

@@ -10,7 +10,7 @@ const props = defineProps({
 });
 
 const classes = computed(() => {
-    const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap';
+    const base = 'inline-flex max-w-full items-center justify-center gap-2 rounded-lg text-center font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 whitespace-normal sm:whitespace-nowrap';
     const sizes = {
         sm: 'text-sm px-3 py-1.5',
         md: 'text-sm px-4 py-2.5',

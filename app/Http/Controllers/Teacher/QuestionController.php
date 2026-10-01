@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Teacher;
 
+use App\Actions\Exam\RegradeQuestionAttemptsAction;
 use App\Actions\Exam\SyncExamQuestionsAction;
 use App\Enums\QuestionType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateQuestionRequest;
+use App\Http\Requests\RegradeQuestionAttemptsRequest;
 use App\Http\Requests\SyncExamQuestionsRequest;
 use App\Http\Requests\UpdateQuestionRequest;
 use App\Http\Requests\UploadQuestionImageRequest;
@@ -29,8 +31,10 @@ class QuestionController extends Controller
      * silently truncating rows the teacher can no longer see.
      */
     public const MAX_QUESTIONS_PER_EXAM = 200;
-    public function __construct(private readonly SyncExamQuestionsAction $syncQuestions)
-    {
+    public function __construct(
+        private readonly SyncExamQuestionsAction $syncQuestions,
+        private readonly RegradeQuestionAttemptsAction $regradeAttempts,
+    ) {
     }
 
     public function index(Request $request, Exam $exam): JsonResponse
@@ -51,13 +55,19 @@ class QuestionController extends Controller
             );
         }
 
+        $type = QuestionType::from($request->validated('type', QuestionType::SingleChoice->value));
+        $explanationsEnabled = $type->isMcq() && (bool) $request->validated('explanation_enabled', false);
+
         $question = Question::create([
             'exam_id' => $exam->getKey(),
             'question_text' => $request->validated('question_text'),
-            'type' => $request->validated('type', QuestionType::SingleChoice->value),
+            'type' => $type->value,
             'points' => $request->validated('points', 1),
             'position' => $request->validated('position', (int) $exam->questions()->max('position') + 1),
             'reference_answer' => $request->validated('reference_answer'),
+            'explanation_enabled' => $explanationsEnabled,
+            'explanation_required' => $explanationsEnabled
+                && (bool) $request->validated('explanation_required', false),
         ]);
 
         return $this->success(
@@ -85,6 +95,21 @@ class QuestionController extends Controller
         );
     }
 
+    /**
+     * Apply the question's current correct option set to handed-in attempts.
+     * In-progress snapshots and their server deadlines are never modified.
+     */
+    public function regradeSubmittedAttempts(RegradeQuestionAttemptsRequest $request, Question $question): JsonResponse
+    {
+        $result = $this->regradeAttempts->execute(
+            $request->user(),
+            $question,
+            $request->validated('reason')
+        );
+
+        return $this->success($result, 'Submitted attempts regraded.');
+    }
+
     public function show(Request $request, Question $question): JsonResponse
     {
         $this->authorize('view', $question);
@@ -97,7 +122,18 @@ class QuestionController extends Controller
 
     public function update(UpdateQuestionRequest $request, Question $question): JsonResponse
     {
-        $question->fill($request->validated());
+        $validated = $request->validated();
+        if (($validated['type'] ?? $question->type?->value) === QuestionType::Essay->value) {
+            $validated['explanation_enabled'] = false;
+            $validated['explanation_required'] = false;
+        } elseif (($validated['explanation_required'] ?? false) === true) {
+            $validated['explanation_enabled'] = true;
+        }
+        if (($validated['explanation_enabled'] ?? $question->explanation_enabled) === false) {
+            $validated['explanation_required'] = false;
+        }
+
+        $question->fill($validated);
         $question->save();
 
         return $this->success(

@@ -49,10 +49,12 @@ class AttemptController extends Controller
             $request->input('answer_text'),
             // `has()` (not `filled()`): an explicitly empty set means "clear the
             // selection", while an absent key keeps the legacy single-select path.
-            $request->has('option_ids') ? array_map('intval', (array) $request->input('option_ids')) : null
+            $request->has('option_ids') ? array_map('intval', (array) $request->input('option_ids')) : null,
+            $request->input('explanation'),
+            $request->exists('explanation')
         );
 
-        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
+        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
 
         return $this->success(new ExamAttemptResource($attempt), 'Answer saved.');
     }
@@ -109,9 +111,9 @@ class AttemptController extends Controller
 
         $warningCount = (int) $attempt->violation_warnings;
         $terminateOnViolation = (bool) ($attempt->integritySetting?->terminate_on_violation ?? true);
-        $thresholdReached = $warningCount >= $threshold && $terminateOnViolation;
+        $thresholdExceeded = $warningCount > $threshold && $terminateOnViolation;
 
-        if ($attempt->status->isInProgress() && $thresholdReached) {
+        if ($attempt->status->isInProgress() && $thresholdExceeded) {
             $terminated = $this->terminateAttempt->execute($attempt, 'THRESHOLD_TERMINATION', [
                 'warning_count' => $warningCount,
                 'warning_threshold' => $threshold,

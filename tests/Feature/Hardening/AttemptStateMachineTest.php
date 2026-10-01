@@ -34,7 +34,7 @@ class AttemptStateMachineTest extends ApiTestCase
     protected function start($student, $exam): ExamAttempt
     {
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         return ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -63,7 +63,7 @@ class AttemptStateMachineTest extends ApiTestCase
         // Starting a fresh attempt must create a NEW attempt, never revive the
         // submitted one or reverse its state.
         $fresh = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $this->assertNotSame($attempt->id, $fresh->json('data.id'));

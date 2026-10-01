@@ -80,5 +80,10 @@ if __name__ == '__main__':
     # Generate Apple Touch Icon 180x180
     img_apple = draw_compass_logo(180)
     img_apple.save('public/apple-touch-icon.png', 'PNG')
+
+    # Generate a real ICO file as well as the SVG favicon. Browsers and PWA
+    # tooling may still request /favicon.ico directly.
+    img_favicon = draw_compass_logo(48)
+    img_favicon.save('public/favicon.ico', 'ICO', sizes=[(16, 16), (32, 32), (48, 48)])
     
     print("PWA icons generated successfully in public/")

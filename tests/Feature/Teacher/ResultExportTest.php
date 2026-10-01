@@ -29,7 +29,7 @@ class ResultExportTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
 
@@ -130,7 +130,7 @@ class ResultExportTest extends ApiTestCase
         $this->actingAs($arabicStudent, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->actingAs($arabicStudent, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $res = $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/exams/{$exam->id}/results/export?format=pdf")

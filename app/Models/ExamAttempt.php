@@ -11,11 +11,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ExamAttempt extends Model
 {
     /** @use HasFactory<\Database\Factories\ExamAttemptFactory> */
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'exam_id',
@@ -48,6 +49,7 @@ class ExamAttempt extends Model
         'resumed_at',
         'resumed_by',
         'resume_note',
+        'rules_acknowledged_at',
         'previous_end_reason',
         'previous_expires_at',
         'time_restored_seconds',
@@ -63,6 +65,7 @@ class ExamAttempt extends Model
             'scored_at' => 'datetime',
             'expires_at' => 'datetime',
             'last_heartbeat_at' => 'datetime',
+            'rules_acknowledged_at' => 'datetime',
             'grades_published_at' => 'datetime',
             'score' => 'integer',
             'percentage' => 'integer',
@@ -112,6 +115,23 @@ class ExamAttempt extends Model
     public function integrityReviews(): HasMany
     {
         return $this->hasMany(ExamIntegrityReview::class, 'attempt_id');
+    }
+
+    public function makeUpAssignment(): HasOne
+    {
+        return $this->hasOne(ExamMakeUpAssignment::class, 'attempt_id');
+    }
+
+    /** Duration actually spent according to server timestamps (in seconds). */
+    public function durationSeconds(): int
+    {
+        if ($this->started_at === null) {
+            return 0;
+        }
+
+        $endedAt = $this->submitted_at ?? $this->expires_at ?? now();
+
+        return max(0, (int) $endedAt->getTimestamp() - (int) $this->started_at->getTimestamp());
     }
 
     public function isOwnedBy(User $user): bool

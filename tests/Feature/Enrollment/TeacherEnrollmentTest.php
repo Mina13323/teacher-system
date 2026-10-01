@@ -82,6 +82,63 @@ class TeacherEnrollmentTest extends ApiTestCase
         ]);
     }
 
+    public function test_cancelled_enrollment_stays_hidden_until_staff_reactivates_it(): void
+    {
+        $teacher = $this->makeTeacher();
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $student = $this->makeStudent();
+        $enrolledAt = now()->subDays(30)->startOfSecond();
+        $completedAt = now()->subDays(2)->startOfSecond();
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'cancelled',
+            'enrolled_at' => $enrolledAt,
+            'completed_at' => $completedAt,
+        ]);
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/courses/{$course->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.is_enrolled', false)
+            ->assertJsonPath('data.enrollment_status', 'cancelled');
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson('/api/v1/student/courses')
+            ->assertStatus(200)
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/courses/{$course->id}/enroll")
+            ->assertStatus(409);
+
+        $this->assertDatabaseHas('enrollments', [
+            'course_id' => $course->id,
+            'student_id' => $student->id,
+            'status' => 'cancelled',
+        ]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/courses/{$course->id}/students", [
+                'student_id' => $student->id,
+            ])
+            ->assertStatus(201);
+
+        $this->assertDatabaseHas('enrollments', [
+            'course_id' => $course->id,
+            'student_id' => $student->id,
+            'status' => 'active',
+            'enrolled_at' => $enrolledAt->toDateTimeString(),
+            'completed_at' => $completedAt->toDateTimeString(),
+        ]);
+
+        $this->actingAs($student, 'sanctum')
+            ->getJson('/api/v1/student/courses')
+            ->assertStatus(200)
+            ->assertJsonPath('data.0.id', $course->id);
+    }
+
     public function test_teacher_can_list_students_enrolled_in_their_course(): void
     {
         $teacher = $this->makeTeacher();

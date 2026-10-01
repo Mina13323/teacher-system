@@ -16,6 +16,11 @@ class StartExamAttemptRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [];
+        return [
+            'rules_acknowledged' => ['required', 'accepted'],
+            // Optional response optimization for clients that immediately fetch
+            // the full attempt from the authorized attempt endpoint.
+            'compact_response' => ['sometimes', 'boolean'],
+        ];
     }
 }

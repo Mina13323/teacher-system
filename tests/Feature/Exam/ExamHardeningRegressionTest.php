@@ -52,7 +52,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attemptId = $startRes->json('data.id');
@@ -116,7 +116,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
@@ -168,7 +168,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
@@ -188,7 +188,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $this->assertSame(0, $attempt->integrityEvents()->count(), 'No fabricated events for a single report');
 
         // Above threshold (simulating repeated confirmed violations): ends the attempt.
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", [
@@ -232,7 +232,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
         $attempt = ExamAttempt::findOrFail($attemptId);
@@ -275,14 +275,14 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Attempt #1
         $start1 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $id1 = $start1->json('data.id');
         $this->assertSame(1, $start1->json('data.attempt_number'));
 
         // Calling start again while #1 is in progress returns the existing attempt idempotently
         $startDup = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $this->assertSame($id1, $startDup->json('data.id'));
         $this->assertSame(1, $startDup->json('data.attempt_number'));
@@ -294,7 +294,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Attempt #2
         $start2 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $id2 = $start2->json('data.id');
         $this->assertSame(2, $start2->json('data.attempt_number'));
@@ -306,7 +306,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Attempt #3
         $start3 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $id3 = $start3->json('data.id');
         $this->assertSame(3, $start3->json('data.attempt_number'));
@@ -318,7 +318,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Attempt #4 must be rejected
         $start4 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
 
         $start4->assertStatus(422);
         $this->assertStringContainsString('maximum number of attempts', $start4->json('message'));
@@ -350,7 +350,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Start attempt #100
         $start100 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $id100 = $start100->json('data.id');
         $this->assertSame(100, $start100->json('data.attempt_number'));
@@ -362,7 +362,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
 
         // Attempt #101 must be blocked
         $start101 = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
 
         $start101->assertStatus(422);
         $this->assertStringContainsString('maximum number of attempts', $start101->json('message'));
@@ -378,7 +378,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, $course, $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
         $attempt = ExamAttempt::findOrFail($attemptId);
@@ -393,8 +393,8 @@ class ExamHardeningRegressionTest extends ApiTestCase
                 ])->assertStatus(200);
         }
 
-        // Accumulated confirmed violations past the threshold, then terminate.
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        // Accumulated confirmed violations beyond the threshold, then terminate.
+        $attempt->forceFill(['violation_warnings' => 6])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);
@@ -451,7 +451,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         [$teacher, $student, , $exam] = $this->setupExamWithFourMcqs();
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
         $attemptId = $startRes->json('data.id');
         $attempt = ExamAttempt::findOrFail($attemptId);
@@ -459,7 +459,7 @@ class ExamHardeningRegressionTest extends ApiTestCase
         $opt = $firstQ->attemptOptions->first();
 
         // Terminate attempt (warnings already exceed the frozen threshold)
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);

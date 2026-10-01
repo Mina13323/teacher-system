@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { useExamIntegrity } from '@/composables/useExamIntegrity';
@@ -23,6 +23,11 @@ const attempt = ref(null);
 const result = ref(null);
 const current = ref(0);
 const essayAnswers = ref({});
+const mcqExplanations = ref({});
+const explanationSaveTimers = new Map();
+const routeLeaveConfirmOpen = ref(false);
+const routeLeaveTarget = ref(null);
+let allowRouteLeave = false;
 const savingAnswer = ref(false);
 const submitting = ref(false);
 const submittingBusy = ref(false);
@@ -107,6 +112,7 @@ function persistRecovery() {
         localStorage.setItem(RECOVERY_KEY(), JSON.stringify({
             pending: pendingAnswers.value,
             essayAnswers: essayAnswers.value,
+            mcqExplanations: mcqExplanations.value,
             current: current.value,
             savedAt: new Date().toISOString(),
             expiresAt: attempt.value?.expires_at || null,
@@ -132,6 +138,9 @@ function restoreRecovery() {
         if (state.essayAnswers && typeof state.essayAnswers === 'object') {
             essayAnswers.value = { ...state.essayAnswers, ...essayAnswers.value };
         }
+        if (state.mcqExplanations && typeof state.mcqExplanations === 'object') {
+            mcqExplanations.value = { ...mcqExplanations.value, ...state.mcqExplanations };
+        }
         if (typeof state.current === 'number' && state.current >= 0 && state.current < questions.value.length) {
             current.value = state.current;
         }
@@ -146,6 +155,30 @@ function clearRecovery() {
     } catch {
         /* ignore */
     }
+}
+
+function acceptSubmission(res) {
+    result.value = res;
+    if (attempt.value) {
+        attempt.value = {
+            ...attempt.value,
+            status: res?.status && res.status !== 'in_progress' ? res.status : 'submitted',
+            end_reason: res?.end_reason ?? attempt.value.end_reason,
+            submitted_at: res?.submitted_at ?? attempt.value.submitted_at ?? new Date().toISOString(),
+            grades_published: Boolean(res?.grades_published),
+            grades_published_at: res?.grades_published_at ?? null,
+            score: res?.score ?? null,
+            percentage: res?.percentage ?? null,
+            passed: res?.passed ?? null,
+        };
+    }
+    clearInterval(timer);
+    timer = null;
+    stopHeartbeat();
+    stopFlushTimer();
+    stopMonitoring();
+    clearRecovery();
+    notifications.refreshUnread();
 }
 
 function markConnection(ok) {
@@ -196,12 +229,27 @@ function stopFlushTimer() {
     }
 }
 
+/** Queue selected MCQ answers with their rationale before route/page teardown. */
+function queueMcqExplanationDrafts() {
+    for (const q of questions.value) {
+        if (!q.explanation_enabled || q.question_type === 'essay') continue;
+        const optionIds = currentSelection(q);
+        if (!optionIds.length) continue;
+        pendingAnswers.value[q.id] = {
+            question_id: q.id,
+            option_ids: optionIds,
+            explanation: mcqExplanations.value[q.id] ?? '',
+        };
+    }
+}
+
 /**
  * Best-effort flush when the page is being hidden/unloaded: send queued answers
  * with fetch keepalive so a closing tab does not lose work. NO integrity event
  * is reported for the hide itself.
  */
 function flushPendingOnExit() {
+    queueMcqExplanationDrafts();
     persistRecovery();
     const entries = Object.entries(pendingAnswers.value);
     if (!entries.length) return;
@@ -281,6 +329,47 @@ const { loading, error, run: load } = useAsync(async () => {
     beginMonitoring();
 });
 
+async function loadAttempt() {
+    try {
+        await load();
+    } catch {
+        // `useAsync` exposes the failure in `error` for the retry screen.
+    }
+}
+
+onBeforeRouteLeave((to) => {
+    if (allowRouteLeave) {
+        allowRouteLeave = false;
+        return true;
+    }
+
+    const restoringAttempt = route.name === 'student.attempt' && loading.value && !attempt.value;
+    if (!restoringAttempt && (result.value || attempt.value?.status !== 'in_progress' || blocked.value)) {
+        return true;
+    }
+
+    routeLeaveTarget.value = to;
+    routeLeaveConfirmOpen.value = true;
+    return false;
+});
+
+async function confirmRouteLeave() {
+    const target = routeLeaveTarget.value;
+    routeLeaveConfirmOpen.value = false;
+    routeLeaveTarget.value = null;
+    if (!target) return;
+
+    // Keep the local recovery copy and try a keepalive send; leaving never
+    // cancels, resets, or extends the server-side attempt deadline.
+    flushPendingOnExit();
+    allowRouteLeave = true;
+    try {
+        await router.push(target.fullPath);
+    } finally {
+        allowRouteLeave = false;
+    }
+}
+
 function normalizeAttempt(a) {
     if (!a) return a;
     const qs = Array.isArray(a.questions) ? a.questions : (a.questions?.data || []);
@@ -298,6 +387,8 @@ function initEssayAnswers() {
     attempt.value.questions.forEach((q) => {
         if (q.question_type === 'essay') {
             essayAnswers.value[q.id] = q.answer_text || '';
+        } else if (q.explanation_enabled) {
+            mcqExplanations.value[q.id] = q.explanation || '';
         }
     });
 }
@@ -313,6 +404,14 @@ const answeredCount = computed(() => {
         return q.options.some((o) => o.selected);
     }).length;
 });
+
+const missingRequiredExplanations = computed(() => questions.value.filter((q) =>
+    q.question_type !== 'essay'
+    && q.explanation_enabled
+    && q.explanation_required
+    && q.options.some((option) => option.selected)
+    && !String(mcqExplanations.value[q.id] ?? q.explanation ?? '').trim()
+));
 
 const confirmMessage = computed(() => t('examTake.confirmMessage', { n: answeredCount.value, total: questions.value.length }));
 
@@ -349,18 +448,29 @@ function correctOptionsText(q) {
 }
 
 function startTimer() {
+    clearInterval(timer);
+    timer = null;
+
+    if (attempt.value?.status !== 'in_progress') {
+        timeLeft.value = 0;
+        return;
+    }
+
     const expires = attempt.value?.expires_at;
     if (!expires) return;
+
     const tick = () => {
         const ms = new Date(expires).getTime() - Date.now();
         timeLeft.value = ms <= 0 ? 0 : ms;
         if (ms <= 0) {
             clearInterval(timer);
-            onTimeUp();
+            timer = null;
+            if (!submitting.value && !submittingBusy.value) onTimeUp();
         }
     };
+
     tick();
-    timer = setInterval(tick, 1000);
+    if (timeLeft.value > 0) timer = setInterval(tick, 1000);
 }
 
 function fmt(ms) {
@@ -417,6 +527,69 @@ function applySelection(q, ids) {
     });
 }
 
+function onMcqExplanationInput(questionId, value) {
+    mcqExplanations.value[questionId] = value;
+    persistRecovery();
+
+    const pendingTimer = explanationSaveTimers.get(questionId);
+    if (pendingTimer) clearTimeout(pendingTimer);
+    explanationSaveTimers.set(questionId, setTimeout(() => {
+        explanationSaveTimers.delete(questionId);
+        saveMcqExplanation(questionId);
+    }, 700));
+}
+
+async function saveMcqExplanation(questionId) {
+    const pendingTimer = explanationSaveTimers.get(questionId);
+    if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        explanationSaveTimers.delete(questionId);
+    }
+
+    const q = questions.value.find((question) => Number(question.id) === Number(questionId));
+    if (!q || !q.explanation_enabled || blocked.value || attempt.value?.status !== 'in_progress') return false;
+
+    const optionIds = currentSelection(q);
+    if (!optionIds.length) {
+        persistRecovery();
+        return true;
+    }
+
+    const payload = {
+        question_id: q.id,
+        option_ids: optionIds,
+        explanation: mcqExplanations.value[q.id] ?? '',
+    };
+    pendingAnswers.value[q.id] = payload;
+    persistRecovery();
+
+    try {
+        const updated = await student.answer(attempt.value.id, payload);
+        attempt.value = normalizeAttempt(updated);
+        delete pendingAnswers.value[q.id];
+        persistRecovery();
+        markConnection(true);
+        return true;
+    } catch (e) {
+        if (e.status === 422 || e.isValidation) {
+            delete pendingAnswers.value[q.id];
+            persistRecovery();
+            await handleRejection(e);
+        } else {
+            markConnection(false);
+        }
+        return false;
+    }
+}
+
+async function saveAllMcqExplanations() {
+    for (const q of questions.value) {
+        if (q.explanation_enabled && q.question_type !== 'essay' && currentSelection(q).length) {
+            await saveMcqExplanation(q.id);
+        }
+    }
+}
+
 async function answer(optionId) {
     const q = currentQuestion.value;
     if (blocked.value || attempt.value?.status !== 'in_progress') return;
@@ -436,6 +609,9 @@ async function answer(optionId) {
     applySelection(q, nextSet);
 
     const payload = { question_id: q.id, option_ids: nextSet };
+    if (q.explanation_enabled) {
+        payload.explanation = mcqExplanations.value[q.id] ?? '';
+    }
     pendingAnswers.value[q.id] = payload;
     persistRecovery();
 
@@ -486,35 +662,46 @@ async function saveEssay(qId) {
 }
 
 async function submit() {
+    if (submitting.value || submittingBusy.value || blocked.value || attempt.value?.status !== 'in_progress') return;
+
     submitting.value = true;
     confirmOpen.value = false;
     stopMonitoring();
     stopHeartbeat();
     stopFlushTimer();
     try {
-        // Make sure queued answers land before the final submission.
+        // Persist rationale drafts and queued answers before final submission.
+        await saveAllMcqExplanations();
         await flushPending();
         const res = await student.submit(attempt.value.id);
-        result.value = res;
-        clearRecovery();
-        notifications.refreshUnread();
+        acceptSubmission(res);
     } catch (e) {
         await handleRejection(e);
     } finally {
         submitting.value = false;
+        // A validation/network error can leave the server attempt active. Resume
+        // monitoring and synchronization instead of silently leaving it idle.
+        if (attempt.value?.status === 'in_progress' && !blocked.value) {
+            startTimer();
+            startHeartbeat();
+            startFlushTimer();
+            beginMonitoring();
+        }
     }
 }
 
 async function onTimeUp() {
+    if (submitting.value || submittingBusy.value || blocked.value || attempt.value?.status !== 'in_progress') return;
+
     submittingBusy.value = true;
     stopMonitoring();
     stopHeartbeat();
     stopFlushTimer();
     try {
+        await saveAllMcqExplanations();
         await flushPending();
         const res = await student.submit(attempt.value.id);
-        result.value = res;
-        clearRecovery();
+        acceptSubmission(res);
         toast.info(t('examTake.timeUp'));
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
@@ -523,9 +710,10 @@ async function onTimeUp() {
             await handleRejection(e);
         } else {
             // Network trouble at the deadline: the SERVER auto-submits at the
-            // deadline with the saved answers — nothing is lost. Explain that
-            // instead of pretending the attempt vanished.
+            // deadline with the saved answers — nothing is lost. Keep a
+            // heartbeat so the screen refreshes once the connection returns.
             toast.info(t('examTake.timeUpOffline'));
+            startHeartbeat();
         }
     } finally {
         submittingBusy.value = false;
@@ -537,7 +725,7 @@ function finish() {
 }
 
 onMounted(() => {
-    load();
+    loadAttempt();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     startFlushTimer();
@@ -545,8 +733,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     clearInterval(timer);
+    timer = null;
+    stopMonitoring();
     stopHeartbeat();
     stopFlushTimer();
+    explanationSaveTimers.forEach((timerId) => clearTimeout(timerId));
+    explanationSaveTimers.clear();
     persistRecovery();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
@@ -556,7 +748,10 @@ onBeforeUnmount(() => {
 <template>
     <div class="mx-auto max-w-3xl space-y-4">
         <LoadingSpinner v-if="loading" />
-        <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
+        <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <p>{{ error.message }}</p>
+            <AppButton class="mt-3" size="sm" variant="outline" :loading="loading" @click="loadAttempt">{{ $t('common.retry') }}</AppButton>
+        </div>
 
         <!-- Result / submitted state -->
         <div v-else-if="result || (attempt && attempt.status !== 'in_progress' && attempt.status !== 'expired')" class="space-y-4">
@@ -638,12 +833,12 @@ onBeforeUnmount(() => {
 
         <!-- Active attempt -->
         <template v-else-if="attempt">
-            <div class="flex items-center justify-between rounded-xl border border-ink-100 bg-white px-5 py-4 shadow-sm">
-                <div>
-                    <h1 class="text-lg font-semibold text-ink-900" dir="auto">{{ attempt.exam_title }}</h1>
+            <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-100 bg-white px-3 py-3 shadow-sm sm:px-5 sm:py-4">
+                <div class="min-w-0 flex-1">
+                    <h1 class="break-words text-base font-semibold text-ink-900 sm:text-lg" dir="auto">{{ attempt.exam_title }}</h1>
                     <p class="text-xs text-ink-400">{{ $t('common.attemptN', { n: attempt.attempt_number }) }}</p>
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
                     <AppBadge :tone="timeLeft < 60000 ? 'danger' : 'primary'">⏱ {{ fmt(timeLeft) }}</AppBadge>
                     <span class="text-xs text-ink-400">{{ $t('examTake.answered', { n: answeredCount, total: questions.length }) }}</span>
                 </div>
@@ -671,6 +866,7 @@ onBeforeUnmount(() => {
                 <p class="text-xs leading-relaxed">
                     {{ integrityRules.terminate_on_violation ? $t('examTake.integrityStrictBody') : $t('examTake.integrityMonitorBody') }}
                 </p>
+                <p class="mt-1 text-[11px] leading-relaxed opacity-80">{{ $t('examTake.screenshotLimit') }}</p>
                 <p v-if="warningCount" class="text-xs mt-1.5 font-semibold">
                     ⚠️ {{ $t('examTake.warningCount', {
                         n: warningCount,
@@ -697,7 +893,7 @@ onBeforeUnmount(() => {
                     <span>{{ $t('examTake.questionOf', { n: current + 1, total: questions.length }) }}</span>
                     <span>{{ currentQuestion?.points }} {{ $t('examTake.pts') }}</span>
                 </div>
-                <p class="mt-2 text-lg font-medium text-ink-900" dir="auto">{{ currentQuestion?.question_text }}</p>
+                <p class="mt-2 text-lg font-medium text-ink-900" :class="integrityRules?.prevent_copy ? 'exam-protected-text' : ''" dir="auto">{{ currentQuestion?.question_text }}</p>
                 <img v-if="currentQuestion?.image_url" :src="currentQuestion.image_url" :alt="$t('examTake.questionImageAlt')" class="max-h-[28rem] w-full rounded-lg border border-ink-200 object-contain bg-ink-50" />
 
                 <!-- Essay Question Input -->
@@ -741,15 +937,30 @@ onBeforeUnmount(() => {
                         >
                             <svg v-if="opt.selected" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
                         </span>
-                        <span class="text-ink-800 font-medium" dir="auto">{{ opt.option_text }}</span>
+                        <span class="text-ink-800 font-medium" :class="integrityRules?.prevent_copy ? 'exam-protected-text' : ''" dir="auto">{{ opt.option_text }}</span>
                     </button>
+                </div>
+
+                <div v-if="currentQuestion?.explanation_enabled && currentQuestion?.question_type !== 'essay'" class="space-y-2 border-t border-ink-100 pt-4">
+                    <AppTextarea
+                        v-model="mcqExplanations[currentQuestion.id]"
+                        :label="currentQuestion.explanation_required ? $t('examTake.explanationRequired') : $t('examTake.explanationOptional')"
+                        :hint="currentQuestion.explanation_required ? $t('examTake.explanationRequiredHint') : $t('examTake.explanationOptionalHint')"
+                        id="mcq-explanation"
+                        :rows="3"
+                        :required="currentQuestion.explanation_required"
+                        :disabled="blocked"
+                        dir="auto"
+                        @update:model-value="onMcqExplanationInput(currentQuestion.id, $event)"
+                        @blur="saveMcqExplanation(currentQuestion.id)"
+                    />
                 </div>
             </div>
 
             <!-- Navigation -->
-            <div class="flex items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
                 <AppButton variant="outline" :disabled="current === 0" @click="current--">{{ $t('common.previous') }}</AppButton>
-                <div class="flex flex-wrap justify-center gap-1.5">
+                <div class="min-w-0 flex flex-1 flex-wrap justify-center gap-1.5">
                     <button
                         v-for="(q, i) in questions"
                         :key="q.id"
@@ -764,8 +975,12 @@ onBeforeUnmount(() => {
                 <AppButton variant="outline" :disabled="current >= questions.length - 1" @click="current++">{{ $t('common.next') }}</AppButton>
             </div>
 
+            <p v-if="missingRequiredExplanations.length" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+                {{ $t('examTake.requiredExplanationSubmit', { n: questions.findIndex((q) => q.id === missingRequiredExplanations[0].id) + 1 }) }}
+            </p>
+
             <div class="flex justify-end pt-2">
-                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy || blocked" @click="confirmOpen = true">{{ $t('examTake.submitExam') }}</AppButton>
+                <AppButton variant="success" :loading="submitting" :disabled="submittingBusy || blocked || missingRequiredExplanations.length > 0" @click="confirmOpen = true">{{ $t('examTake.submitExam') }}</AppButton>
             </div>
         </template>
 
@@ -778,5 +993,27 @@ onBeforeUnmount(() => {
             @close="confirmOpen = false"
             @confirm="submit"
         />
+        <ConfirmDialog
+            :open="routeLeaveConfirmOpen"
+            :title="$t('examTake.routeLockTitle')"
+            :message="$t('examTake.routeLockMessage')"
+            :confirm-text="$t('examTake.routeLeave')"
+            @close="routeLeaveConfirmOpen = false; routeLeaveTarget = null"
+            @confirm="confirmRouteLeave"
+        />
     </div>
 </template>
+
+<style scoped>
+/* Best-effort selection discouragement for question/option text only. Editable
+   answer fields are intentionally outside this class and remain selectable. */
+.exam-protected-text {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.exam-protected-text::selection {
+    background: transparent;
+}
+</style>

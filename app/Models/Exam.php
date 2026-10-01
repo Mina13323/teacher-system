@@ -96,6 +96,11 @@ class Exam extends Model
         return $this->hasMany(ExamAttempt::class);
     }
 
+    public function makeUpAssignments(): HasMany
+    {
+        return $this->hasMany(ExamMakeUpAssignment::class, 'exam_id');
+    }
+
     public function integritySetting(): HasOne
     {
         return $this->hasOne(ExamIntegritySetting::class, 'exam_id');

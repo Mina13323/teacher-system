@@ -49,7 +49,7 @@ function closeMobile() {
             </router-link>
 
             <!-- Desktop Navigation -->
-            <nav class="hidden items-center gap-6 lg:gap-8 md:flex">
+            <nav class="hidden items-center gap-6 lg:gap-8 lg:flex">
                 <a href="#philosophy" class="text-sm font-medium text-ink-700 transition hover:text-terracotta-600">
                     {{ $t('landing.philosophyTag') }}
                 </a>
@@ -72,7 +72,7 @@ function closeMobile() {
                 <LanguageSwitcher class="scale-90 sm:scale-100" />
 
                 <!-- Desktop / Tablet Auth Button -->
-                <div class="hidden sm:flex sm:items-center sm:gap-2">
+                <div class="hidden md:flex md:items-center md:gap-2">
                     <template v-if="auth.isAuthenticated">
                         <div class="hidden items-center gap-2 rounded-full border border-ink-200 bg-white/80 px-3 py-1 text-xs lg:flex">
                             <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -100,8 +100,10 @@ function closeMobile() {
                 <!-- Mobile Hamburger Toggle -->
                 <button
                     type="button"
-                    class="flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-700 hover:bg-ink-50 md:hidden"
+                    class="flex h-11 w-11 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-700 hover:bg-ink-50 lg:hidden"
                     :aria-label="mobileOpen ? $t('app.close') : $t('app.openMenu')"
+                    :aria-expanded="mobileOpen"
+                    aria-controls="public-mobile-menu"
                     @click="mobileOpen = !mobileOpen"
                 >
                     <svg v-if="!mobileOpen" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -123,7 +125,8 @@ function closeMobile() {
             leave-from-class="opacity-100 translate-y-0"
             leave-to-class="opacity-0 -translate-y-2"
         >
-            <div v-if="mobileOpen" class="border-b border-ink-200 bg-white/95 px-4 py-4 shadow-lg backdrop-blur-md md:hidden">
+            <div v-if="mobileOpen" id="public-mobile-menu"
+                class="mobile-menu-panel overflow-y-auto border-b border-ink-200 bg-white/95 px-4 py-4 shadow-lg backdrop-blur-md lg:hidden">
                 <nav class="flex flex-col space-y-2">
                     <a
                         href="#philosophy"
@@ -196,3 +199,10 @@ function closeMobile() {
         </transition>
     </header>
 </template>
+
+<style scoped>
+.mobile-menu-panel {
+    max-height: calc(100vh - 4rem);
+    max-height: calc(100dvh - 4rem);
+}
+</style>

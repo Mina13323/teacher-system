@@ -10,15 +10,15 @@ Users can install Teacher-System on:
 - Windows (Chrome, Edge)
 - macOS (Chrome, Edge, Safari)
 
-The PWA runs as a standalone window with native app icons, theme colors, safe-area viewport handling, offline network indicators, and update notifications.
+The PWA runs as a standalone window with native app icons, theme colors, safe-area viewport handling, offline network indicators, and user-confirmed update notifications. The shared portal shell, navigation, dialogs, and install/update notices adapt across phone, tablet, and desktop widths. Offline support intentionally caches only the public app shell and static assets; authenticated API data, exams, protected media, and submissions remain online-only.
 
 ---
 
 ## 2. Web App Manifest Specifications
 
 - **Manifest File:** Generated via `vite-plugin-pwa` at `/manifest.webmanifest`
-- **Application Name:** `Atlas Academy — Geography & History`
-- **Short Name:** `Atlas Academy`
+- **Application Name:** `El Masry — Geography & History`
+- **Short Name:** `El Masry`
 - **Start URL:** `/`
 - **Scope:** `/`
 - **Display Mode:** `standalone`
@@ -47,27 +47,29 @@ The service worker is configured via Workbox with a **strict security-first cach
 - **Notifications & Personal Info:** Private student data and in-app notifications are never stored in service worker caches.
 
 ### ✅ Static Asset Caching Rules:
-- **JS Chunks & CSS:** Cached via Workbox glob patterns (`**/*.{js,css,html,ico,png,svg,woff2}`).
+- **JS Chunks & CSS:** Cached via Workbox's precache glob patterns (`**/*.{js,css,html,ico,png,svg,woff2}`).
 - **Public Fonts:** Google Fonts (`fonts.googleapis.com` & `fonts.gstatic.com`) are cached via `CacheFirst` (max 10 entries, 1 year expiry).
+- **Deployment cache headers:** `index.html`, `manifest.webmanifest`, `sw.js`, and `push-sw.js` are revalidated/no-store; only content-hashed assets receive a one-year immutable cache header. Root icon files can refresh daily. Purge any CDN/Host cache after deploying the corrected headers once.
+- **Update checks:** The app checks on registration, when it returns to the foreground, when connectivity returns, and every 30 minutes while open. Updates remain user-confirmed so a timed exam is not reloaded unexpectedly.
 - **Public Landing Page Assets:** Public graphics and icons are cached safely for offline landing page rendering.
 
 ---
 
 ## 4. Offline & Installation Experience
 
-### Offline Degradation ([OfflineBanner.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/OfflineBanner.vue))
+### Offline Degradation ([OfflineBanner.vue](../resources/js/components/pwa/OfflineBanner.vue))
 - When connection is lost, a non-intrusive warning banner appears: *"You are currently offline. Active features (exams, video playback, live actions) require internet connectivity."*
 - Includes a **Retry** button.
 - When connection returns, displays a brief *"Back online"* green confirmation indicator.
 - Does **NOT** simulate fake offline exam submissions or bypass server validation.
 
-### Install Prompt ([AppInstallPrompt.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/AppInstallPrompt.vue))
+### Install Prompt ([AppInstallPrompt.vue](../resources/js/components/pwa/AppInstallPrompt.vue))
 - Listens to `beforeinstallprompt` event and detects if the app is already running in `standalone` display mode.
 - Renders a floating, elegant install banner with an **Install App** CTA.
 - Provides a **Dismiss** option that remembers user preference per session.
 - On iOS devices, displays custom Safari share instructions: *"To install on iPhone/iPad: Tap Share → Add to Home Screen"*.
 
-### Update Notifications ([PwaUpdateToast.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/PwaUpdateToast.vue))
+### Update Notifications ([PwaUpdateToast.vue](../resources/js/components/pwa/PwaUpdateToast.vue))
 - Uses `registerType: 'prompt'`.
 - When a new frontend version is built and deployed, a toast appears: *"New version available — Update App"*.
 - Clicking **Update App** safely triggers `updateServiceWorker(true)` to refresh assets without breaking active user sessions.

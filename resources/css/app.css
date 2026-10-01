@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 @layer utilities {
+    /* iOS Safari zooms the page when a focused form control is smaller than 16px. */
+    @media (max-width: 639px) {
+        input:not([type='checkbox']):not([type='radio']):not([type='file']),
+        select,
+        textarea {
+            font-size: 16px;
+        }
+    }
+
     .pt-safe {
         padding-top: env(safe-area-inset-top, 0px);
     }
@@ -18,8 +27,14 @@
     .ps-safe {
         padding-inline-start: env(safe-area-inset-left, 0px);
     }
+    :root[dir='rtl'] .ps-safe {
+        padding-inline-start: env(safe-area-inset-right, 0px);
+    }
     .pe-safe {
         padding-inline-end: env(safe-area-inset-right, 0px);
+    }
+    :root[dir='rtl'] .pe-safe {
+        padding-inline-end: env(safe-area-inset-left, 0px);
     }
     .top-safe {
         top: env(safe-area-inset-top, 0px);

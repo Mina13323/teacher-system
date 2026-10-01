@@ -70,6 +70,10 @@ class SyncExamQuestionsAction
                     // The paper's order is the order the teacher sees on screen.
                     'position' => $position + 1,
                     'reference_answer' => $payload['reference_answer'] ?? null,
+                    'explanation_enabled' => ! $type->isEssay() && (bool) ($payload['explanation_enabled'] ?? false),
+                    'explanation_required' => ! $type->isEssay()
+                        && (bool) ($payload['explanation_enabled'] ?? false)
+                        && (bool) ($payload['explanation_required'] ?? false),
                 ]);
                 $question->save();
 

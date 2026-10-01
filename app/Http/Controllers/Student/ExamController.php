@@ -23,6 +23,8 @@ class ExamController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->assertStudentCanUseExams($request);
+
         $courseIds = $this->enrollments->enrolledCourseIds($request->user());
 
         $exams = Exam::query()
@@ -40,7 +42,7 @@ class ExamController extends Controller
     {
         $this->assertAccessible($request, $exam);
 
-        $exam->load('course')->loadCount(['questions', 'attempts']);
+        $exam->load(['course', 'integritySetting'])->loadCount(['questions', 'attempts']);
 
         $exam->setRelation('attempts', $exam->attempts()
             ->where('student_id', $request->user()->getKey())
@@ -80,16 +82,38 @@ class ExamController extends Controller
 
     public function start(StartExamAttemptRequest $request, Exam $exam): JsonResponse
     {
-        $attempt = $this->startAttempt->execute($request->user(), $exam);
+        $this->assertStudentCanUseExams($request);
 
-        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
+        $attempt = $this->startAttempt->execute(
+            $request->user(),
+            $exam,
+            $request->boolean('rules_acknowledged')
+        );
 
         // §14 multiple sessions: a second tab/device must land on the SAME
         // attempt (unique active_key enforces it at the DB level). Tell the
         // client explicitly so it can explain — never silently duplicate.
         $alreadyOpen = ! $attempt->wasRecentlyCreated;
-        $payload = (new ExamAttemptResource($attempt))->resolve();
-        $payload['already_open'] = $alreadyOpen;
+
+        if ($request->boolean('compact_response')) {
+            // The app navigates to /attempts/{id} immediately, where it fetches
+            // the full question snapshot. Avoid serializing and transferring
+            // that large payload twice; retain the full response by default
+            // for older API clients.
+            $payload = [
+                'id' => $attempt->getKey(),
+                'exam_id' => $attempt->exam_id,
+                'attempt_number' => $attempt->attempt_number,
+                'status' => $attempt->status?->value,
+                'started_at' => $attempt->started_at?->toISOString(),
+                'expires_at' => $attempt->expires_at?->toISOString(),
+                'already_open' => $alreadyOpen,
+            ];
+        } else {
+            $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
+            $payload = (new ExamAttemptResource($attempt))->resolve();
+            $payload['already_open'] = $alreadyOpen;
+        }
 
         return $this->success(
             $payload,
@@ -100,19 +124,23 @@ class ExamController extends Controller
         );
     }
 
+    private function assertStudentCanUseExams(Request $request): void
+    {
+        abort_unless($request->user()->isStudent(), 403, 'Student account required.');
+        abort_unless(
+            $request->user()->canTakeExams() && $request->user()->hasActiveAccess(),
+            403,
+            'You do not have access to exams.'
+        );
+    }
+
     private function assertAccessible(Request $request, Exam $exam): void
     {
         if (! $exam->status->isPublished()) {
             abort(404, 'Exam not found.');
         }
 
-        if ($request->user()->isStudent()) {
-            abort_unless(
-                $request->user()->canTakeExams() && $request->user()->hasActiveAccess(),
-                403,
-                'You do not have access to exams.'
-            );
-        }
+        $this->assertStudentCanUseExams($request);
 
         abort_unless(
             $this->enrollments->isEnrolled($request->user(), $exam->course_id),

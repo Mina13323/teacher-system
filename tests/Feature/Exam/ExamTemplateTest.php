@@ -404,7 +404,7 @@ class ExamTemplateTest extends ApiTestCase
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")
             ->assertStatus(201);
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)

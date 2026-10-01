@@ -114,7 +114,7 @@ watch(() => route.path, () => {
             <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
                     type="button"
-                    class="shrink-0 rounded-lg p-2 text-ink-600 hover:bg-ink-100 lg:hidden"
+                    class="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-ink-600 hover:bg-ink-100 lg:hidden"
                     :aria-label="$t('app.openMenu')"
                     @click="mobileOpen = true"
                 >
@@ -130,7 +130,7 @@ watch(() => route.path, () => {
                 <LanguageSwitcher class="me-0.5 sm:me-1 scale-90 sm:scale-100" />
                 <router-link
                     :to="notificationsRoute"
-                    class="relative rounded-lg p-2 text-ink-600 hover:bg-ink-100"
+                    class="relative flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-ink-600 hover:bg-ink-100"
                     :aria-label="$t('app.notifications')"
                 >
                     <Icon name="bell" :size="20" />
@@ -243,7 +243,7 @@ watch(() => route.path, () => {
                 v-for="item in bottomNavItems"
                 :key="item.to"
                 :to="item.to"
-                class="flex flex-1 flex-col items-center justify-center py-1 text-center transition"
+                class="flex min-h-11 flex-1 flex-col items-center justify-center py-1.5 text-center transition"
                 :class="isActive(item.to) ? 'text-terracotta-600 font-semibold' : 'text-ink-500 hover:text-ink-800'"
             >
                 <div class="relative">
@@ -262,7 +262,7 @@ watch(() => route.path, () => {
             <button
                 v-if="hasMoreInDrawer"
                 type="button"
-                class="flex flex-1 flex-col items-center justify-center py-1 text-center text-ink-500 hover:text-ink-800 transition"
+                class="flex min-h-11 flex-1 flex-col items-center justify-center py-1.5 text-center text-ink-500 hover:text-ink-800 transition"
                 :class="mobileOpen ? 'text-terracotta-600 font-semibold' : ''"
                 @click="mobileOpen = true"
             >

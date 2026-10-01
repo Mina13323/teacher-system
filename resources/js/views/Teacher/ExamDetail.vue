@@ -24,7 +24,7 @@ const route = useRoute();
 const router = useRouter();
 const examId = route.params.id;
 const toast = useToast();
-const { fieldErrors } = useFieldErrors();
+const { fieldErrors, extractFieldError } = useFieldErrors();
 
 const tab = ref('questions');
 const { loading, error, data, run } = useAsync(async () => {
@@ -51,19 +51,70 @@ const publishBusy = ref(false);
 const attemptsView = ref('flat'); // 'flat' | 'student'
 const grouped = ref([]);
 const groupedSummary = ref(null);
+const groupedMeta = ref(null);
 const studentSearch = ref('');
+const statusFilter = ref('');
+const exactScoreFilter = ref('');
+const integrityFilter = ref('');
+const selectedAttemptIds = ref([]);
+const operationSelectionLimit = 100;
+const deleteSelectedOpen = ref(false);
+const deleteAttemptsBusy = ref(false);
+const makeUpModal = ref(false);
+const makeUpLoadBusy = ref(false);
+const makeUpAssignBusy = ref(false);
+const makeUpStudents = ref([]);
+const makeUpStudentsMeta = ref(null);
+const makeUpAssignments = ref([]);
+const makeUpStudentSearch = ref('');
+const makeUpStudentPage = ref(1);
+const selectedMakeUpStudentIds = ref([]);
+const makeUpReason = ref('');
+const revokeMakeUpTarget = ref(null);
+const revokeMakeUpBusy = ref(false);
+let makeUpSearchTimer = null;
 const groupBusy = ref(false);
 const attemptsBusy = ref(false);
 const expandedStudent = ref(null);
 let searchTimer = null;
 
-async function loadGrouped() {
+const attemptStatusOptions = computed(() => [
+    { value: '', label: t('exams.allStatuses') },
+    { value: 'in_progress', label: t('exams.statusInProgressLabel') },
+    { value: 'submitted', label: t('exams.statusSubmittedLabel') },
+    { value: 'grading', label: t('exams.statusGradingLabel') },
+    { value: 'published', label: t('exams.statusPublishedLabel') },
+    { value: 'expired', label: t('exams.statusExpiredLabel') },
+]);
+
+const integrityStatusOptions = computed(() => [
+    { value: '', label: t('exams.allIntegrityStatuses') },
+    { value: 'normal', label: t('exams.integrityNormal') },
+    { value: 'monitoring', label: t('exams.integrityMonitoring') },
+    { value: 'flagged', label: t('exams.integrityFlagged') },
+    { value: 'reviewed', label: t('exams.integrityReviewed') },
+    { value: 'cleared', label: t('exams.integrityCleared') },
+]);
+
+function attemptFilterParams() {
+    const params = { per_page: 15 };
+    if (studentSearch.value.trim()) params.search = studentSearch.value.trim();
+    if (statusFilter.value) params.status = statusFilter.value;
+    if (integrityFilter.value) params.integrity_status = integrityFilter.value;
+    // An explicit string check is critical: numeric score zero is a real filter.
+    if (exactScoreFilter.value !== '' && exactScoreFilter.value !== null) {
+        params.score = Number(exactScoreFilter.value);
+    }
+    return params;
+}
+
+async function loadGrouped(page = 1) {
     groupBusy.value = true;
     try {
-        const query = studentSearch.value.trim() ? { search: studentSearch.value.trim() } : {};
-        const res = await teacher.attemptsGrouped(examId, query);
+        const res = await teacher.attemptsGrouped(examId, { ...attemptFilterParams(), page });
         grouped.value = res.students || [];
         groupedSummary.value = res.summary || null;
+        groupedMeta.value = res.pagination || null;
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -72,10 +123,15 @@ async function loadGrouped() {
 }
 
 function onStudentSearch() {
+    onAttemptFilterChange();
+}
+
+function onAttemptFilterChange() {
+    selectedAttemptIds.value = [];
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
         if (attemptsView.value === 'student') {
-            loadGrouped();
+            loadGrouped(1);
         } else {
             loadAttempts(1);
         }
@@ -85,13 +141,115 @@ function onStudentSearch() {
 function clearStudentSearch() {
     studentSearch.value = '';
     if (attemptsView.value === 'student') {
-        loadGrouped();
+        loadGrouped(1);
     } else {
         loadAttempts(1);
     }
 }
 
+const activeMakeUpStudentIds = computed(() => new Set(
+    makeUpAssignments.value
+        .filter((assignment) => assignment.status === 'assigned')
+        .map((assignment) => Number(assignment.student_id))
+));
+
+async function loadMakeUpAssignments() {
+    const response = toList(await teacher.makeUpAssignments(examId, { per_page: 100 }));
+    makeUpAssignments.value = response.items;
+}
+
+async function loadMakeUpStudents(page = 1) {
+    makeUpStudentPage.value = page;
+    const response = toList(await teacher.courseStudents(data.value.course_id, {
+        per_page: 15,
+        page,
+        ...(makeUpStudentSearch.value.trim() ? { search: makeUpStudentSearch.value.trim() } : {}),
+    }));
+    makeUpStudents.value = response.items;
+    makeUpStudentsMeta.value = response.meta;
+}
+
+async function openMakeUpModal() {
+    makeUpModal.value = true;
+    makeUpLoadBusy.value = true;
+    selectedMakeUpStudentIds.value = [];
+    makeUpReason.value = '';
+    makeUpStudentSearch.value = '';
+    try {
+        await Promise.all([loadMakeUpStudents(1), loadMakeUpAssignments()]);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        makeUpLoadBusy.value = false;
+    }
+}
+
+function onMakeUpStudentSearch() {
+    clearTimeout(makeUpSearchTimer);
+    makeUpSearchTimer = setTimeout(() => loadMakeUpStudents(1), 300);
+}
+
+function toggleMakeUpStudent(studentId) {
+    const id = Number(studentId);
+    if (activeMakeUpStudentIds.value.has(id)) return;
+    if (selectedMakeUpStudentIds.value.includes(id)) {
+        selectedMakeUpStudentIds.value = selectedMakeUpStudentIds.value.filter((selected) => selected !== id);
+        return;
+    }
+    if (selectedMakeUpStudentIds.value.length >= operationSelectionLimit) {
+        toast.info(t('exams.selectionLimit', { n: operationSelectionLimit }));
+        return;
+    }
+    selectedMakeUpStudentIds.value = [...selectedMakeUpStudentIds.value, id];
+}
+
+async function assignMakeUps() {
+    const studentIds = selectedMakeUpStudentIds.value.filter((id) => !activeMakeUpStudentIds.value.has(Number(id)));
+    if (!studentIds.length) return;
+
+    makeUpAssignBusy.value = true;
+    try {
+        await teacher.assignExamMakeUps(examId, studentIds, makeUpReason.value.trim() || null);
+        toast.success(t('exams.makeUpsAssignedToast', { n: studentIds.length }));
+        selectedMakeUpStudentIds.value = [];
+        await loadMakeUpAssignments();
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        makeUpAssignBusy.value = false;
+    }
+}
+
+function requestRevokeMakeUp(assignment) {
+    revokeMakeUpTarget.value = assignment;
+}
+
+async function revokeMakeUp() {
+    if (!revokeMakeUpTarget.value) return;
+    revokeMakeUpBusy.value = true;
+    try {
+        await teacher.revokeExamMakeUp(examId, revokeMakeUpTarget.value.id);
+        toast.success(t('exams.makeUpRevokedToast'));
+        revokeMakeUpTarget.value = null;
+        await loadMakeUpAssignments();
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        revokeMakeUpBusy.value = false;
+    }
+}
+
+function makeUpStatusLabel(status) {
+    return t(`exams.makeUpStatus.${status}`, status);
+}
+
+function studentExplanation(question) {
+    const answer = gradingData.value?.answers?.find((item) => Number(item.question_id) === Number(question.id));
+    return question?.explanation ?? answer?.explanation ?? '';
+}
+
 function switchAttemptsView(mode) {
+    selectedAttemptIds.value = [];
     attemptsView.value = mode;
     if (mode === 'student') {
         loadGrouped();
@@ -120,10 +278,7 @@ async function exportResults(format) {
 async function loadAttempts(p = 1) {
     attemptsBusy.value = true;
     try {
-        const params = { per_page: 15, page: p };
-        if (studentSearch.value.trim()) {
-            params.search = studentSearch.value.trim();
-        }
+        const params = { ...attemptFilterParams(), page: p };
         const res = toList(await teacher.examAttempts(examId, params));
         attempts.value = res.items;
         attemptsMeta.value = res.meta;
@@ -133,6 +288,37 @@ async function loadAttempts(p = 1) {
         attemptsBusy.value = false;
     }
 }
+function toggleAttemptSelection(attempt) {
+    if (attempt.status === 'in_progress') return;
+    const id = Number(attempt.id);
+    if (selectedAttemptIds.value.includes(id)) {
+        selectedAttemptIds.value = selectedAttemptIds.value.filter((selected) => selected !== id);
+        return;
+    }
+    if (selectedAttemptIds.value.length >= operationSelectionLimit) {
+        toast.info(t('exams.selectionLimit', { n: operationSelectionLimit }));
+        return;
+    }
+    selectedAttemptIds.value = [...selectedAttemptIds.value, id];
+}
+
+async function deleteSelectedAttempts() {
+    if (!selectedAttemptIds.value.length) return;
+    deleteAttemptsBusy.value = true;
+    try {
+        await teacher.bulkDeleteExamAttempts(examId, [...selectedAttemptIds.value]);
+        toast.success(t('exams.deletedAttemptsToast', { n: selectedAttemptIds.value.length }));
+        selectedAttemptIds.value = [];
+        deleteSelectedOpen.value = false;
+        await loadAttempts(1);
+        if (attemptsView.value === 'student') await loadGrouped(1);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        deleteAttemptsBusy.value = false;
+    }
+}
+
 async function loadIntegrity() {
     try { integrity.value = await teacher.integritySettings(examId); }
     catch { integrity.value = null; }
@@ -203,7 +389,7 @@ async function remove() {
 
 // ---- Question modal ----
 const qModal = ref(false);
-const qForm = reactive({ id: null, question_text: '', type: 'single_choice', points: 1, reference_answer: '', image_url: null });
+const qForm = reactive({ id: null, question_text: '', type: 'single_choice', points: 1, reference_answer: '', explanation_enabled: false, explanation_required: false, image_url: null });
 const qErrors = ref({});
 const qBusy = ref(false);
 const qImageBusy = ref(false);
@@ -213,10 +399,16 @@ function openQuestion(q = null) {
     qForm.type = q?.type || 'single_choice';
     qForm.points = q?.points || 1;
     qForm.reference_answer = q?.reference_answer || '';
+    qForm.explanation_enabled = Boolean(q?.explanation_enabled);
+    qForm.explanation_required = Boolean(q?.explanation_required);
     qForm.image_url = q?.image_url || null;
     qErrors.value = {};
     qModal.value = true;
 }
+function onExplanationEnabledChange() {
+    if (!qForm.explanation_enabled) qForm.explanation_required = false;
+}
+
 async function saveQuestion() {
     qBusy.value = true;
     qErrors.value = {};
@@ -226,6 +418,8 @@ async function saveQuestion() {
             type: qForm.type,
             points: Number(qForm.points),
             reference_answer: qForm.reference_answer || null,
+            explanation_enabled: qForm.type !== 'essay' && qForm.explanation_enabled,
+            explanation_required: qForm.type !== 'essay' && qForm.explanation_enabled && qForm.explanation_required,
         };
         if (qForm.id) await teacher.updateQuestion(qForm.id, payload);
         else await teacher.createQuestion(examId, payload);
@@ -280,6 +474,8 @@ const oTarget = ref(null);
 const oForm = reactive({ id: null, option_text: '', is_correct: false });
 const oErrors = ref({});
 const oBusy = ref(false);
+const regradeTarget = ref(null);
+const regradeBusy = ref(false);
 function openOption(q, option = null) {
     oTarget.value = q;
     oForm.id = option?.id || null;
@@ -313,6 +509,31 @@ async function toggleCorrect(q, option) {
         toast.error(e.message);
     }
 }
+function requestQuestionRegrade(question) {
+    regradeTarget.value = question;
+}
+
+async function regradeQuestionAttempts() {
+    const question = regradeTarget.value;
+    if (!question) return;
+
+    regradeBusy.value = true;
+    try {
+        const result = await teacher.regradeQuestionAttempts(question.id, { confirmed: true });
+        const regraded = Number(result?.attempts_regraded) || 0;
+        const scoresChanged = Number(result?.scores_changed) || 0;
+        toast.success(regraded === 0
+            ? t('exams.regradeNoAttempts')
+            : t('exams.regradeSuccess', { attempts: regraded, scores: scoresChanged }));
+        regradeTarget.value = null;
+        await refresh();
+    } catch (e) {
+        toast.error(extractFieldError(e) || e.message);
+    } finally {
+        regradeBusy.value = false;
+    }
+}
+
 async function deleteOption(q, option) {
     try {
         await teacher.deleteOption(option.id);
@@ -485,6 +706,7 @@ function attemptStatusLabel(statusOrAttempt) {
             <AppButton v-else variant="outline" size="sm" :loading="statusBusy" @click="setStatus('archive')">{{ $t('exams.archive') }}</AppButton>
             <AppButton variant="danger" size="sm" @click="deleteOpen = true">{{ $t('common.delete') }}</AppButton>
             <AppButton variant="outline" size="sm" @click="openIntegrity">{{ $t('exams.integritySettings') }}</AppButton>
+            <AppButton v-if="data?.status === 'published'" variant="outline" size="sm" @click="openMakeUpModal">{{ $t('exams.assignMakeUp') }}</AppButton>
         </div>
 
         <LoadingSpinner v-if="loading" />
@@ -533,6 +755,15 @@ function attemptStatusLabel(statusOrAttempt) {
                             <div class="flex items-center gap-1.5 flex-wrap">
                                 <AppButton v-if="q.type !== 'essay'" variant="outline" size="sm" class="!px-2.5 !py-1 text-xs" @click="openOption(q)">
                                     + {{ $t('exams.addOption') }}
+                                </AppButton>
+                                <AppButton
+                                    v-if="q.type !== 'essay' && Number(data?.attempts_count) > 0"
+                                    variant="secondary"
+                                    size="sm"
+                                    class="!px-2.5 !py-1 text-xs"
+                                    @click="requestQuestionRegrade(q)"
+                                >
+                                    {{ $t('exams.regradeAction') }}
                                 </AppButton>
                                 <button class="rounded-lg px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 border border-ink-200" @click="openQuestion(q)">
                                     {{ $t('common.edit') }}
@@ -642,7 +873,16 @@ function attemptStatusLabel(statusOrAttempt) {
                         </button>
                     </div>
 
-                    <div class="ms-auto flex items-center gap-2">
+                    <div class="flex flex-wrap items-end gap-2">
+                        <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="min-w-36" @update:model-value="onAttemptFilterChange" />
+                        <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="min-w-36" @update:model-value="onAttemptFilterChange" />
+                        <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="w-28" @update:model-value="onAttemptFilterChange" />
+                    </div>
+
+                    <div class="ms-auto flex flex-wrap items-center justify-end gap-2">
+                        <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" @click="deleteSelectedOpen = true">
+                            {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
+                        </AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
@@ -698,6 +938,9 @@ function attemptStatusLabel(statusOrAttempt) {
                             </div>
                         </div>
                     </div>
+                    <div class="border-t border-ink-100 px-4 py-3">
+                        <Pagination v-if="groupedMeta" :meta="groupedMeta" @change="loadGrouped" />
+                    </div>
                 </template>
 
                 <LoadingSpinner v-else-if="attemptsBusy" />
@@ -710,6 +953,15 @@ function attemptStatusLabel(statusOrAttempt) {
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
                         <div v-for="a in attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">
+                            <input
+                                type="checkbox"
+                                class="h-4 w-4 rounded border-ink-300 text-rose-600 focus:ring-rose-400"
+                                :checked="selectedAttemptIds.includes(Number(a.id))"
+                                :disabled="a.status === 'in_progress'"
+                                :aria-label="$t('exams.selectAttempt', { n: a.attempt_number, student: a.student?.name })"
+                                @click.stop
+                                @change="toggleAttemptSelection(a)"
+                            />
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (a.student?.name || 'U').slice(0, 1) }}</div>
                             <div class="min-w-0 flex-1">
                                 <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }} ({{ a.student?.student_code || '---' }})</p>
@@ -745,6 +997,17 @@ function attemptStatusLabel(statusOrAttempt) {
                 <AppSelect v-model="qForm.type" :label="$t('exams.questionTypeLabel')" :options="questionTypeOptions" id="q-type" required />
                 <AppTextarea v-model="qForm.question_text" :label="$t('exams.questionText')" required id="q-text" :error="qErrors.question_text" :rows="3" />
                 <AppInput v-model="qForm.points" :label="$t('exams.points')" type="number" min="1" max="1000" id="q-points" :error="qErrors.points" required />
+                <div v-if="qForm.type !== 'essay'" class="space-y-2 rounded-lg border border-ink-100 bg-ink-50 p-3">
+                    <label class="flex items-start gap-2 text-sm text-ink-700">
+                        <input v-model="qForm.explanation_enabled" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" @change="onExplanationEnabledChange" />
+                        <span>{{ $t('examQuestions.explanationEnabled') }}</span>
+                    </label>
+                    <label v-if="qForm.explanation_enabled" class="ms-6 flex items-start gap-2 text-sm text-ink-600">
+                        <input v-model="qForm.explanation_required" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400" />
+                        <span>{{ $t('examQuestions.explanationRequired') }}</span>
+                    </label>
+                    <p v-if="qForm.explanation_enabled" class="ms-6 text-xs text-ink-400">{{ $t('examQuestions.explanationHint') }}</p>
+                </div>
                 <AppTextarea
                     v-if="qForm.type === 'essay'"
                     v-model="qForm.reference_answer"
@@ -858,6 +1121,10 @@ function attemptStatusLabel(statusOrAttempt) {
                                         </span>
                                     </div>
                                 </div>
+                                <div v-if="studentExplanation(q).trim()" class="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
+                                    <span class="mb-1 block text-xs font-semibold text-sky-800">{{ $t('exams.studentExplanation') }}</span>
+                                    <p class="whitespace-pre-wrap text-sm text-sky-950" dir="auto">{{ studentExplanation(q) }}</p>
+                                </div>
                             </div>
                         </div>
 
@@ -884,6 +1151,60 @@ function attemptStatusLabel(statusOrAttempt) {
         </AppModal>
 
         <!-- Integrity settings modal -->
+        <AppModal :open="makeUpModal" :title="$t('exams.makeUpTitle')" size="lg" @close="makeUpModal = false">
+            <div class="space-y-5">
+                <p class="text-sm leading-relaxed text-ink-600">{{ $t('exams.makeUpHint') }}</p>
+
+                <div v-if="makeUpAssignments.length" class="rounded-xl border border-ink-100">
+                    <h3 class="border-b border-ink-100 px-4 py-3 text-sm font-semibold text-ink-800">{{ $t('exams.makeUpHistory') }}</h3>
+                    <div class="divide-y divide-ink-100">
+                        <div v-for="assignment in makeUpAssignments" :key="assignment.id" class="flex flex-wrap items-center gap-3 px-4 py-3">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-ink-800" dir="auto">{{ assignment.student?.name || assignment.student_id }}</p>
+                                <p class="text-xs text-ink-400">
+                                    {{ makeUpStatusLabel(assignment.status) }}
+                                    <span v-if="assignment.reason"> · {{ assignment.reason }}</span>
+                                    <span v-if="assignment.attempt_id"> · {{ $t('exams.makeUpAttemptLinked', { id: assignment.attempt_id }) }}</span>
+                                </p>
+                            </div>
+                            <AppButton v-if="assignment.status === 'assigned'" variant="ghost" size="sm" class="text-rose-600" @click="requestRevokeMakeUp(assignment)">{{ $t('exams.revokeMakeUp') }}</AppButton>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <AppInput v-model="makeUpStudentSearch" :label="$t('exams.makeUpSearchStudents')" :placeholder="$t('exams.searchStudentsPlaceholder')" id="make-up-student-search" class="flex-1" @update:model-value="onMakeUpStudentSearch" />
+                        <span class="text-xs text-ink-400">{{ $t('exams.makeUpSelectedCount', { n: selectedMakeUpStudentIds.length }) }}</span>
+                    </div>
+                    <LoadingSpinner v-if="makeUpLoadBusy" />
+                    <EmptyState v-else-if="!makeUpStudents.length" icon="users" :title="$t('exams.makeUpNoStudentsTitle')" :message="$t('exams.makeUpNoStudentsMessage')" />
+                    <div v-else class="max-h-64 overflow-y-auto rounded-xl border border-ink-100">
+                        <label v-for="enrollment in makeUpStudents" :key="enrollment.student_id" class="flex items-center gap-3 border-b border-ink-100 px-4 py-3 last:border-0" :class="activeMakeUpStudentIds.has(Number(enrollment.student_id)) ? 'bg-ink-50 opacity-70' : 'hover:bg-ink-50'">
+                            <input
+                                type="checkbox"
+                                class="h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
+                                :checked="selectedMakeUpStudentIds.includes(Number(enrollment.student_id)) || activeMakeUpStudentIds.has(Number(enrollment.student_id))"
+                                :disabled="activeMakeUpStudentIds.has(Number(enrollment.student_id))"
+                                @change="toggleMakeUpStudent(enrollment.student_id)"
+                            />
+                            <span class="min-w-0 flex-1">
+                                <span class="block text-sm font-medium text-ink-800" dir="auto">{{ enrollment.student?.name }}</span>
+                                <span class="block text-xs text-ink-400">{{ enrollment.student?.student_code || enrollment.student?.email }}</span>
+                            </span>
+                            <AppBadge v-if="activeMakeUpStudentIds.has(Number(enrollment.student_id))" tone="success">{{ $t('exams.makeUpAlreadyAssigned') }}</AppBadge>
+                        </label>
+                    </div>
+                    <Pagination v-if="makeUpStudentsMeta" :meta="makeUpStudentsMeta" @change="loadMakeUpStudents" />
+                    <AppTextarea v-model="makeUpReason" :label="$t('exams.makeUpReason')" :rows="2" id="make-up-reason" :placeholder="$t('exams.makeUpReasonPlaceholder')" />
+                </div>
+            </div>
+            <template #footer>
+                <AppButton variant="outline" :disabled="makeUpAssignBusy" @click="makeUpModal = false">{{ $t('common.close') }}</AppButton>
+                <AppButton :loading="makeUpAssignBusy" :disabled="!selectedMakeUpStudentIds.length || makeUpLoadBusy" @click="assignMakeUps">{{ $t('exams.assignMakeUpSelected') }}</AppButton>
+            </template>
+        </AppModal>
+
         <AppModal :open="intModal" :title="$t('exams.settingsTitle')" size="md" @close="intModal = false">
             <form class="space-y-3" @submit.prevent="saveIntegrity">
                 <label v-for="f in integrityFields" :key="f.k" class="flex items-center justify-between rounded-lg border border-ink-100 px-3 py-2.5 text-sm text-ink-700">
@@ -906,5 +1227,33 @@ function attemptStatusLabel(statusOrAttempt) {
 
         <ConfirmDialog :open="deleteOpen" :title="$t('exams.deleteTitle')" :message="$t('exams.deleteMessage', { title: data?.title })" :confirm-text="$t('common.delete')" :loading="deleteBusy" @close="deleteOpen = false" @confirm="remove" />
         <ConfirmDialog :open="Boolean(confirmTarget)" :title="$t('common.confirmDelete')" :message="$t('exams.deleteQuestionMessage')" :confirm-text="$t('common.delete')" :loading="confirmBusy" @close="confirmTarget = null" @confirm="runDelete('question')" />
+        <ConfirmDialog
+            :open="Boolean(revokeMakeUpTarget)"
+            :title="$t('exams.revokeMakeUpTitle')"
+            :message="$t('exams.revokeMakeUpMessage', { name: revokeMakeUpTarget?.student?.name || '' })"
+            :confirm-text="$t('exams.revokeMakeUp')"
+            :loading="revokeMakeUpBusy"
+            @close="revokeMakeUpTarget = null"
+            @confirm="revokeMakeUp"
+        />
+        <ConfirmDialog
+            :open="Boolean(regradeTarget)"
+            :title="$t('exams.regradeConfirmTitle')"
+            :message="$t('exams.regradeConfirmMessage')"
+            :confirm-text="$t('exams.regradeConfirmAction')"
+            tone="primary"
+            :loading="regradeBusy"
+            @close="regradeTarget = null"
+            @confirm="regradeQuestionAttempts"
+        />
+        <ConfirmDialog
+            :open="deleteSelectedOpen"
+            :title="$t('exams.deleteSelectedAttemptsTitle')"
+            :message="$t('exams.deleteSelectedAttemptsMessage', { n: selectedAttemptIds.length })"
+            :confirm-text="$t('exams.deleteSelectedAttemptsConfirm')"
+            :loading="deleteAttemptsBusy"
+            @close="deleteSelectedOpen = false"
+            @confirm="deleteSelectedAttempts"
+        />
     </div>
 </template>

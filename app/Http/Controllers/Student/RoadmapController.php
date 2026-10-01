@@ -19,6 +19,13 @@ class RoadmapController extends Controller
 
     public function show(Request $request, Course $course): JsonResponse
     {
+        abort_unless($request->user()->isStudent(), 403, 'Student account required.');
+        abort_unless(
+            $request->user()->canAccessLessons() && $request->user()->hasActiveAccess(),
+            403,
+            'You do not have access to course lessons.'
+        );
+
         $enrolled = Enrollment::query()
             ->where('student_id', $request->user()->getKey())
             ->where('course_id', $course->getKey())

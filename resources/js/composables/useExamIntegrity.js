@@ -23,14 +23,16 @@ import { student } from '@/api';
  *
  * What this can and cannot detect, stated plainly:
  *
- *  CAN detect: leaving the tab, minimizing or backgrounding the app, closing
- *  the page, the window losing focus, leaving fullscreen, copy/paste/cut,
- *  right-click, and shortcut keys including Print Screen.
+ *  CAN report: observed visibility/focus changes, leaving fullscreen, blocked
+ *  copy/paste/cut or context-menu actions, and selected keyboard shortcuts
+ *  (including Print Screen only when the browser exposes that key event).
+ *  A page hide/close is deliberately used only to flush saved work; it is not
+ *  recorded as a violation because the browser cannot tell why it happened.
  *
  *  CANNOT detect: an actual screenshot being taken, screen recording, a phone
- *  call, or WHY the tab was left. No browser exposes those. A recorded event
- *  is a suspicious-activity indicator, never proof of intent — which is why
- *  the policy warns and only escalates on repeated confirmed violations.
+ *  call, or WHY the tab was left. No browser exposes those reliably. A
+ *  recorded event is a suspicious-activity indicator, never proof of intent —
+ *  which is why the policy warns and only escalates on repeated confirmed violations.
  */
 
 /** Burst window: blur + visibilitychange for one departure collapse into one report. */
@@ -240,30 +242,60 @@ export function useExamIntegrity(options = {}) {
         }
     }
 
+    function isEditableTarget(target) {
+        const element = target instanceof Element ? target : target?.parentElement;
+        return Boolean(element?.closest(
+            'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [data-exam-input]'
+        ));
+    }
+
     function onCopy(e) {
-        if (rules().prevent_copy) e.preventDefault();
+        // Essay response fields, IME textareas and accessible editable widgets
+        // retain normal selection and copy behavior. An unconfigured rule must
+        // neither interfere with the browser nor create an integrity event.
+        if (isEditableTarget(e.target) || !rules().prevent_copy) return;
+        e.preventDefault();
         record('COPY_ATTEMPT');
     }
 
     function onPaste(e) {
-        if (rules().prevent_paste) e.preventDefault();
+        if (isEditableTarget(e.target) || !rules().prevent_paste) return;
+        e.preventDefault();
         record('PASTE_ATTEMPT');
     }
 
     function onCut(e) {
-        if (rules().prevent_copy) e.preventDefault();
+        if (isEditableTarget(e.target) || !rules().prevent_copy) return;
+        e.preventDefault();
         record('CUT_ATTEMPT');
     }
 
     function onContextMenu(e) {
-        if (rules().prevent_context_menu) e.preventDefault();
+        if (isEditableTarget(e.target) || !rules().prevent_context_menu) return;
+        e.preventDefault();
         record('CONTEXT_MENU_ATTEMPT');
     }
 
     function onKeydown(e) {
+        // Never interfere with active text editing, IME composition or
+        // accessibility shortcuts inside an editable response control.
+        if (isEditableTarget(e.target) || e.isComposing || e.keyCode === 229) return;
+
+        const modifier = e.ctrlKey || e.metaKey;
+        const key = e.key?.toLowerCase();
+        if (modifier && rules().prevent_copy && ['a', 'c', 'x'].includes(key)) {
+            e.preventDefault();
+            if (key === 'c') record('COPY_ATTEMPT', { source: 'keyboard-shortcut' });
+            if (key === 'x') record('CUT_ATTEMPT', { source: 'keyboard-shortcut' });
+        }
+        if (modifier && rules().prevent_paste && key === 'v') {
+            e.preventDefault();
+            record('PASTE_ATTEMPT', { source: 'keyboard-shortcut' });
+        }
+
         if (!rules().detect_keyboard_shortcuts) return;
 
-        const hit = WATCHED_SHORTCUTS.find((s) => s.test(e));
+        const hit = WATCHED_SHORTCUTS.find((shortcut) => shortcut.test(e));
         if (!hit) return;
 
         // Print Screen cannot be prevented — the OS has already handled it.

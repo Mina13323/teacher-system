@@ -31,10 +31,22 @@ class CourseStudentController extends Controller
     {
         $this->authorize('manageEnrollments', $course);
 
-        $enrollments = Enrollment::query()
+        $query = Enrollment::query()
             ->where('course_id', $course->getKey())
             ->where('status', EnrollmentStatus::Active->value)
-            ->with('student')
+            ->with('student');
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->trim()->toString();
+            $query->whereHas('student', function ($studentQuery) use ($search) {
+                $studentQuery->where('name', 'like', "%{$search}%")
+                    ->orWhere('student_code', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
+            });
+        }
+
+        $enrollments = $query
             ->latest('enrolled_at')
             ->paginate($this->perPage($request));
 
@@ -53,8 +65,17 @@ class CourseStudentController extends Controller
                 ]))->pluck('id')
                 : User::query()->where('created_by', $ownerId)->orWhere('id', $ownerId)->pluck('id');
 
-            $students = User::role(UserRole::Student->value)
-                ->where(fn ($q) => $q->whereIn('created_by', $staffIds)->orWhereNull('created_by'))
+            $studentScope = User::role(UserRole::Student->value)
+                ->where(function ($query) use ($staffIds) {
+                    $query->whereIn('created_by', $staffIds);
+                    if (config('app.co_teaching', false)) {
+                        // Legacy unowned students are visible to all staff only
+                        // in the explicitly configured co-teaching scope.
+                        $query->orWhereNull('created_by');
+                    }
+                });
+
+            $students = $studentScope
                 ->where('academic_year', $request->string('academic_year')->toString())
                 ->where('is_active', true)
                 ->get();
@@ -69,6 +90,8 @@ class CourseStudentController extends Controller
         }
 
         $student = User::findOrFail($request->integer('student_id'));
+        $this->authorize('view', $student);
+        abort_unless($student->isStudent(), 404, 'Student not found.');
 
         $enrollment = $this->enrollStudent->execute($student, $course);
 

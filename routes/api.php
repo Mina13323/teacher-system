@@ -151,6 +151,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    Route::post('exams/{exam}/attempts/bulk-delete', [TeacherExamController::class, 'deleteSelectedAttempts']);
+    Route::get('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'makeUpAssignments']);
+    Route::post('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'assignMakeUps']);
+    Route::delete('exams/{exam}/make-up-assignments/{assignment}', [TeacherExamController::class, 'revokeMakeUp']);
     Route::get('exams/{exam}/results/export', [TeacherExportController::class, 'results']);
     Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
     Route::post('attempts/{attempt}/grade-essay', [TeacherAttemptController::class, 'gradeEssay']);
@@ -167,6 +171,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('exams/{exam}/questions', [TeacherQuestionController::class, 'store']);
     Route::get('questions/{question}', [TeacherQuestionController::class, 'show']);
     Route::put('questions/{question}', [TeacherQuestionController::class, 'update']);
+    Route::post('questions/{question}/regrade-submitted-attempts', [TeacherQuestionController::class, 'regradeSubmittedAttempts']);
     Route::post('questions/{question}/image', [TeacherQuestionController::class, 'uploadImage']);
     Route::delete('questions/{question}/image', [TeacherQuestionController::class, 'removeImage']);
     Route::delete('questions/{question}', [TeacherQuestionController::class, 'destroy']);

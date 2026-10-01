@@ -43,7 +43,7 @@ class InterruptionFairnessTest extends ApiTestCase
             ->assertStatus(201);
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::findOrFail($startRes->json('data.id'));
@@ -91,6 +91,12 @@ class InterruptionFairnessTest extends ApiTestCase
         $this->assertSame(ExamAttemptStatus::InProgress, $attempt->status, 'A single report must not end the attempt');
         $this->assertSame('normal', $attempt->integrity_status->value);
         $this->assertSame(1, (int) $attempt->violation_warnings);
+
+        $this->actingAs($attempt->student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.violation_warnings', 1)
+            ->assertJsonPath('data.integrity_rules.violation_warning_threshold', 5);
     }
 
     public function test_terminates_only_after_frozen_threshold_exceeded(): void
@@ -247,6 +253,24 @@ class InterruptionFairnessTest extends ApiTestCase
         $this->assertSame(0, $attempt->integrityEvents()->count(), 'A below-threshold terminate call must fabricate nothing');
     }
 
+    public function test_terminate_endpoint_does_not_end_at_the_warning_threshold(): void
+    {
+        $attempt = $this->startedAttempt();
+        $threshold = (int) config('integrity.warning_threshold', 5);
+        $attempt->forceFill(['violation_warnings' => $threshold])->save();
+
+        $response = $this->actingAs($attempt->student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attempt->id}/terminate", [
+                'reason' => 'TAB_SWITCH',
+            ])
+            ->assertStatus(200);
+
+        $this->assertFalse($response->json('data.terminated'));
+        $this->assertSame($threshold, $response->json('data.warning_count'));
+        $this->assertSame(ExamAttemptStatus::InProgress, $attempt->fresh()->status);
+        $this->assertSame(0, $attempt->integrityEvents()->count());
+    }
+
     public function test_detection_disabled_for_attempt_records_but_never_counts(): void
     {
         $attempt = $this->startedAttempt();
@@ -296,7 +320,7 @@ class InterruptionFairnessTest extends ApiTestCase
 
         // Legacy attempts (created before thresholds were frozen per attempt)
         // have NULL in the frozen settings row; the policy must resolve the
-        // config default and terminate at exactly that boundary.
+        // config default and terminate when the next counted warning exceeds it.
         $attempt->integritySetting()->firstOrFail()
             ->forceFill(['violation_warning_threshold' => null, 'terminate_on_violation' => true])->save();
         $attempt->forceFill(['violation_warnings' => 5])->save();
@@ -313,7 +337,7 @@ class InterruptionFairnessTest extends ApiTestCase
     public function test_recording_events_on_non_in_progress_attempt_is_rejected(): void
     {
         $attempt = $this->startedAttempt();
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
 
         $this->actingAs($attempt->student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/terminate", ['reason' => 'TAB_SWITCH'])

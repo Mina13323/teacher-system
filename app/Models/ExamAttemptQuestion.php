@@ -20,6 +20,8 @@ class ExamAttemptQuestion extends Model
         'question_type',
         'points',
         'position',
+        'explanation_enabled',
+        'explanation_required',
     ];
 
     protected function casts(): array
@@ -27,6 +29,8 @@ class ExamAttemptQuestion extends Model
         return [
             'points' => 'integer',
             'position' => 'integer',
+            'explanation_enabled' => 'boolean',
+            'explanation_required' => 'boolean',
         ];
     }
 

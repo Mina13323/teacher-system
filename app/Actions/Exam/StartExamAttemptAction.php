@@ -3,6 +3,7 @@
 namespace App\Actions\Exam;
 
 use App\Enums\ExamAttemptStatus;
+use App\Enums\ExamMakeUpAssignmentStatus;
 use App\Exceptions\AttemptLimitReachedException;
 use App\Exceptions\ExamNotAccessibleException;
 use App\Exceptions\ExamNotPublishedException;
@@ -11,10 +12,12 @@ use App\Exceptions\ExamWindowNotOpenException;
 use App\Actions\Integrity\CreateAttemptIntegritySettingsAction;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
+use App\Models\ExamMakeUpAssignment;
 use App\Models\User;
 use App\Services\EnrollmentService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Starts (or resumes) a student's attempt on an exam.
@@ -47,8 +50,14 @@ class StartExamAttemptAction
     ) {
     }
 
-    public function execute(User $student, Exam $exam): ExamAttempt
+    public function execute(User $student, Exam $exam, bool $rulesAcknowledged): ExamAttempt
     {
+        if (! $rulesAcknowledged) {
+            throw ValidationException::withMessages([
+                'rules_acknowledged' => ['You must acknowledge the exam rules before starting.'],
+            ]);
+        }
+
         if (! $exam->status->isPublished()) {
             throw new ExamNotPublishedException();
         }
@@ -62,7 +71,7 @@ class StartExamAttemptAction
         }
 
         try {
-            return DB::transaction(function () use ($student, $exam) {
+            return DB::transaction(function () use ($student, $exam, $rulesAcknowledged) {
                 $studentId = $student->getKey();
                 $examId = $exam->getKey();
 
@@ -84,6 +93,13 @@ class StartExamAttemptAction
                     ->first();
 
                 if ($existing) {
+                    // Acknowledging on resume may backfill legacy active attempts,
+                    // but never changes start time, deadline, or attempt number.
+                    if ($rulesAcknowledged && $existing->rules_acknowledged_at === null) {
+                        $existing->rules_acknowledged_at = now();
+                        $existing->save();
+                    }
+
                     return $existing;
                 }
 
@@ -98,11 +114,24 @@ class StartExamAttemptAction
                     ])
                     ->count();
 
+                $makeUpAssignment = null;
                 if ($completedCount >= $exam->max_attempts) {
-                    throw new AttemptLimitReachedException();
+                    $makeUpAssignment = ExamMakeUpAssignment::query()
+                        ->where('exam_id', $examId)
+                        ->where('student_id', $studentId)
+                        ->where('status', ExamMakeUpAssignmentStatus::Assigned->value)
+                        ->where('active_key', $examId.':'.$studentId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $makeUpAssignment) {
+                        throw new AttemptLimitReachedException();
+                    }
                 }
 
-                $nextAttemptNumber = (int) ExamAttempt::query()
+                // Soft-deleted attempts no longer count against the student's
+                // configured limit, but their numbers remain reserved forever.
+                $nextAttemptNumber = (int) ExamAttempt::withTrashed()
                     ->where('student_id', $studentId)
                     ->where('exam_id', $examId)
                     ->max('attempt_number') + 1;
@@ -123,6 +152,7 @@ class StartExamAttemptAction
                     'last_heartbeat_at' => $startedAt,
                     'status' => ExamAttemptStatus::InProgress->value,
                     'pass_percentage' => $exam->pass_percentage,
+                    'rules_acknowledged_at' => $rulesAcknowledged ? now() : null,
                     'active_key' => $studentId.':'.$examId,
                 ]);
 
@@ -132,7 +162,19 @@ class StartExamAttemptAction
                 // later teacher changes never alter the rules of this attempt.
                 $this->createIntegritySettings->execute($attempt, $exam);
 
-                return $attempt->fresh();
+                if ($makeUpAssignment) {
+                    $makeUpAssignment->status = ExamMakeUpAssignmentStatus::Used;
+                    $makeUpAssignment->active_key = null;
+                    $makeUpAssignment->attempt_id = $attempt->getKey();
+                    $makeUpAssignment->used_at = now();
+                    $makeUpAssignment->save();
+                }
+
+                // Keep the freshly-created model instance so the controller can
+                // accurately distinguish a new attempt from a resumed one via
+                // wasRecentlyCreated. The persisted start/deadline fields are
+                // already authoritative on this instance.
+                return $attempt;
             });
         } catch (QueryException $e) {
             // The concurrent request created the in-progress attempt first; the
@@ -197,7 +239,7 @@ class StartExamAttemptAction
         $sqlState = $e->errorInfo[0] ?? null;
         $driverCode = $e->errorInfo[1] ?? null;
 
-        return in_array($sqlState, ['23000', '23505'], true)
+        return $sqlState === '23505'
             || (int) $driverCode === 1062
             || str_contains($e->getMessage(), 'UNIQUE constraint failed')
             || str_contains($e->getMessage(), 'unique constraint');

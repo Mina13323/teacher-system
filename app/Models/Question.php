@@ -22,6 +22,8 @@ class Question extends Model
         'points',
         'position',
         'reference_answer',
+        'explanation_enabled',
+        'explanation_required',
     ];
 
     protected function casts(): array
@@ -30,6 +32,8 @@ class Question extends Model
             'type' => QuestionType::class,
             'points' => 'integer',
             'position' => 'integer',
+            'explanation_enabled' => 'boolean',
+            'explanation_required' => 'boolean',
         ];
     }
 

@@ -52,7 +52,7 @@ class MultipleChoiceGradingTest extends ApiTestCase
     private function startAttempt($student, $exam): ExamAttempt
     {
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         return ExamAttempt::query()

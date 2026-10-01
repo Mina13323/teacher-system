@@ -11,7 +11,7 @@ const tones = {
 </script>
 
 <template>
-    <div class="fixed bottom-4 end-4 z-[70] flex w-full max-w-sm flex-col gap-2" role="status" aria-live="polite">
+    <div class="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] start-3 end-3 z-[70] flex w-auto max-w-sm flex-col gap-2 lg:bottom-4 lg:start-auto lg:end-4 lg:w-full" role="status" aria-live="polite">
         <TransitionGroup name="toast">
             <div
                 v-for="item in state.items"

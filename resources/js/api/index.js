@@ -106,8 +106,8 @@ export const student = {
     playbackEvent: (videoId, payload) => api.post(`/student/videos/${videoId}/playback/events`, payload),
     exams: (params) => api.get('/student/exams', params),
     exam: (examId) => api.get(`/student/exams/${examId}`),
-    examAttempts: (examId) => api.get(`/student/exams/${examId}/attempts`),
-    startExam: (examId) => api.post(`/student/exams/${examId}/start`),
+    examAttempts: (examId, requestOptions = {}) => api.get(`/student/exams/${examId}/attempts`, undefined, requestOptions),
+    startExam: (examId, payload) => api.post(`/student/exams/${examId}/start`, payload),
     attempt: (attemptId) => api.get(`/student/attempts/${attemptId}`),
     answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, payload),
     answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, payload),
@@ -196,6 +196,10 @@ export const teacher = {
     archiveExam: (id) => api.post(`/teacher/exams/${id}/archive`),
     deleteExam: (id) => api.delete(`/teacher/exams/${id}`),
     examAttempts: (examId, params) => api.get(`/teacher/exams/${examId}/attempts`, params),
+    bulkDeleteExamAttempts: (examId, attemptIds, reason = null) => api.post(`/teacher/exams/${examId}/attempts/bulk-delete`, { attempt_ids: attemptIds, confirmed: true, reason }),
+    makeUpAssignments: (examId, params) => api.get(`/teacher/exams/${examId}/make-up-assignments`, params),
+    assignExamMakeUps: (examId, studentIds, reason = null) => api.post(`/teacher/exams/${examId}/make-up-assignments`, { student_ids: studentIds, reason }),
+    revokeExamMakeUp: (examId, assignmentId) => api.delete(`/teacher/exams/${examId}/make-up-assignments/${assignmentId}`),
     attempt: (id) => api.get(`/teacher/attempts/${id}`),
     gradeEssay: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, payload),
     publishGrades: (attemptId) => api.post(`/teacher/attempts/${attemptId}/publish-grades`),
@@ -211,6 +215,9 @@ export const teacher = {
     createOption: (questionId, payload) => api.post(`/teacher/questions/${questionId}/options`, payload),
     updateOption: (id, payload) => api.put(`/teacher/options/${id}`, payload),
     deleteOption: (id) => api.delete(`/teacher/options/${id}`),
+    // Regrading can walk a full exam cohort; allow this explicit staff action
+    // longer than the default interactive request timeout.
+    regradeQuestionAttempts: (questionId, payload) => api.post(`/teacher/questions/${questionId}/regrade-submitted-attempts`, payload, { timeout: 120_000 }),
 
     // Exam templates — reusable question structures (counts and marks only)
     examTemplates: () => api.get('/teacher/exam-templates'),

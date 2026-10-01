@@ -29,6 +29,7 @@ class SubmitExamAnswerRequest extends FormRequest
             'option_ids' => ['nullable', 'array', 'max:10'],
             'option_ids.*' => ['integer'],
             'answer_text' => ['nullable', 'string', 'max:5000'],
+            'explanation' => ['nullable', 'string', 'max:5000'],
         ];
     }
 }
