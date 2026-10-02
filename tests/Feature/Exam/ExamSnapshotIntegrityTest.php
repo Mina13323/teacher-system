@@ -78,7 +78,9 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
 
     public function test_bulk_snapshot_keeps_question_and_option_data_ordered_across_insert_batches(): void
     {
-        [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam([
+            'shuffle_questions' => false,
+        ]);
 
         // Cross the bounded question and option insert batch sizes.
         for ($position = 2; $position <= 51; $position++) {

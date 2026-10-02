@@ -16,12 +16,10 @@ class BuildAttemptSnapshotAction
 {
     public function execute(ExamAttempt $attempt, Exam $exam): void
     {
+        $exam->load('questions.options');
+
         DB::transaction(function () use ($attempt, $exam) {
-            // Query the complete current question set directly instead of
-            // relying on any relation state carried on the route-bound model.
-            $questions = $exam->questions()
-                ->with('options')
-                ->get();
+            $questions = $exam->questions;
 
             if ($exam->shuffle_questions) {
                 $questions = $questions->shuffle();
