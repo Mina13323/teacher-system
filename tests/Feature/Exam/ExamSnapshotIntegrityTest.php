@@ -80,6 +80,7 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
     {
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam([
             'shuffle_questions' => false,
+            'shuffle_options' => false,
         ]);
 
         // Cross the bounded question and option insert batch sizes.
