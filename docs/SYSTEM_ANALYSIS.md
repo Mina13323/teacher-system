@@ -4,7 +4,7 @@
 > Sections 2–7 and D1–D10 describe the pre-remediation snapshot and are not a current finding
 > register; use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for present status.
 > As of 2026-10-02, PHP and Composer are unavailable locally; npm network access is available.
-> GitHub Actions run `36951383243` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3,
+> GitHub Actions run `36952481922` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3,
 > plus repository guards and frontend tests/build. Composer audit, MySQL, browser, and operational
 > checks remain **NOT TESTED**; use the current audit report for release status.
 
@@ -219,10 +219,10 @@ errors; CI now covers this, but `docs/API.md` remains stale.
   not evidence of a passing current backend suite.
 - The former gaps for multi-select, lesson delivery/progress, answer-review feedback, and related
   exam lifecycle behavior received implementation and regression coverage; the configured PHP
-  suite passed on PHP 8.2/8.3 in CI run `36951383243`. This does not cover every manual or
+  suite passed on PHP 8.2/8.3 in CI run `36952481922`. This does not cover every manual or
   production-engine scenario.
 - The 2026-10-01 run `36943046841` and subsequent partial-retest runs were red during remediation.
-  The latest application-code run `36951383243` passed the PHP suites and pagination guard; logs
+  The latest application-code run `36952481922` passed the PHP suites and pagination guard; logs
   for detailed test counts were unavailable. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
 
 ---
@@ -533,7 +533,7 @@ student IDOR on assignments/certificates) · grouping/search · auto-submit idem
 export scoping · import validation/dedup · certificate idempotency/verification disclosure.
 
 **Verification status (2026-10-02):** PHP/Composer are unavailable locally. GitHub Actions run
-`36951383243` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3; this suite uses
+`36952481922` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3; this suite uses
 SQLite. `composer validate`/`audit` and PHP static analysis remain **NOT TESTED**. Frontend
 dependencies were installed with `npm ci`; `npm test` passed (27 tests), `npm run build` passed,
 and both full and production-only `npm audit` reported zero vulnerabilities. The scoped `glob`
@@ -551,7 +551,7 @@ retesting was not possible. For current finding-by-finding status, see
 **FIXED (UI)** — student assignments (submit/resubmit/feedback), student certificates (claim/verify), lesson attachments download, teacher grouped attempts + export + import dialog + lesson attachment upload/delete.
 **FIXED** — Teacher assignment administration: CourseDetail → Assignments tab with create/edit modal (title, description, due date, points, publish flag), publish/unpublish, recoverable delete (ConfirmDialog copy states submissions/grades are kept), submissions review modal (student, late badge, status, score, file download), grade modal (score + feedback). Uses the existing assignment endpoints/policies; i18n EN/AR complete.
 **FIXED** — Native exports: `format=xlsx` emits a real Office Open XML workbook via the dependency-free `XlsxWriter` (pure-PHP stored ZIP + SpreadsheetML, full Unicode — Arabic preserved); `format=pdf` emits a real `application/pdf` via the dependency-free `SimplePdfWriter`, which embeds `resources/fonts/DejaVuSans.ttf` (DejaVu license in `resources/fonts/LICENSE-DejaVu.txt`) as a CIDFontType2/Identity-H font and shapes Arabic in-process (`ArabicText`: contextual presentation forms incl. lam-alef ligatures + RTL run re-ordering). CSV and the print-HTML sheet remain for compatibility. Tests assert PDF magic + `/FontFile2` + Arabic-name generation and XLSX ZIP structure + row content.
-**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent for the owning account, IDOR-safe), HTTPS/provider-host allowlisting with outbound redirects disabled, and origin-confined notification-click URLs. PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests). SSRF regression cases passed in the backend PHPUnit suite in CI run `36951383243`; provider egress/DNS behavior and deployment restrictions remain **NOT TESTED**.
+**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent for the owning account, IDOR-safe), HTTPS/provider-host allowlisting with outbound redirects disabled, and origin-confined notification-click URLs. PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests). SSRF regression cases passed in the backend PHPUnit suite in CI run `36952481922`; provider egress/DNS behavior and deployment restrictions remain **NOT TESTED**.
 **DEFERRED** — assignment file preview in browser (download exists); competition-group leaderboard pagination (data model ready).
 
 ### Production deployment safety

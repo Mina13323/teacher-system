@@ -5,7 +5,7 @@ Historical implementation snapshot for branch `arena/01a0efd9-teacher-system`. C
 `cae6d20` (UX + §30 report), `ae07cc5` (gaps closure), plus the final operations/experience/scale
 commit. This is not current production clearance: the 2026-10-02 audit in
 [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) supersedes its readiness claims.
-The current source commit's CI run `36951383243` passed the configured PHP 8.2/8.3 suite; this report's
+The current source commit's CI run `36952481922` passed the configured PHP 8.2/8.3 suite; this report's
 older test counts remain historical, and MySQL/browser/operational verification is **NOT TESTED**.
 Use §9 only as historical evidence for the earlier run.
 
@@ -262,7 +262,7 @@ recovery happens inside `in_progress` by design.
   build, and full/production npm audits passed. PHP and Composer remain
   unavailable locally; a parser accepted 600 PHP files, which is supplementary
   to the PHP lint and PHPUnit suite that passed on PHP 8.2/8.3 in CI run
-  `36951383243`. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+  `36952481922`. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
   Tests encode intentional policy changes (warn-first termination and resume
   semantics); MySQL, browser, and operational behavior remain **NOT TESTED**.
 - **Historical runtime gate — PASSED on 2026-09-30, later superseded**: the
@@ -298,7 +298,7 @@ safe catalog cache, OpenAPI, queue job hardening.
 **HISTORICAL verification gate (passed 2026-09-30; superseded)** — an older
 run was green (710 tests / 3314 assertions) on PHP 8.2 + 8.3. Intermediate
 2026-10-01/02 runs failed during remediation; the later application-code run
-`36951383243` passed both PHP jobs and the pagination guard. MySQL, browser, and
+`36952481922` passed both PHP jobs and the pagination guard. MySQL, browser, and
 operational checks remain **NOT TESTED**. See `PRODUCTION_READINESS_AUDIT.md`.
 
 **CURRENT RELEASE BLOCKER** — Laravel 11 is outside its security-support
