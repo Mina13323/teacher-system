@@ -1,8 +1,8 @@
 # Production-Readiness Audit — Risk-Based Test Plan
 
 - **Prepared:** 2026-10-02
-- **Audit phase:** Discovery and test planning are complete; targeted remediation and verification are in progress.
-- **Important:** This is a test plan, not a production-readiness certification. Frontend tests/build/audits have run; PHP runtime tests, migrations, and operational checks have not. The worktree contains inherited and audit changes and has not been cleaned or reset.
+- **Audit phase:** Discovery, targeted remediation, and the current PHP-enabled CI retest are complete; production-engine, browser, and operational validation remain outstanding.
+- **Important:** This is a test plan, not a production-readiness certification. Frontend checks passed locally and in CI; the full configured PHP suite passed on PHP 8.2/8.3 in CI run [`36951383243`](https://github.com/Mina13323/teacher-system/actions/runs/36951383243). MySQL-specific and operational checks remain **NOT TESTED**. The branch contains inherited and audit commits; no clean-room deployment was performed.
 
 ## 1. Scope and safety rules
 
@@ -18,13 +18,13 @@ The audit covers the Laravel API and Vue/PWA across authentication and roles, co
 
 ## 2. Baseline evidence and execution constraints
 
-| Area | Evidence available before fixes | Planned verification |
+| Area | Prior findings / baseline evidence | Current verification and remaining work |
 |---|---|---|
-| Remote CI | Run [`36943046841`](https://github.com/Mina13323/teacher-system/actions/runs/36943046841) tested child commit `8da3a72…` of local `HEAD` `f476ec3…`. Frontend tests/build passed; PHP 8.2 and 8.3 each reported 267 failures of 736 tests (2,217 assertions); pagination guard failed. Job logs were not downloadable; only check annotations are available. | Re-run targeted failures and full suite after fixes in CI or a PHP-enabled environment. Do not treat the current red run as a passing baseline. |
-| CI code lead | CI annotations identify the `Teacher\ExamController::applyAttemptFilters()` type boundary: it accepted an Eloquent `Builder` while callers also pass a `HasMany` relation. The worktree now accepts `Builder|Relation` and has regression coverage for flat/grouped filters; logs were unavailable, so this is not a confirmed explanation for all backend failures. | Run targeted and full backend suites in PHP-enabled CI and inspect actual logs. |
-| Pagination guard | The remote guard failed on run `36943046841`. The current worktree's equivalent check passes: no direct request `per_page` reads were found and `paginate()` calls use capped `perPage()`. | Re-run the repository guard in CI against this worktree/commit; the old remote failure is not considered resolved until then. |
-| Runtime | PHP, Composer, and Docker are unavailable in this checkout; PHPUnit, migrations, and `composer audit` cannot execute. Node 22/npm 10 are available. Frontend tests/build and npm audits have run locally; a JavaScript PHP parser has parsed 600 PHP files, which is not a PHP runtime/lint/test. | Run PHPUnit/migrations, Composer validation/audit, and PHP lint in PHP-enabled CI; keep backend/runtime-dependent items **NOT TESTED** until then. |
-| Database | Feature tests are configured around SQLite; MySQL production behavior, current migrations, and locking semantics have not been run here. | SQLite migration/feature tests only with PHP; MySQL schema, locking, and concurrency only in disposable CI/staging. |
+| Remote CI | Earlier runs were red: `36950159600` exposed an enrollment enum/string issue; `36950480773` retained five failures per PHP matrix; `36951038360` retained a single order assertion that assumed stable order with shuffling enabled. For the final failure, the 51-question fixture and snapshot counts passed. Detailed job logs could not be downloaded (GitHub results receiver returned EOF). | Run [`36951383243`](https://github.com/Mina13323/teacher-system/actions/runs/36951383243) on source commit `f9203851fd2a854856a1e4299915bf2cabf60e75` completed successfully: PHP lint and PHPUnit steps passed on PHP 8.2 and 8.3; frontend tests/build and repo guards passed. Optional composer.lock regeneration was skipped. The structured run view confirms job success, but exact current test/assertion counts are unavailable from the failed log download. |
+| CI code lead | Earlier annotations mentioned `Teacher\ExamController::applyAttemptFilters()` accepting `Builder|Relation`; that concern did not account for all earlier failures. | Regression coverage and the full configured PHP test jobs now pass in run `36951383243`; the type-boundary case is no longer a current CI blocker. |
+| Pagination guard | The remote guard failed on run `36943046841`; the local equivalent check passed. | The repository guard, including pagination, passed in run `36951383243`; no direct request `per_page` reads were found and checked `paginate()` calls use capped `perPage()`. |
+| Runtime | PHP, Composer, and Docker remain unavailable in this checkout. Node 22/npm 10 are available; local frontend tests/build/audits passed; a JavaScript PHP parser accepted 600 files. | PHP syntax lint and the full configured PHPUnit suite passed on PHP 8.2/8.3 in run `36951383243`. Composer validation/audit were not run. Local PHP/Composer commands remain unavailable. |
+| Database | Feature tests use SQLite; production-engine MySQL behavior and locking semantics had not been run. | SQLite-backed feature tests and test-database migrations passed as part of the CI suite. MySQL schema/locking, supported upgrade/rollback paths, and production concurrency remain **NOT TESTED**; use disposable CI/staging only. |
 
 ## 3. Prioritized regression and security matrix
 
@@ -39,7 +39,7 @@ The audit covers the Laravel API and Vue/PWA across authentication and roles, co
 
 2. **Exam timing, recovery, and autosubmission**
    - Before `starts_at`: reject and create no attempt. At the opening instant: preserve the documented inclusive-open behavior.
-   - At and after `ends_at`: follow the confirmed boundary decision; no zero-duration accidental attempt, deadline extension, or extra attempt.
+   - At and after `ends_at`: reject the start and create no zero-time attempt, deadline extension, or duplicate attempt; the exact-equality case now has a passing CI regression test.
    - For late entry, verify persisted `expires_at` equals `MIN(started_at + duration, ends_at)`; client-supplied timing is ignored.
    - Ambiguous start timeout performs a bounded read-only active-attempt lookup and never repeats the start POST automatically.
    - Integrity resume before the persisted deadline resumes the same attempt, preserving answers/snapshot/events and leaving the deadline unchanged. Resume at/after the deadline must not restore time or reopen the attempt.
@@ -91,7 +91,7 @@ The audit covers the Laravel API and Vue/PWA across authentication and roles, co
    - Assert unique constraints and foreign keys for email/student code, enrollment pairs, active attempts, answer pairs, snapshot rows, and unique make-up `attempt_id`; verify intended delete/null/soft-delete behavior.
    - Run migrations from an empty DB and a supported upgrade path; explicitly review every constraint-changing migration and its rollback. The student-attempt migration changes the FK from cascade to restrict; its rollback restores cascade and must not be run casually. Test MySQL-specific SQL and transaction/lock behavior in disposable MySQL, not production.
    - Back up synthetic SQLite and MySQL databases, verify artifact integrity, restore into an isolated disposable target, and confirm schema plus representative exam/enrollment/answer data. Verify retention, permissions, encryption, and off-host copy.
-   - Regression coverage now exercises SQLite `VACUUM INTO`, standalone artifact integrity, and restore into an isolated disposable SQLite file; added coverage is **NOT TESTED** until PHPUnit runs. MySQL dump/restore, encryption, off-host storage, retention operations in production, and recovery-time objectives remain **NOT TESTED**.
+   - Regression coverage for SQLite `VACUUM INTO`, standalone artifact integrity, and restore into an isolated disposable SQLite file passed in CI run `36951383243`. MySQL dump/restore, encryption, off-host storage, retention operations in production, and recovery-time objectives remain **NOT TESTED**.
 
 ### P2/P3 — performance, failure modes, and defense in depth
 
@@ -110,7 +110,7 @@ The audit covers the Laravel API and Vue/PWA across authentication and roles, co
     - Resolve Laravel framework lifecycle/advisory policy before production release; broad advisory ignores are not remediation.
     - Inspect deployment environment for `APP_DEBUG=false`, strong `APP_KEY`, TLS, trusted proxy/host config, security headers, private storage, queue worker, scheduler, logging/rotation, and credential separation. These runtime deployment checks require owner-provided approved staging/deployment access and are otherwise **NOT TESTED**.
 
-## 4. Planned local/CI commands
+## 4. Verification commands and execution status
 
 Run only after discovery is recorded and targeted fixes/regression tests are ready:
 
@@ -131,7 +131,7 @@ php artisan test --filter=RegradeQuestionAttemptsTest
 php artisan test --filter=BackupDatabaseTest
 ```
 
-Then run the complete CI matrix, pagination guard, and targeted security scans. In this audit environment, `npm ci` passed; `npm test` passed (4 files, 27 tests); `npm run build` passed; full and production-only `npm audit` each reported zero vulnerabilities; and the current-worktree pagination guard check passed. A JavaScript PHP parser accepted 600 files, but that is only a syntax-oriented check. PHP/Composer commands—including PHPUnit, migrations, Composer audit, and PHP runtime/lint/static analysis—remain **NOT TESTED** because PHP and Composer are unavailable. The latest observed remote CI run still has failing PHP 8.2/8.3 jobs and a failed pagination guard; logs could not be retrieved, so rerun and diagnosis remain required.
+Execution status as of 2026-10-02: local `npm ci`, `npm test` (4 files, 27 tests), `npm run build`, full and production-only `npm audit` (zero vulnerabilities each), and the pagination guard equivalent passed. GitHub Actions run `36951383243` then passed PHP syntax lint and the full configured PHPUnit suite on PHP 8.2 and 8.3; repo guards/pagination and frontend unit/build jobs also passed. The structured CI view reports successful jobs, but detailed log retrieval returned EOF, so exact current PHP assertion counts are not recorded. PHPUnit tests use SQLite; MySQL upgrade/rollback, locking, Composer validation/audit, browser/manual, staging load/chaos, and production operations remain **NOT TESTED**. PHP/Composer remain unavailable locally.
 
 ## 5. Confirmed policy decisions
 

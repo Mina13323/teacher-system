@@ -1,7 +1,7 @@
 # Teacher-System: Hostinger Deployment Runbook (Not Deployment Clearance)
 
 > [!CAUTION]
-> **NOT CLEARED FOR PRODUCTION DEPLOYMENT.** This is an operational runbook, not release approval. The current audit has an unsupported/advisory-affected Laravel 11 dependency, failing observed PHP CI, and untested backend, migration, backup/restore, browser, and staging controls. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) and do not deploy until its release gates are satisfied.
+> **NOT CLEARED FOR PRODUCTION DEPLOYMENT.** This is an operational runbook, not release approval. The current audit's PHP 8.2/8.3 CI suite and pagination guard pass, but Laravel 11 remains unsupported/advisory-affected; Composer audit/upgrade, MySQL migration/locking, backup/restore, browser, staging, and deployment controls remain **NOT TESTED**. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) and do not deploy until its release gates are satisfied.
 >
 > The code currently uses Laravel 11; its security-support period ended on 2026-03-12. Upgrade to a currently supported, patched framework version and validate the PHP runtime before following this runbook.
 
@@ -374,4 +374,4 @@ If a critical issue occurs during deployment:
    php artisan route:clear
    php artisan view:clear
    ```
-4. **Do not run a generic `migrate:rollback --step=1` as an automatic production rollback.** The current student-attempt FK migration's `down()` restores `ON DELETE CASCADE`; that can re-enable history loss. Any schema rollback needs an approved, migration-specific recovery plan, verified backup, and tested procedure. Migration execution/rollback is **NOT TESTED** in the current audit.
+4. **Do not run a generic `migrate:rollback --step=1` as an automatic production rollback.** The current student-attempt FK migration's `down()` restores `ON DELETE CASCADE`; that can re-enable history loss. Any schema rollback needs an approved, migration-specific recovery plan, verified backup, and tested procedure. SQLite test-database migrations ran in CI; MySQL upgrade/rollback behavior is **NOT TESTED** in the current audit.

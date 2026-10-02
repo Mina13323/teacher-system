@@ -1,7 +1,7 @@
 # Teacher-System: Historical Public Surface, Authorization & Cache Security Audit
 
 > [!CAUTION]
-> **HISTORICAL SNAPSHOT — NOT CURRENT RELEASE CLEARANCE.** This report predates later public routes and security changes, and it did not validate the current worktree. The current overall release decision is **NOT READY FOR PRODUCTION**; see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md). PHP backend/security tests and the current browser matrix are **NOT TESTED** in the present audit environment.
+> **HISTORICAL SNAPSHOT — NOT CURRENT RELEASE CLEARANCE.** This report predates later public routes and security changes, and it did not validate the current worktree. The current overall release decision is **NOT READY FOR PRODUCTION**; see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md). The configured PHP backend suite passed in CI run `36951383243`; a complete public-route abuse matrix and current browser matrix remain **NOT TESTED**.
 
 ---
 
@@ -27,7 +27,7 @@
 **PASS**
 - Audited `routes/api.php` completely.
 - Public endpoints include `POST /api/v1/auth/login`, token-scoped `GET/POST /api/v1/public/student-registration/{token}`, and rate-limited `GET /api/v1/public/certificates/{code}`.
-- No general course, lesson, video, exam, or student-record read API is intended to be public. These public flows require current authorization/abuse regression tests; present PHP retest is **NOT TESTED**.
+- No general course, lesson, video, exam, or student-record read API is intended to be public. The configured PHP suite passed in CI run `36951383243`, but this historical report's full public-flow authorization/abuse matrix has not been exhaustively retested; see the current audit.
 
 ### Private API Protection
 **PASS**

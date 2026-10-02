@@ -148,7 +148,8 @@ an existing FK policy from cascade to restrict; it requires backend/DB validatio
   `CertificateAvailableNotification`. Command `reminders:dispatch` (scheduled).
 - Web Push: VAPID subscription/delivery, allowlisted HTTPS endpoints, origin-confined click URLs,
   quiet-hour gating, dead-endpoint cleanup, and in-app fallback are implemented. PHP transport and
-  endpoint-security feature tests are present but backend PHPUnit execution is **NOT TESTED**.
+  endpoint-security feature tests passed in CI run `36951383243`; provider egress/DNS and deployment
+  controls remain **NOT TESTED**.
 
 ## Configuration / ops
 - `routes/console.php`: schedule `attempts:process-expired` (every minute), `reminders:dispatch`.
@@ -157,7 +158,8 @@ an existing FK policy from cascade to restrict; it requires backend/DB validatio
   database backup retention options. `db:backup` remains local-only; encryption/off-host delivery
   and restore drills are open release gates.
 - Queue/scheduler requirements are documented for deployment (`queue:work`, `schedule:work`/cron).
-- PHP/Composer are unavailable in this audit environment: backend tests/migrations are
+- PHP/Composer are unavailable locally. SQLite-backed backend tests and test-database migrations
+  passed in CI run `36951383243`; Composer audit, MySQL upgrade/locking, and operational checks remain
   **NOT TESTED**. Frontend tests/build/npm audits passed; see the current audit report.
 
 ## Tests / verification policy
@@ -165,6 +167,6 @@ an existing FK policy from cascade to restrict; it requires backend/DB validatio
   intentional (heartbeat termination → fairness warnings; blank expiry → auto-submit), each
   change documented in the final report. Existing snapshot/IDOR/competition tests untouched.
 - Runtime note: PHP and Composer are unavailable locally. `npm ci`, frontend tests/build, and npm
-  audits passed on 2026-10-02; a parser accepted PHP syntax but does not substitute for runtime lint
-  or PHPUnit. The latest observed remote PHP 8.2/8.3 CI jobs are failing; see
-  [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+  audits passed on 2026-10-02. GitHub Actions run `36951383243` passed PHP syntax lint and the
+  configured PHPUnit suite on PHP 8.2/8.3. Composer audit, MySQL, browser, and operational checks
+  remain **NOT TESTED**; see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).

@@ -5,7 +5,8 @@ Historical implementation snapshot for branch `arena/01a0efd9-teacher-system`. C
 `cae6d20` (UX + §30 report), `ae07cc5` (gaps closure), plus the final operations/experience/scale
 commit. This is not current production clearance: the 2026-10-02 audit in
 [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) supersedes its readiness claims.
-A later remote CI run reported PHP 8.2/8.3 failures; current local backend tests are **NOT TESTED**.
+The current source commit's CI run `36951383243` passed the configured PHP 8.2/8.3 suite; this report's
+older test counts remain historical, and MySQL/browser/operational verification is **NOT TESTED**.
 Use §9 only as historical evidence for the earlier run.
 
 ---
@@ -111,8 +112,9 @@ recovery happens inside `in_progress` by design.
   update or delete attempt, answer, grade, snapshot, or enrollment rows.
   A later audit migration, `2026_10_02_000001_restrict_exam_attempt_student_deletion`,
   changes the existing `exam_attempts.student_id` FK from cascade to restrict
-  without rewriting rows. Its rollback restores cascade and must not be run
-  casually; both directions are **NOT TESTED**. `previous_*`/`resumed_*` columns record override provenance
+  without rewriting rows. The SQLite test suite exercises the migration path; MySQL
+  upgrade/rollback behavior remains **NOT TESTED**. Its rollback restores cascade
+  and must not be run casually. `previous_*`/`resumed_*` columns record override provenance
   WITHOUT rewriting the original termination facts (they stay in
   `exam_integrity_events`, `exam_integrity_reviews`, and `audit_logs`).
 - **Resume** is the only operation that mutates an attempt's live state, it is
@@ -258,10 +260,11 @@ recovery happens inside `in_progress` by design.
   PHP/Composer/Node and network, so it used tokenizer/static checks only. In
   the 2026-10-02 audit environment, `npm ci`, frontend tests (27), production
   build, and full/production npm audits passed. PHP and Composer remain
-  unavailable; a parser accepted 600 PHP files but this is not PHP lint or
-  PHPUnit. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+  unavailable locally; a parser accepted 600 PHP files, which is supplementary
+  to the PHP lint and PHPUnit suite that passed on PHP 8.2/8.3 in CI run
+  `36951383243`. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
   Tests encode intentional policy changes (warn-first termination and resume
-  semantics); backend behavior remains unverified until PHP CI runs green.
+  semantics); MySQL, browser, and operational behavior remain **NOT TESTED**.
 - **Historical runtime gate — PASSED on 2026-09-30, later superseded**: the
   full suite was green in GitHub Actions — **710 tests / 3314 assertions, 0
   failures, 0 errors** on PHP 8.2 and 8.3 (`ci.yml`, commit `bf5e1f0`). A later
@@ -293,9 +296,10 @@ level + ProtectedPlayer video-timestamp UI hook), search, roadmap enforcement sw
 **COMPLETED** — Phase 5: metrics, observability context, performance indexes,
 safe catalog cache, OpenAPI, queue job hardening.
 **HISTORICAL verification gate (passed 2026-09-30; superseded)** — an older
-run was green (710 tests / 3314 assertions) on PHP 8.2 + 8.3. The later
-2026-10-01 branch run failed both PHP jobs and the pagination guard; current
-backend tests are **NOT TESTED**. See `PRODUCTION_READINESS_AUDIT.md`.
+run was green (710 tests / 3314 assertions) on PHP 8.2 + 8.3. Intermediate
+2026-10-01/02 runs failed during remediation; the later application-code run
+`36951383243` passed both PHP jobs and the pagination guard. MySQL, browser, and
+operational checks remain **NOT TESTED**. See `PRODUCTION_READINESS_AUDIT.md`.
 
 **CURRENT RELEASE BLOCKER** — Laravel 11 is outside its security-support
 period and advisory ignores remain in Composer configuration. Upgrade to a

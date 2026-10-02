@@ -3,9 +3,10 @@
 > Historical baseline static audit of the codebase (backend, frontend, migrations, tests, docs).
 > Sections 2–7 and D1–D10 describe the pre-remediation snapshot and are not a current finding
 > register; use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for present status.
-> As of 2026-10-02, PHP and Composer are unavailable in the audit sandbox; npm network access is
-> available. Frontend tests/build/audits ran, but backend/runtime claims remain **NOT TESTED**
-> locally, and the latest observed remote PHP CI jobs failed.
+> As of 2026-10-02, PHP and Composer are unavailable locally; npm network access is available.
+> GitHub Actions run `36951383243` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3,
+> plus repository guards and frontend tests/build. Composer audit, MySQL, browser, and operational
+> checks remain **NOT TESTED**; use the current audit report for release status.
 
 ---
 
@@ -217,11 +218,12 @@ errors; CI now covers this, but `docs/API.md` remains stale.
   privacy invariants, snapshots, transactions, rate limits, and regression cases. Test presence is
   not evidence of a passing current backend suite.
 - The former gaps for multi-select, lesson delivery/progress, answer-review feedback, and related
-  exam lifecycle behavior received implementation and regression coverage in §30; their current
-  backend retest status is **NOT TESTED** because PHP/Composer are unavailable locally.
-- The 2026-10-01 remote run `36943046841` reported failing PHP 8.2/8.3 jobs and a failing pagination
-  guard. Logs were unavailable. On 2026-10-02, local frontend tests/build/npm audits passed; see
-  [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for the full evidence and gates.
+  exam lifecycle behavior received implementation and regression coverage; the configured PHP
+  suite passed on PHP 8.2/8.3 in CI run `36951383243`. This does not cover every manual or
+  production-engine scenario.
+- The 2026-10-01 run `36943046841` and subsequent partial-retest runs were red during remediation.
+  The latest application-code run `36951383243` passed the PHP suites and pagination guard; logs
+  for detailed test counts were unavailable. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
 
 ---
 
@@ -530,12 +532,13 @@ threshold freeze) · data safety (soft delete/restore, no cascade) · authorizat
 student IDOR on assignments/certificates) · grouping/search · auto-submit idempotency ·
 export scoping · import validation/dedup · certificate idempotency/verification disclosure.
 
-**Verification status (2026-10-02):** PHP and Composer are unavailable, so backend PHPUnit,
-migrations, Composer audit, and PHP static analysis remain **NOT TESTED**. Frontend dependencies
-were installed with `npm ci`; `npm test` passed (27 tests), `npm run build` passed, and both
-full and production-only `npm audit` reported zero vulnerabilities. Install emitted a deprecated
-`glob@11.1.0` warning; it was not reported as vulnerable by npm audit. Manual browser, MySQL
-locking, production backup/restore, and isolated load/chaos checks remain NOT TESTED.
+**Verification status (2026-10-02):** PHP/Composer are unavailable locally. GitHub Actions run
+`36951383243` passed PHP lint and the configured PHPUnit suite on PHP 8.2/8.3; this suite uses
+SQLite. `composer validate`/`audit` and PHP static analysis remain **NOT TESTED**. Frontend
+dependencies were installed with `npm ci`; `npm test` passed (27 tests), `npm run build` passed,
+and both full and production-only `npm audit` reported zero vulnerabilities. The scoped `glob`
+override was verified in CI. Manual browser, MySQL locking/restore, and isolated load/chaos checks
+remain **NOT TESTED**.
 
 ### H. Implementation summary and remaining gaps (code status, not test certification)
 
@@ -543,12 +546,12 @@ The “FIXED” labels below mean implementation/tests are present in the worktr
 retesting was not possible. For current finding-by-finding status, see
 [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
 
-**FIXED IN CODE; RETEST NOT TESTED** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete.
+**FIXED; included regression tests passed in the current PHP 8.2/8.3 CI suite** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete. Test-plan scenarios outside that suite remain unverified.
 **FIXED** — P2 backend: assignments, lesson attachments, certificates, scheduled reminders, notification preferences (API + tests).
 **FIXED (UI)** — student assignments (submit/resubmit/feedback), student certificates (claim/verify), lesson attachments download, teacher grouped attempts + export + import dialog + lesson attachment upload/delete.
 **FIXED** — Teacher assignment administration: CourseDetail → Assignments tab with create/edit modal (title, description, due date, points, publish flag), publish/unpublish, recoverable delete (ConfirmDialog copy states submissions/grades are kept), submissions review modal (student, late badge, status, score, file download), grade modal (score + feedback). Uses the existing assignment endpoints/policies; i18n EN/AR complete.
 **FIXED** — Native exports: `format=xlsx` emits a real Office Open XML workbook via the dependency-free `XlsxWriter` (pure-PHP stored ZIP + SpreadsheetML, full Unicode — Arabic preserved); `format=pdf` emits a real `application/pdf` via the dependency-free `SimplePdfWriter`, which embeds `resources/fonts/DejaVuSans.ttf` (DejaVu license in `resources/fonts/LICENSE-DejaVu.txt`) as a CIDFontType2/Identity-H font and shapes Arabic in-process (`ArabicText`: contextual presentation forms incl. lam-alef ligatures + RTL run re-ordering). CSV and the print-HTML sheet remain for compatibility. Tests assert PDF magic + `/FontFile2` + Arabic-name generation and XLSX ZIP structure + row content.
-**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent for the owning account, IDOR-safe), HTTPS/provider-host allowlisting with outbound redirects disabled, and origin-confined notification-click URLs. PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests). SSRF regression cases are added but backend PHPUnit execution is NOT TESTED in this environment.
+**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent for the owning account, IDOR-safe), HTTPS/provider-host allowlisting with outbound redirects disabled, and origin-confined notification-click URLs. PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests). SSRF regression cases passed in the backend PHPUnit suite in CI run `36951383243`; provider egress/DNS behavior and deployment restrictions remain **NOT TESTED**.
 **DEFERRED** — assignment file preview in browser (download exists); competition-group leaderboard pagination (data model ready).
 
 ### Production deployment safety
@@ -556,7 +559,7 @@ retesting was not possible. For current finding-by-finding status, see
 1. **Migrations**: most feature migrations are additive; `2026_10_02_000001` changes the
    attempt/student FK delete policy from cascade to restrict. Run migrations only after validating
    the target schema and supported DB engine. The FK migration and its cascade-restoring rollback
-   are **NOT TESTED** here; see the current production-readiness audit.
+   are exercised through SQLite-backed tests in CI; MySQL-specific upgrade/rollback behavior remains **NOT TESTED**. See the current production-readiness audit.
 2. **Scheduler (required)**: `routes/console.php` schedules `attempts:process-expired`
    everyMinute (auto-submit/expire sweep) and `reminders:dispatch` hourlyAt(7). Deploy must
    run `php artisan schedule:work` (or cron `schedule:run`).

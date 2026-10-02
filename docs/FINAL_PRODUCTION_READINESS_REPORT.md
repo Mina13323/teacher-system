@@ -1,7 +1,7 @@
 # Teacher-System: Historical Production Readiness & Hardening Report
 
 > [!CAUTION]
-> **SUPERSEDED — CURRENT STATUS: NOT READY FOR PRODUCTION.** This document records an earlier snapshot and its historical PHP 8.5.7 / 303-test run; it does not verify the current worktree, dependency set, migrations, or operational readiness. The latest observed remote CI run reported failing PHP 8.2/8.3 jobs and a failed pagination guard; current PHP tests are **NOT TESTED** locally. Use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for the current finding-by-finding report and release gates.
+> **SUPERSEDED — CURRENT STATUS: NOT READY FOR PRODUCTION.** This document records an earlier snapshot and its historical PHP 8.5.7 / 303-test run; it does not verify the current worktree, dependency set, migrations, or operational readiness. The current source commit's CI run [`36951383243`](https://github.com/Mina13323/teacher-system/actions/runs/36951383243) passed PHP 8.2/8.3 tests and pagination checks, but Laravel support/advisories, MySQL, backup/restore, browser, and operational release gates remain open. Use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for current finding-by-finding evidence.
 
 ---
 

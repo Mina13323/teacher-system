@@ -2,7 +2,7 @@
 
 A Laravel 11 API for an AI Marketing & Learning Platform (LMS).
 
-> **Production status (2026-10-02): NOT READY FOR PRODUCTION.** Laravel 11 is outside its security-support period; the latest observed PHP CI jobs failed and current backend tests, migrations, restore drills, and browser/staging checks are **NOT TESTED**. See [`docs/PRODUCTION_READINESS_AUDIT.md`](docs/PRODUCTION_READINESS_AUDIT.md) for findings, evidence, and release gates. This README describes product scope, not deployment clearance.
+> **Production status (2026-10-02): NOT READY FOR PRODUCTION.** GitHub Actions run [`36951383243`](https://github.com/Mina13323/teacher-system/actions/runs/36951383243) passed PHP 8.2/8.3 lint and PHPUnit jobs, repository guards, and frontend tests/build for audited source commit `f920385`. Laravel 11 remains outside its security-support period with unresolved advisories; Composer audit/upgrade, MySQL validation, off-host restore, browser, staging, and deployment checks remain **NOT TESTED**. See [`docs/PRODUCTION_READINESS_AUDIT.md`](docs/PRODUCTION_READINESS_AUDIT.md) for findings, evidence, and release gates. This README describes product scope, not deployment clearance.
 
 - **Phase 1 — Foundation:** authentication (Sanctum), roles/permissions
   (Spatie), API versioning, and the base database/API scaffolding.
