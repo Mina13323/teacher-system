@@ -88,4 +88,55 @@ class AdminManagementTest extends ApiTestCase
             'password' => 'newsecret1',
         ])->assertStatus(200);
     }
+
+    public function test_admin_can_search_students_by_name_code_email_and_status(): void
+    {
+        $admin = $this->createUserWithRole(UserRole::Admin);
+
+        $studentA = User::factory()->create([
+            'name' => 'Alaa Ibrahim',
+            'email' => 'alaa@student.test',
+            'student_code' => 'STU-1001',
+            'phone' => '+201011111111',
+            'is_active' => true,
+        ]);
+        $studentA->assignRole(UserRole::Student->value);
+
+        $studentB = User::factory()->create([
+            'name' => 'Rene Hany',
+            'email' => 'rene@student.test',
+            'student_code' => 'STU-1002',
+            'phone' => '+201022222222',
+            'is_active' => false,
+        ]);
+        $studentB->assignRole(UserRole::Student->value);
+
+        // Search by name
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/students?search=Alaa')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $studentA->id);
+
+        // Search by student code
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/students?search=STU-1002')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $studentB->id);
+
+        // Filter by active status
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/students?status=active')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $studentA->id);
+
+        // Filter by inactive status
+        $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/admin/students?status=inactive')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $studentB->id);
+    }
 }

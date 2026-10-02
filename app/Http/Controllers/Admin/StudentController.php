@@ -41,11 +41,34 @@ class StudentController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $students = User::query()
+        $query = User::query()
             ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
-            ->with('roles')
-            ->latest()
-            ->paginate($this->perPage($request));
+            ->with('roles');
+
+        if ($request->filled('search')) {
+            $search = $request->string('search')->trim()->toString();
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('student_code', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->string('status')->toString();
+            if ($status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($status === 'inactive' || $status === 'suspended') {
+                $query->where('is_active', false);
+            }
+        }
+
+        if ($request->filled('academic_year')) {
+            $query->where('academic_year', $request->string('academic_year')->toString());
+        }
+
+        $students = $query->latest()->paginate($this->perPage($request));
 
         return $this->success(StudentResource::collection($students), 'Students retrieved.');
     }

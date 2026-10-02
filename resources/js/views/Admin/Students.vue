@@ -11,6 +11,7 @@ import AppBadge from '@/components/ui/AppBadge.vue';
 import Pagination from '@/components/ui/Pagination.vue';
 import AppModal from '@/components/ui/AppModal.vue';
 import AppInput from '@/components/ui/AppInput.vue';
+import AppSelect from '@/components/ui/AppSelect.vue';
 
 const { t } = useI18n();
 const toast = useToast();
@@ -21,6 +22,10 @@ const meta = ref(null);
 const loading = ref(true);
 const error = ref('');
 
+const search = ref('');
+const statusFilter = ref('');
+let searchDebounce = null;
+
 const resetTarget = ref(null);
 const resetBusy = ref(false);
 const resetForm = reactive({ password: '', password_confirmation: '' });
@@ -29,7 +34,10 @@ const resetErrors = ref({});
 async function load(p = 1) {
     loading.value = true;
     try {
-        const res = toList(await admin.students({ per_page: 10, page: p }));
+        const params = { per_page: 15, page: p };
+        if (search.value.trim()) params.search = search.value.trim();
+        if (statusFilter.value) params.status = statusFilter.value;
+        const res = toList(await admin.students(params));
         items.value = res.items;
         meta.value = res.meta;
     } catch (e) {
@@ -37,6 +45,17 @@ async function load(p = 1) {
     } finally {
         loading.value = false;
     }
+}
+
+function onSearchInput() {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => load(1), 300);
+}
+
+function clearFilters() {
+    search.value = '';
+    statusFilter.value = '';
+    load(1);
 }
 
 async function setActive(s, active) {
@@ -75,15 +94,66 @@ onMounted(() => load(1));
 
 <template>
     <div class="space-y-6">
-        <div>
-            <h1 class="text-2xl font-bold text-ink-900">{{ $t('nav.students') }}</h1>
-            <p class="text-sm text-ink-500">{{ $t('students.adminSubtitle') }}</p>
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-ink-900">{{ $t('nav.students') }}</h1>
+                <p class="text-sm text-ink-500">{{ $t('students.adminSubtitle') }}</p>
+            </div>
+            <div v-if="meta?.total !== undefined" class="text-xs font-medium text-ink-400">
+                {{ meta.total }} {{ $t('nav.students') }}
+            </div>
+        </div>
+
+        <!-- Search and Filter Bar -->
+        <div class="flex flex-col gap-3 rounded-xl border border-ink-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+            <div class="relative flex-1">
+                <AppInput
+                    v-model="search"
+                    :placeholder="$t('students.searchPlaceholder') || 'ابحث بالاسم أو كود الطالب أو البريد أو رقم الهاتف...'"
+                    id="admin-student-search"
+                    class="w-full"
+                    @input="onSearchInput"
+                />
+                <button
+                    v-if="search"
+                    type="button"
+                    class="absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600 ltr:right-3 rtl:left-3"
+                    @click="search = ''; load(1)"
+                    aria-label="مسح البحث"
+                >
+                    ✕
+                </button>
+            </div>
+            <div class="w-full sm:w-44">
+                <AppSelect
+                    v-model="statusFilter"
+                    :options="[
+                        { value: '', label: $t('common.all') || 'جميع الحالات' },
+                        { value: 'active', label: $t('status.active') },
+                        { value: 'inactive', label: $t('status.inactive') },
+                    ]"
+                    id="admin-student-status"
+                    @change="load(1)"
+                />
+            </div>
+            <AppButton v-if="search || statusFilter" variant="ghost" size="sm" class="shrink-0 text-ink-500 hover:text-ink-700" @click="clearFilters">
+                ✕ {{ $t('common.clear') || 'إلغاء' }}
+            </AppButton>
         </div>
 
         <div class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
             <LoadingSpinner v-if="loading" />
             <div v-else-if="error" class="px-4 py-3 text-sm text-rose-700">{{ error }}</div>
-            <EmptyState v-else-if="!items.length" icon="users" :title="$t('students.adminEmptyTitle')" :message="$t('students.adminEmptyMessage')" />
+            <EmptyState
+                v-else-if="!items.length"
+                icon="users"
+                :title="search || statusFilter ? ($t('students.notFound') || 'لا توجد نتائج مطابقة للبحث') : $t('students.adminEmptyTitle')"
+                :message="search || statusFilter ? 'جرب البحث باسم أو كود أو بريد طالب آخر أو قم بإلغاء الفلتر' : $t('students.adminEmptyMessage')"
+            >
+                <AppButton v-if="search || statusFilter" variant="outline" size="sm" class="mt-2" @click="clearFilters">
+                    إلغاء الفلترة والبحث
+                </AppButton>
+            </EmptyState>
             <div v-else class="divide-y divide-ink-100">
                 <div v-for="s in items" :key="s.id" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
                     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (s.name || 'U').slice(0, 1) }}</div>

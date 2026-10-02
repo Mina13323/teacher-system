@@ -910,10 +910,13 @@ function attemptStatusLabel(statusOrAttempt) {
                     <div v-else class="space-y-3">
                         <div v-for="g in grouped" :key="g.student_id" class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                             <button type="button" class="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-start" @click="toggleStudent(g.student_id)">
-                                <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (g.student?.name || 'U').slice(0, 1) }}</div>
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (g.student?.name || 'U').slice(0, 1) }}</div>
                                 <div class="min-w-0 flex-1">
-                                    <p class="font-medium text-ink-800" dir="auto">{{ g.student?.name }} ({{ g.student?.student_code || '---' }})</p>
-                                    <p class="text-xs text-ink-400">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <p class="font-medium text-ink-800" dir="auto">{{ g.student?.name }}</p>
+                                        <bdi dir="ltr" class="inline-block font-mono text-xs text-ink-500">({{ g.student?.student_code || '---' }})</bdi>
+                                    </div>
+                                    <p class="mt-0.5 text-xs text-ink-400">
                                         {{ $t('exams.bestLabel') }} <span class="font-bold text-ink-700">{{ g.best ? `${g.best.percentage}%` : '—' }}</span>
                                         · {{ $t('exams.latestLabel') }} {{ attemptStatusLabel(g.latest?.status) }}
                                         · {{ $t('exams.pendingGrading') }} {{ g.pending_grading_count }}
@@ -925,7 +928,7 @@ function attemptStatusLabel(statusOrAttempt) {
                                 <span class="text-ink-400">{{ expandedStudent === g.student_id ? '▲' : '▼' }}</span>
                             </button>
                             <div v-if="expandedStudent === g.student_id" class="divide-y divide-ink-100 border-t border-ink-100 bg-ink-50/40">
-                                <div v-for="a in g.attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                                <div v-for="a in g.attempts" :key="a.id" class="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
                                     <div class="min-w-0 flex-1">
                                         <p class="text-xs text-ink-400">
                                             {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
@@ -934,11 +937,15 @@ function attemptStatusLabel(statusOrAttempt) {
                                             <span v-if="a.end_reason" class="ms-1">· {{ a.end_reason }}</span>
                                         </p>
                                     </div>
-                                    <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
-                                    <AppButton variant="outline" size="sm" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
-                                    <router-link :to="`/teacher/integrity/attempts/${a.id}`">
-                                        <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
-                                    </router-link>
+                                    <div class="flex items-center justify-between sm:justify-end gap-2">
+                                        <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
+                                        <div class="flex items-center gap-2">
+                                            <AppButton variant="outline" size="sm" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                            <router-link :to="`/teacher/integrity/attempts/${a.id}`">
+                                                <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
+                                            </router-link>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -957,38 +964,56 @@ function attemptStatusLabel(statusOrAttempt) {
                 />
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
-                        <div v-for="a in attempts" :key="a.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">
-                            <input
-                                type="checkbox"
-                                class="h-4 w-4 rounded border-ink-300 text-rose-600 focus:ring-rose-400"
-                                :checked="selectedAttemptIds.includes(Number(a.id))"
-                                :disabled="a.status === 'in_progress' && !selectedAttemptIds.includes(Number(a.id))"
-                                :aria-label="$t('exams.selectAttempt', { n: a.attempt_number, student: a.student?.name })"
-                                @click.stop
-                                @change="toggleAttemptSelection(a)"
-                            />
-                            <div class="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (a.student?.name || 'U').slice(0, 1) }}</div>
-                            <div class="min-w-0 flex-1">
-                                <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }} ({{ a.student?.student_code || '---' }})</p>
-                                <p class="text-xs text-ink-400">
-                                    {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
-                                    {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span>
-                                    ({{ a.percentage ?? '—' }}%)
-                                    <span v-if="a.grades_published_at || a.status === 'published'" class="text-emerald-600 font-semibold ms-2">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
-                                    <span v-else-if="a.status === 'in_progress'" class="text-sky-600 font-semibold ms-2">⏱ {{ $t('exams.inProgressNoticeBadge') }}</span>
-                                    <span v-else-if="a.status === 'expired'" class="text-rose-600 font-semibold ms-2">⌛ {{ $t('exams.statusExpiredLabel') }}</span>
-                                    <span v-else class="text-amber-600 font-semibold ms-2">⏳ {{ $t('exams.gradingDraftBadge') }}</span>
-                                </p>
+                        <div v-for="a in attempts" :key="a.id" class="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5">
+                            <div class="flex items-center gap-3 min-w-0 flex-1">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 shrink-0 rounded border-ink-300 text-rose-600 focus:ring-rose-400"
+                                    :checked="selectedAttemptIds.includes(Number(a.id))"
+                                    :disabled="a.status === 'in_progress' && !selectedAttemptIds.includes(Number(a.id))"
+                                    :aria-label="$t('exams.selectAttempt', { n: a.attempt_number, student: a.student?.name })"
+                                    @click.stop
+                                    @change="toggleAttemptSelection(a)"
+                                />
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (a.student?.name || 'U').slice(0, 1) }}</div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }}</p>
+                                        <bdi dir="ltr" class="inline-block font-mono text-xs text-ink-500">({{ a.student?.student_code || '---' }})</bdi>
+                                    </div>
+                                    <p class="mt-0.5 text-xs text-ink-400">
+                                        {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
+                                        {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span>
+                                        ({{ a.percentage ?? '—' }}%)
+                                        <span v-if="a.grades_published_at || a.status === 'published'" class="text-emerald-600 font-semibold ms-2">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
+                                        <span v-else-if="a.status === 'in_progress'" class="text-sky-600 font-semibold ms-2">⏱ {{ $t('exams.inProgressNoticeBadge') }}</span>
+                                        <span v-else-if="a.status === 'expired'" class="text-rose-600 font-semibold ms-2">⌛ {{ $t('exams.statusExpiredLabel') }}</span>
+                                        <span v-else class="text-amber-600 font-semibold ms-2">⏳ {{ $t('exams.gradingDraftBadge') }}</span>
+                                    </p>
+                                </div>
+                                <div class="sm:hidden shrink-0">
+                                    <AppBadge :tone="attemptTone(a)">
+                                        {{ attemptStatusLabel(a) }}
+                                    </AppBadge>
+                                </div>
                             </div>
-                            <AppBadge :tone="attemptTone(a)">
-                                {{ attemptStatusLabel(a) }}
-                            </AppBadge>
-                            <AppButton variant="outline" size="sm" @click="openGrading(a)">
-                                📝 {{ $t('exams.gradeAction') }}
-                            </AppButton>
-                            <router-link :to="`/teacher/integrity/attempts/${a.id}`">
-                                <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
-                            </router-link>
+                            <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
+                                <div class="hidden sm:block">
+                                    <AppBadge :tone="attemptTone(a)">
+                                        {{ attemptStatusLabel(a) }}
+                                    </AppBadge>
+                                </div>
+                                <div class="flex items-center gap-2 w-full sm:w-auto">
+                                    <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center" @click="openGrading(a)">
+                                        📝 {{ $t('exams.gradeAction') }}
+                                    </AppButton>
+                                    <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
+                                        <AppButton variant="ghost" size="sm" class="w-full text-center justify-center">
+                                            🔍 {{ $t('exams.integrityAction') }}
+                                        </AppButton>
+                                    </router-link>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="border-t border-ink-100 px-4 py-3"><Pagination v-if="attemptsMeta" :meta="attemptsMeta" @change="loadAttempts" /></div>

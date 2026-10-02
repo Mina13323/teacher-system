@@ -563,47 +563,93 @@ onMounted(async () => { await run(); await loadAssignments(); });
                     <AppButton @click="openUnit()">{{ $t('courses.addUnitLabel') }}</AppButton>
                 </EmptyState>
                 <div v-else class="space-y-5">
-                    <div v-for="unit in units" :key="unit.id" class="rounded-xl border border-ink-100 bg-white p-5 shadow-sm">
-                        <div class="flex items-start justify-between gap-3">
+                    <div v-for="unit in units" :key="unit.id" class="rounded-xl border border-ink-100 bg-white p-4 sm:p-5 shadow-sm">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div class="min-w-0 flex-1">
-                                <h3 class="flex items-center gap-2 text-lg font-semibold text-ink-900">
-                                    <span dir="auto">{{ unit.title }}</span> <span class="text-xs font-normal text-ink-400">{{ $t('common.unitN', { n: unit.position }) }}</span>
-                                </h3>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="inline-flex items-center rounded-md bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+                                        {{ $t('common.unitN', { n: unit.position }) }}
+                                    </span>
+                                    <h3 class="text-base sm:text-lg font-bold text-ink-900" dir="auto">{{ unit.title }}</h3>
+                                </div>
                                 <p v-if="unit.description" class="mt-1 text-sm text-ink-500" dir="auto">{{ unit.description }}</p>
                             </div>
-                            <div class="flex items-center gap-1.5">
-                                <button class="rounded p-1.5 text-ink-400 hover:bg-ink-100 disabled:opacity-40" :disabled="unit.position <= 1" :aria-label="$t('common.previous')" @click="moveUnit(unit, -1)">↑</button>
-                                <button class="rounded p-1.5 text-ink-400 hover:bg-ink-100 disabled:opacity-40" :disabled="unit.position >= units.length" :aria-label="$t('common.next')" @click="moveUnit(unit, 1)">↓</button>
-                                <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-100" @click="openUnit(unit)">{{ $t('common.edit') }}</button>
-                                <button class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="askDelete(unit, 'unit')">{{ $t('common.delete') }}</button>
+                            <div class="flex items-center gap-1.5 self-start sm:self-auto">
+                                <button class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-30" :disabled="unit.position <= 1" :aria-label="$t('common.previous')" @click="moveUnit(unit, -1)">↑</button>
+                                <button class="rounded-lg border border-ink-200 p-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-30" :disabled="unit.position >= units.length" :aria-label="$t('common.next')" @click="moveUnit(unit, 1)">↓</button>
+                                <button class="rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-100" @click="openUnit(unit)">{{ $t('common.edit') }}</button>
+                                <button class="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="askDelete(unit, 'unit')">{{ $t('common.delete') }}</button>
                             </div>
                         </div>
 
                         <div class="mt-4 space-y-3">
-                            <div v-for="lesson in unit.lessons" :key="lesson.id" class="rounded-lg border border-ink-100 bg-parchment-50/50 p-4">
-                                <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div v-for="lesson in unit.lessons" :key="lesson.id" class="rounded-xl border border-ink-100 bg-parchment-50/40 p-4 transition-all">
+                                <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0 flex-1">
-                                        <p class="font-medium text-ink-800" dir="auto">{{ lesson.title }}</p>
-                                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <p class="text-sm sm:text-base font-semibold text-ink-900" dir="auto">{{ lesson.title }}</p>
                                             <AppBadge :tone="lesson.is_published ? 'success' : 'neutral'">{{ lesson.is_published ? $t('status.published') : $t('status.draft') }}</AppBadge>
-                                            <button class="rounded px-2 py-1 font-medium text-ink-500 hover:bg-ink-100" @click="openLesson(unit, lesson)">{{ $t('common.edit') }}</button>
-                                            <button class="rounded px-2 py-1 font-medium text-amber-600" @click="toggleLesson(lesson)">{{ lesson.is_published ? $t('courses.unpublish') : $t('courses.publish') }}</button>
-                                            <button class="rounded px-2 py-1 font-medium text-rose-600" @click="askDelete(lesson, 'lesson')">{{ $t('common.delete') }}</button>
-                                            <button class="rounded px-2 py-1 font-medium text-ink-400 disabled:opacity-40" :disabled="unit.lessons.findIndex((l) => l.id === lesson.id) === 0" @click="moveLesson(unit, lesson, -1)">↑</button>
-                                            <button class="rounded px-2 py-1 font-medium text-ink-400 disabled:opacity-40" :disabled="unit.lessons.findIndex((l) => l.id === lesson.id) === unit.lessons.length - 1" @click="moveLesson(unit, lesson, 1)">↓</button>
                                         </div>
                                     </div>
-                                    <div class="flex gap-2"><AppButton variant="outline" size="sm" @click="openExam('lesson', lesson)">{{ $t('courses.createLessonExam') }}</AppButton><AppButton variant="outline" size="sm" @click="openVideo(lesson)">{{ $t('courses.addVideoLabel') }}</AppButton></div>
                                 </div>
+
+                                <div class="mt-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-t border-ink-100/60 pt-3">
+                                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                                        <button class="inline-flex items-center rounded-lg border border-ink-200 bg-white px-2.5 py-1 font-medium text-ink-700 hover:bg-ink-50 shadow-xs" @click="openLesson(unit, lesson)">
+                                            ✏️ {{ $t('common.edit') }}
+                                        </button>
+                                        <button
+                                            class="inline-flex items-center rounded-lg border px-2.5 py-1 font-medium shadow-xs"
+                                            :class="lesson.is_published ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'"
+                                            @click="toggleLesson(lesson)"
+                                        >
+                                            {{ lesson.is_published ? $t('courses.unpublish') : $t('courses.publish') }}
+                                        </button>
+                                        <button class="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-medium text-rose-700 hover:bg-rose-100 shadow-xs" @click="askDelete(lesson, 'lesson')">
+                                            🗑️ {{ $t('common.delete') }}
+                                        </button>
+                                        <div class="flex items-center rounded-lg border border-ink-200 bg-white p-0.5">
+                                            <button
+                                                class="rounded px-1.5 py-0.5 text-ink-400 hover:bg-ink-100 disabled:opacity-30"
+                                                :disabled="unit.lessons.findIndex((l) => l.id === lesson.id) === 0"
+                                                @click="moveLesson(unit, lesson, -1)"
+                                                title="تحريك لأعلى"
+                                            >
+                                                ↑
+                                            </button>
+                                            <button
+                                                class="rounded px-1.5 py-0.5 text-ink-400 hover:bg-ink-100 disabled:opacity-30"
+                                                :disabled="unit.lessons.findIndex((l) => l.id === lesson.id) === unit.lessons.length - 1"
+                                                @click="moveLesson(unit, lesson, 1)"
+                                                title="تحريك لأسفل"
+                                            >
+                                                ↓
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                                        <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center" @click="openExam('lesson', lesson)">
+                                            📝 {{ $t('courses.createLessonExam') }}
+                                        </AppButton>
+                                        <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center" @click="openVideo(lesson)">
+                                            🎥 {{ $t('courses.addVideoLabel') }}
+                                        </AppButton>
+                                    </div>
+                                </div>
+
                                 <div v-if="lesson.videos?.length" class="mt-3 space-y-2">
-                                    <div v-for="video in lesson.videos" :key="video.id" class="flex items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-sm">
-                                        <Icon name="play" :size="16" class="text-terracotta-500" />
-                                        <span class="min-w-0 flex-1 truncate text-sm text-ink-800" dir="auto">{{ video.title }}</span>
-                                        <span class="text-xs text-ink-400">{{ video.provider }}</span>
-                                        <AppBadge :tone="video.is_published ? 'success' : 'neutral'">{{ video.is_published ? $t('common.live') : $t('status.draft') }}</AppBadge>
-                                        <button class="rounded px-2 py-1 text-xs font-medium text-ink-500 hover:bg-ink-100" @click="openVideo(lesson, video)">{{ $t('common.edit') }}</button>
-                                        <button class="rounded px-2 py-1 text-xs font-medium text-amber-600" @click="toggleVideo(video)">{{ video.is_published ? $t('courses.unpub') : $t('courses.publish') }}</button>
-                                        <button class="rounded px-2 py-1 text-xs font-medium text-rose-600" @click="askDelete(video, 'video')">{{ $t('common.delete') }}</button>
+                                    <div v-for="video in lesson.videos" :key="video.id" class="flex flex-col gap-2 rounded-lg bg-white p-2.5 sm:p-3 shadow-xs border border-ink-100 sm:flex-row sm:items-center sm:justify-between">
+                                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                                            <Icon name="play" :size="16" class="shrink-0 text-terracotta-500" />
+                                            <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink-800" dir="auto">{{ video.title }}</span>
+                                            <span class="rounded bg-ink-50 px-1.5 py-0.5 text-xs text-ink-400 shrink-0">{{ video.provider }}</span>
+                                            <AppBadge :tone="video.is_published ? 'success' : 'neutral'" class="shrink-0">{{ video.is_published ? $t('common.live') : $t('status.draft') }}</AppBadge>
+                                        </div>
+                                        <div class="flex items-center gap-2 self-end sm:self-auto border-t border-ink-50 pt-1.5 sm:border-0 sm:pt-0">
+                                            <button class="rounded-md border border-ink-200 px-2 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100" @click="openVideo(lesson, video)">{{ $t('common.edit') }}</button>
+                                            <button class="rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50" @click="toggleVideo(video)">{{ video.is_published ? $t('courses.unpub') : $t('courses.publish') }}</button>
+                                            <button class="rounded-md border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50" @click="askDelete(video, 'video')">{{ $t('common.delete') }}</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
