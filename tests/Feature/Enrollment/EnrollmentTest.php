@@ -3,7 +3,9 @@
 namespace Tests\Feature\Enrollment;
 
 use App\Enums\UserRole;
+use App\Models\Enrollment;
 use App\Models\Lesson;
+use App\Services\EnrollmentService;
 use Tests\Feature\ApiTestCase;
 
 class EnrollmentTest extends ApiTestCase
@@ -120,6 +122,24 @@ class EnrollmentTest extends ApiTestCase
             ->getJson('/api/v1/student/courses')
             ->assertStatus(200)
             ->assertJsonPath('data.0.id', $course->id);
+    }
+
+    public function test_enrollment_service_returns_the_backing_value_of_the_enum_cast(): void
+    {
+        [$course] = $this->publishedCourseWithLessons();
+        $student = $this->createUserWithRole(UserRole::Student);
+
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'enrolled_at' => now(),
+        ]);
+
+        $service = app(EnrollmentService::class);
+
+        $this->assertSame('active', $service->statusFor($student, (int) $course->id));
+        $this->assertTrue($service->isEnrolled($student, (int) $course->id));
     }
 
     public function test_self_enrollment_requires_student_role_and_a_course_access_capability(): void

@@ -30,6 +30,10 @@ class EnrollmentService
             ->where('course_id', $courseId)
             ->value('status');
 
+        if ($status instanceof EnrollmentStatus) {
+            return $status->value;
+        }
+
         return $status === null ? null : (string) $status;
     }
 
