@@ -60,13 +60,42 @@ class AppServiceProvider extends ServiceProvider
         // per-IP, so a rotating-email attacker is still capped, and per-email,
         // so a distributed attack cannot target one account.
         RateLimiter::for('login', function (Request $request) {
-            $email = strtolower(trim((string) $request->input('email', '')));
-            $ip = (string) $request->ip();
+            // Route middleware runs before LoginRequest::prepareForValidation(),
+            // so normalize aliases here as well. Otherwise `login` and
+            // `student_code` requests all consume one empty-email bucket.
+            $identifier = $request->input('email');
+            if (! is_string($identifier) || trim($identifier) === '') {
+                foreach (['login', 'student_code'] as $alias) {
+                    $candidate = $request->input($alias);
+                    if (is_string($candidate) && trim($candidate) !== '') {
+                        $identifier = $candidate;
+                        break;
+                    }
+                }
+            }
 
-            return [
+            $identifier = is_string($identifier) ? trim($identifier) : '';
+            $ip = (string) ($request->ip() ?: 'unknown');
+            $limits = [
                 Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|ip|'.$ip),
-                Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|email|'.$email),
             ];
+
+            if ($identifier !== '') {
+                $email = mb_strtolower($identifier);
+                $studentCode = mb_strtoupper($identifier);
+                $userId = User::query()
+                    ->where('email', $email)
+                    ->orWhere('student_code', $studentCode)
+                    ->value('id');
+                $accountKey = $userId !== null
+                    ? 'user:'.$userId
+                    : 'identifier:'.hash('sha256', $email);
+
+                $limits[] = Limit::perMinute((int) config('api.rate_limit.auth', 10))
+                    ->by('login|account|'.$accountKey);
+            }
+
+            return $limits;
         });
 
         // A public registration link intentionally has a small budget per

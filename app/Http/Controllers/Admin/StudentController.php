@@ -7,8 +7,12 @@ use App\Actions\Auth\SetAccountActiveStateAction;
 use App\Actions\Auth\UpdateAccountEmailAction;
 use App\Actions\Auth\UpdateUserAccountAction;
 use App\Actions\Analytics\BuildStudentAnalyticsAction;
+use App\Actions\Student\AnonymizeStudentAction;
+use App\Actions\Student\ForceDeleteStudentAction;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AnonymizeStudentRequest;
+use App\Http\Requests\ForceDeleteStudentRequest;
 use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Requests\UpdateStudentRequest;
 use App\Http\Resources\StudentResource;
@@ -28,6 +32,8 @@ class StudentController extends Controller
         private readonly SetAccountActiveStateAction $setActiveState,
         private readonly ResetUserPasswordAction $resetPassword,
         private readonly BuildStudentAnalyticsAction $buildAnalytics,
+        private readonly AnonymizeStudentAction $anonymizeStudent,
+        private readonly ForceDeleteStudentAction $forceDeleteStudent,
     ) {
     }
 
@@ -67,20 +73,32 @@ class StudentController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        return $this->success(
-            new StudentResource($this->setActiveState->execute($student, true)->load('roles')),
-            'Student activated.'
+        $updatedStudent = $this->setActiveState->execute($student, true);
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute(
+            'student.activate',
+            $updatedStudent,
+            ['student_id' => $updatedStudent->id, 'admin_action' => true],
+            $request->user(),
+            $request,
         );
+
+        return $this->success(new StudentResource($updatedStudent->load('roles')), 'Student activated.');
     }
 
     public function deactivate(Request $request, User $student): JsonResponse
     {
         $this->authorizeAdmin($request);
 
-        return $this->success(
-            new StudentResource($this->setActiveState->execute($student, false)->load('roles')),
-            'Student deactivated.'
+        $updatedStudent = $this->setActiveState->execute($student, false);
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute(
+            'student.deactivate',
+            $updatedStudent,
+            ['student_id' => $updatedStudent->id, 'admin_action' => true],
+            $request->user(),
+            $request,
         );
+
+        return $this->success(new StudentResource($updatedStudent->load('roles')), 'Student deactivated; history retained.');
     }
 
     public function resetPassword(ResetPasswordRequest $request, User $student): JsonResponse
@@ -101,18 +119,25 @@ class StudentController extends Controller
             'Student analytics retrieved.');
     }
 
-    public function destroy(Request $request, User $student): JsonResponse
+    public function anonymize(AnonymizeStudentRequest $request, User $student): JsonResponse
     {
-        $this->authorizeAdmin($request);
+        $updatedStudent = $this->anonymizeStudent->execute($request->user(), $student);
 
-        $student->tokens()->delete();
-        $student->accessPeriods()->delete();
-        $student->enrollments()->delete();
-        $student->examAttempts()->delete();
-        $student->lessonProgress()->delete();
-        $student->delete();
+        return $this->success(
+            new StudentResource($updatedStudent),
+            'Student account anonymized; enrollments and academic history retained.'
+        );
+    }
 
-        return $this->success(null, 'Student deleted successfully.');
+    public function forceDelete(ForceDeleteStudentRequest $request, User $student): JsonResponse
+    {
+        $this->forceDeleteStudent->execute(
+            $request->user(),
+            $student,
+            $request->boolean('delete_academic_history'),
+        );
+
+        return $this->success(null, 'Student account permanently deleted.');
     }
 
     private function authorizeAdmin(Request $request): void

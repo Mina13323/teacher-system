@@ -1,8 +1,7 @@
-# Teacher-System: Final Production Readiness & Hardening Report
+# Teacher-System: Historical Production Readiness & Hardening Report
 
-> [!IMPORTANT]
-> **FINAL STATUS: PRODUCTION READY**
-> The complete Teacher-System (Laravel 11 REST API + Vue 3 / Vite Single Page Application + PWA) has undergone complete runtime verification, security hardening, API contract validation, public landing page integration, PWA conversion, and production build checks. 
+> [!CAUTION]
+> **SUPERSEDED — CURRENT STATUS: NOT READY FOR PRODUCTION.** This document records an earlier snapshot and its historical PHP 8.5.7 / 303-test run; it does not verify the current worktree, dependency set, migrations, or operational readiness. The latest observed remote CI run reported failing PHP 8.2/8.3 jobs and a failed pagination guard; current PHP tests are **NOT TESTED** locally. Use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for the current finding-by-finding report and release gates.
 
 ---
 
@@ -194,7 +193,7 @@ The Vue 3 + Vite frontend has been converted into a production-ready Progressive
 
 ---
 
-> [!TIP]
-> **Conclusion:** The Teacher-System is fully validated, functionally complete, role-restricted, structurally hardened, equipped with a premium Geography & History public landing page, converted into a production-ready PWA, and all educational courses are 100% private and protected behind authentication.
+> [!CAUTION]
+> **Historical conclusion only — superseded.** The statements in this section describe the older snapshot and its then-current evidence. The current worktree has not met production gates; current decision: **NOT READY FOR PRODUCTION**. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
 
 

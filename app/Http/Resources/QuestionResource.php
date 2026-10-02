@@ -29,6 +29,8 @@ class QuestionResource extends JsonResource
             'points' => $this->points,
             'position' => $this->position,
             'reference_answer' => $this->when($request->user()?->isStaff() || $request->user()?->isAdmin(), $this->reference_answer),
+            'explanation_enabled' => (bool) $this->explanation_enabled,
+            'explanation_required' => (bool) $this->explanation_required,
             'options' => OptionResource::collection(
                 $this->whenLoaded('options', $this->options)
             ),

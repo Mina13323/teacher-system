@@ -100,11 +100,12 @@ onMounted(load);
         </div>
 
         <Alert v-if="errorMsg" tone="danger" dismissible @dismiss="errorMsg = ''">{{ errorMsg }}</Alert>
+        <Alert v-if="auth.user?.must_change_password" tone="warning">{{ $t('profile.temporaryPasswordRequired') }}</Alert>
 
         <LoadingSpinner v-if="loading" />
 
         <template v-else>
-            <AppCard :title="$t('profile.personalInfo')">
+            <AppCard v-if="!auth.user?.must_change_password" :title="$t('profile.personalInfo')">
                 <form class="space-y-4" @submit.prevent="save">
                     <AppInput v-model="form.name" :label="$t('profile.fullName')" required id="profile-name" :error="errors.name" />
                     <AppInput v-model="form.email" :label="$t('profile.email')" :model-value="profile?.email" id="profile-email" readonly :hint="$t('profile.emailHint')" />

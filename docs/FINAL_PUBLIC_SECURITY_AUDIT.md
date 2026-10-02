@@ -1,8 +1,7 @@
-# Teacher-System: Final Public Surface, Authorization & Cache Security Audit
+# Teacher-System: Historical Public Surface, Authorization & Cache Security Audit
 
-> [!IMPORTANT]
-> **FINAL AUDIT STATUS: SECURITY AUDIT PASSED**
-> The complete Teacher-System (Laravel 11 REST API + Vue 3 / Vite Single Page Application + PWA) has undergone full security, authorization, route guard, service worker cache, public surface, and production build verification.
+> [!CAUTION]
+> **HISTORICAL SNAPSHOT — NOT CURRENT RELEASE CLEARANCE.** This report predates later public routes and security changes, and it did not validate the current worktree. The current overall release decision is **NOT READY FOR PRODUCTION**; see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md). PHP backend/security tests and the current browser matrix are **NOT TESTED** in the present audit environment.
 
 ---
 
@@ -10,9 +9,9 @@
 
 ### Public Routes
 **PASS**
-- Inventory: `/` (`Home.vue`) and `/login` (`Login.vue`).
-- Route guard (`resources/js/router/index.js`) permits unauthenticated access ONLY to routes with `meta: { public: true }` or `meta: { guest: true }`.
-- Neither public route fetches private course, exam, competition, or student data.
+- The current router includes `/` (`Home.vue`), `/login` (`Login.vue`), and token-scoped `/join/:token` (`StudentRegistration.vue`); the latter is intentionally public for teacher-issued registration links.
+- Route guard (`resources/js/router/index.js`) permits unauthenticated access only to public/guest routes such as these.
+- The landing page is static; the registration page uses its opaque teacher-issued token and does not expose protected course, exam, or student records.
 
 ### Protected Routes
 **PASS**
@@ -27,8 +26,8 @@
 ### Public APIs
 **PASS**
 - Audited `routes/api.php` completely.
-- The ONLY endpoint accessible without authentication is `POST /api/v1/auth/login`.
-- Zero educational, student, exam, video, or user endpoints are exposed publicly.
+- Public endpoints include `POST /api/v1/auth/login`, token-scoped `GET/POST /api/v1/public/student-registration/{token}`, and rate-limited `GET /api/v1/public/certificates/{code}`.
+- No general course, lesson, video, exam, or student-record read API is intended to be public. These public flows require current authorization/abuse regression tests; present PHP retest is **NOT TESTED**.
 
 ### Private API Protection
 **PASS**
@@ -138,6 +137,6 @@
 
 ---
 
-## FINAL STATUS
+## Historical verification status
 
-**`SECURITY AUDIT PASSED`**
+The pass labels and 304-test result above belong to the older report snapshot only; backend/security tests were not re-executed against the current worktree. Current overall disposition: see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md), **NOT READY FOR PRODUCTION**.

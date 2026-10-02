@@ -1,11 +1,11 @@
 # Teacher-System — Deep System Analysis
 
-> Independent static audit of the full codebase (backend, frontend, migrations, tests, docs).
-> Scope: architecture & design, implementation correctness, strength/weakness map, and the
-> forgotten features that matter for this product. Findings are cited by file so they can be
-> verified and fixed. (Runtime tests could not be re-executed in the audit sandbox — no PHP
-> runtime/network — so runtime claims rest on the repo's own suite + CI, and every finding
-> below was confirmed by code reading.)
+> Historical baseline static audit of the codebase (backend, frontend, migrations, tests, docs).
+> Sections 2–7 and D1–D10 describe the pre-remediation snapshot and are not a current finding
+> register; use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for present status.
+> As of 2026-10-02, PHP and Composer are unavailable in the audit sandbox; npm network access is
+> available. Frontend tests/build/audits ran, but backend/runtime claims remain **NOT TESTED**
+> locally, and the latest observed remote PHP CI jobs failed.
 
 ---
 
@@ -123,7 +123,12 @@ Design decisions that are genuinely good and consistently applied:
 - **Video protection:** short-lived playback session tokens (`Str::random(48)`, TTL, revocation),
   no storage paths leaked publicly, playback-event reporting scoped + throttled.
 
-### 3.2 Concrete defects found
+### 3.2 Concrete defects found in the baseline snapshot (historical)
+
+The findings below explain the pre-remediation code, not the current disposition. Several were
+implemented in §30; current fix/test/retest status is recorded in
+[`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md). The older recommendations in
+§7 are likewise historical and must not be used as the current release checklist.
 
 **D1 — Multi-select (`multiple_choice`) questions are broken end-to-end (correctness, high).**
 - Authoring allows multiple correct options (`ExamQuestions.vue` renders checkboxes), but
@@ -206,17 +211,17 @@ itself records that a prior session shipped a broken import (`\ProfileController
 unresolvable constructor dependency — evidence that static-only verification missed wiring
 errors; CI now covers this, but `docs/API.md` remains stale.
 
-### 3.3 Verification posture
+### 3.3 Verification posture (baseline snapshot; superseded by current audit)
 
-- The suite (~303 tests / 1,262 assertions claimed passing on the dev machine, ~494 test
-  methods in-tree) is unusually thorough for this size of project — state machines,
-  concurrency, IDOR matrices, privacy invariants, snapshot deep-integrity, transaction
-  atomicity, rate limits, and regression tests for past bugs (`ExamHardeningRegressionTest`).
-- Gaps in the suite: **no tests for `multiple_choice`** (D1), no test asserting lesson `content`
-  reaches a student (D4), no test asserting essay `feedback` reaches a student (D6), no test
-  asserting `lesson` is present on `GET .../progress` (D5).
-- This audit could not execute PHP (sandbox has no PHP and no package network); CI
-  (`.github/workflows/ci.yml`) runs the suite on PHP 8.2/8.3 and is the runtime gate.
+- The repository contains broad feature coverage for state machines, concurrency, IDOR matrices,
+  privacy invariants, snapshots, transactions, rate limits, and regression cases. Test presence is
+  not evidence of a passing current backend suite.
+- The former gaps for multi-select, lesson delivery/progress, answer-review feedback, and related
+  exam lifecycle behavior received implementation and regression coverage in §30; their current
+  backend retest status is **NOT TESTED** because PHP/Composer are unavailable locally.
+- The 2026-10-01 remote run `36943046841` reported failing PHP 8.2/8.3 jobs and a failing pagination
+  guard. Logs were unavailable. On 2026-10-02, local frontend tests/build/npm audits passed; see
+  [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for the full evidence and gates.
 
 ---
 
@@ -240,14 +245,15 @@ errors; CI now covers this, but `docs/API.md` remains stale.
    and re-ranks, deterministic ties, privacy-safe identities.
 8. **Honest scope control** — README explicitly declares what is *not* built (proctoring
    hardware, AI grading, payments, transcoding) instead of faking it.
-9. **Operational basics** — nightly rotating DB backup with failure signalling, daily renewal
-   checks, `/up` health route, PWA that never caches API/attempt payloads (`NetworkOnly`).
+9. **Operational basics** — scheduled rotating local database backups with failure signalling,
+   daily renewal checks, `/up` health route, and a PWA that never caches API/attempt payloads
+   (`NetworkOnly`). Off-host/encrypted backup and restore drills remain open; see the current audit.
 10. **Bilingual product surface** — EN/AR i18n with RTL handling, WhatsApp deep-link contact
     helpers, printable credential sheets — real teacher-workflow awareness.
 
 ---
 
-## 5. Weak points (ranked)
+## 5. Weak points in the baseline snapshot (historical; see current audit)
 
 1. **Multi-select questions broken** (D1) — a correctness hole in the core grading loop.
 2. **Inconsistent pass/fail semantics** (D2) — the same attempt can be "failed" and "passed"
@@ -387,7 +393,11 @@ payment/subscription layer and email infrastructure become prerequisites, not ex
 
 ---
 
-## 7. Priority recommendations
+## 7. Priority recommendations from the baseline snapshot (historical; superseded)
+
+The P0–P3 list below predates the remediation documented in §30. Do not treat it as the current
+release plan; use [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) and
+[`PRODUCTION_READINESS_TEST_PLAN.md`](PRODUCTION_READINESS_TEST_PLAN.md) instead.
 
 **P0 — correctness (days):**
 1. Fix or remove `multiple_choice` (D1) + tighten publish validation (`count === 1` for single).
@@ -436,7 +446,7 @@ below is verifiable in code and tests; anything not fully delivered is marked
 
 ### B. Changed files (by layer)
 
-- **Migrations (all additive)**: `2026_09_30_000001..000010` — answer options table + normalization columns, outcome columns (`raw_percentage`, `end_reason`, `grades_published_at` etc.), `violation_warning_threshold`, `exams.expiry_mode`, `exams.allow_answer_review`, soft deletes on academic parents, `audit_logs`, `assignments` + `assignment_submissions`, `lesson_attachments`, `certificates`, `users.notification_preferences`.
+- **Migrations:** Most `2026_09_30_000001..000010` changes add tables/columns/indexes (answer options, outcomes, integrity settings, soft deletes, audit, assignments, attachments, certificates, notification preferences). Later `2026_10_02_000001_restrict_exam_attempt_student_deletion` changes the existing student FK from cascade to restrict; it is non-additive at the constraint-policy level and has not been run in this environment.
 - **Models/Enums**: `ExamAnswerOption`, `Assignment`, `AssignmentSubmission`, `LessonAttachment`, `Certificate`, `AuditLog`; `AttemptOutcome`, `IntegrityEventType` (+`ThresholdTermination`), `IntegrityRiskConfig`.
 - **Domain**: `ExamAttempt::outcome()`, `Exam::autoSubmitsAtDeadline()/answerReviewEnabled()`, `Actions/Exam/*` (grading with set comparison, `FinalizeExpiredAttemptAction`), `Actions/Integrity/RecordIntegrityEventAction`, `Actions/Audit/RecordAuditLogAction`, `Actions/Certificate/IssueCertificateAction`, `Actions/Course/RestoreCourseAction`, `Services/NotificationPreferences`, `Console/Commands/{ProcessExpiredAttemptsCommand,DispatchRemindersCommand}`.
 - **HTTP**: controllers (student lesson content/answer review, teacher grouped attempts/exports/bulk import/assignments/attachments, student assignments/certificates/preferences, public certificate verification), form requests, API resources (`outcome` in `ExamAttemptResource`; `AssignmentResource`, `CertificateResource`, `AuditLogResource`).
@@ -445,8 +455,10 @@ below is verifiable in code and tests; anything not fully delivered is marked
 
 ### C. Data-safety analysis per migration
 
-Every migration is **additive-only** (CREATE TABLE / ADD COLUMN / ADD INDEX); no drops,
-no type narrowing, no default changes on populated columns.
+Most migrations summarized here add tables, columns, or indexes without rewriting attempt history.
+This is not true for every later migration: `2026_10_02_000001_restrict_exam_attempt_student_deletion`
+drops and recreates the existing FK to change `ON DELETE CASCADE` to `RESTRICT` (no row rewrite, but
+a behavior-changing constraint migration). It and its rollback require validation on supported DBs.
 
 1. `exam_answer_options` — new table; backfill from legacy `correct_options`/JSON column
    is performed idempotently (per-question guard on existing rows); rollback = drop table
@@ -464,8 +476,10 @@ no type narrowing, no default changes on populated columns.
    `UNIQUE(code)` guarantee idempotent issuance (same code returned on repeat).
 9. `users.notification_preferences` — nullable JSON; missing keys ⇒ defaults (all ON).
 
-Rollback policy: down-migrations are safe only in the documented order (drop new tables
-first, then drop added columns); nothing in the up path requires data deletion.
+Rollback policy: for the additive migrations, roll back only in documented dependency order. The
+student-attempt FK migration is an exception: its `down()` restores cascade deletion. Do not roll it
+back casually; validate the target schema and policy first. Migration execution/rollback remains
+**NOT TESTED** in the current sandbox.
 
 ### D. Exam lifecycle
 
@@ -516,24 +530,33 @@ threshold freeze) · data safety (soft delete/restore, no cascade) · authorizat
 student IDOR on assignments/certificates) · grouping/search · auto-submit idempotency ·
 export scoping · import validation/dedup · certificate idempotency/verification disclosure.
 
-**Verification honesty:** this environment has no PHP/Composer/Node packages; the suites were
-written and statically validated here and are the CI runtime gate. Frontend build/vitest could
-not run locally (registry blocked); all JS was `node --check`-clean and SFC scripts validated.
+**Verification status (2026-10-02):** PHP and Composer are unavailable, so backend PHPUnit,
+migrations, Composer audit, and PHP static analysis remain **NOT TESTED**. Frontend dependencies
+were installed with `npm ci`; `npm test` passed (27 tests), `npm run build` passed, and both
+full and production-only `npm audit` reported zero vulnerabilities. Install emitted a deprecated
+`glob@11.1.0` warning; it was not reported as vulnerable by npm audit. Manual browser, MySQL
+locking, production backup/restore, and isolated load/chaos checks remain NOT TESTED.
 
-### H. Remaining gaps
+### H. Implementation summary and remaining gaps (code status, not test certification)
 
-**FIXED** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete.
+The “FIXED” labels below mean implementation/tests are present in the worktree; PHP runtime
+retesting was not possible. For current finding-by-finding status, see
+[`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+
+**FIXED IN CODE; RETEST NOT TESTED** — all P0 items (A1–A8), P1 grouped attempt management/search/export/import/audit/soft-delete.
 **FIXED** — P2 backend: assignments, lesson attachments, certificates, scheduled reminders, notification preferences (API + tests).
 **FIXED (UI)** — student assignments (submit/resubmit/feedback), student certificates (claim/verify), lesson attachments download, teacher grouped attempts + export + import dialog + lesson attachment upload/delete.
 **FIXED** — Teacher assignment administration: CourseDetail → Assignments tab with create/edit modal (title, description, due date, points, publish flag), publish/unpublish, recoverable delete (ConfirmDialog copy states submissions/grades are kept), submissions review modal (student, late badge, status, score, file download), grade modal (score + feedback). Uses the existing assignment endpoints/policies; i18n EN/AR complete.
 **FIXED** — Native exports: `format=xlsx` emits a real Office Open XML workbook via the dependency-free `XlsxWriter` (pure-PHP stored ZIP + SpreadsheetML, full Unicode — Arabic preserved); `format=pdf` emits a real `application/pdf` via the dependency-free `SimplePdfWriter`, which embeds `resources/fonts/DejaVuSans.ttf` (DejaVu license in `resources/fonts/LICENSE-DejaVu.txt`) as a CIDFontType2/Identity-H font and shapes Arabic in-process (`ArabicText`: contextual presentation forms incl. lam-alef ligatures + RTL run re-ordering). CSV and the print-HTML sheet remain for compatibility. Tests assert PDF magic + `/FontFile2` + Arabic-name generation and XLSX ZIP structure + row content.
-**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent per endpoint, IDOR-safe), PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests).
+**FIXED** — Web Push: RFC 8030 delivery with RFC 8292 VAPID (ES256 JWT) and RFC 8291 aes128gcm payload encryption implemented on core PHP openssl primitives (`Services/Push/WebPushSender`) — no composer packages. `push_subscriptions` table (additive), `push:vapid-keys` command, `GET/POST/DELETE push-subscriptions` (idempotent for the owning account, IDOR-safe), HTTPS/provider-host allowlisting with outbound redirects disabled, and origin-confined notification-click URLs. PWA service-worker `push`/`notificationclick` handlers (`public/push-sw.js`, imported by `sw.js` and pinned via `importScripts` in vite.config for rebuilds), opt-in card in Notifications with graceful fallback. Reminder dispatch sends push as an extra channel under the identical preference/quiet-hour gating; the database notification stays the durable record; dead endpoints (404/410) are pruned. When `VAPID_*` env keys are absent the channel disables itself (fallback contract, covered by tests). SSRF regression cases are added but backend PHPUnit execution is NOT TESTED in this environment.
 **DEFERRED** — assignment file preview in browser (download exists); competition-group leaderboard pagination (data model ready).
 
 ### Production deployment safety
 
-1. **Migrations**: all additive; run `php artisan migrate` on deploy. No destructive steps;
-   rollback notes in each migration header. Existing rows are untouched (see C).
+1. **Migrations**: most feature migrations are additive; `2026_10_02_000001` changes the
+   attempt/student FK delete policy from cascade to restrict. Run migrations only after validating
+   the target schema and supported DB engine. The FK migration and its cascade-restoring rollback
+   are **NOT TESTED** here; see the current production-readiness audit.
 2. **Scheduler (required)**: `routes/console.php` schedules `attempts:process-expired`
    everyMinute (auto-submit/expire sweep) and `reminders:dispatch` hourlyAt(7). Deploy must
    run `php artisan schedule:work` (or cron `schedule:run`).

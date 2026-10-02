@@ -228,8 +228,11 @@ paths:
       responses: { '200': { description: Subscriptions } }
     post:
       tags: [Notifications]
-      summary: Store a browser push subscription (idempotent per endpoint)
-      responses: { '201': { description: Stored } }
+      summary: Store an owned browser push subscription (HTTPS endpoint allowlist; idempotent for its owner)
+      responses:
+        '201': { description: Stored }
+        '409': { description: Endpoint already belongs to another account }
+        '422': { description: Invalid or disallowed push-service endpoint }
   /admin/audit-logs:
     get:
       tags: [Operations (exports, audit, metrics)]

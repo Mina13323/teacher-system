@@ -3,6 +3,8 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
+use App\Enums\EnrollmentStatus;
+use App\Services\EnrollmentService;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -19,6 +21,10 @@ class CourseDetailResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $enrollmentStatus = $request->user()?->isStudent()
+            ? app(EnrollmentService::class)->statusFor($request->user(), (int) $this->id)
+            : null;
+
         return [
             'id' => $this->id,
             'title' => $this->title,
@@ -32,6 +38,8 @@ class CourseDetailResource extends JsonResource
             'units_count' => $this->whenCounted('units'),
             'lessons_count' => $this->whenCounted('lessons'),
             'enrollments_count' => $this->whenCounted('enrollments'),
+            'is_enrolled' => $enrollmentStatus === EnrollmentStatus::Active->value,
+            'enrollment_status' => $enrollmentStatus,
             'units' => UnitDetailResource::collection($this->whenLoaded('units')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),

@@ -32,7 +32,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $response = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
 
         $response->assertStatus(201)
             ->assertJson(['success' => true])
@@ -52,7 +52,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->first();
@@ -66,10 +66,10 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $first = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
 
         $second = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
 
         $first->assertStatus(201);
         $second->assertStatus(201);
@@ -82,7 +82,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['max_attempts' => 1]);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -92,7 +92,7 @@ class ExamAttemptTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(422)
             ->assertJson(['success' => false]);
     }
@@ -104,7 +104,7 @@ class ExamAttemptTest extends ApiTestCase
         $correct = $this->correctOption($question);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -128,7 +128,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -154,7 +154,7 @@ class ExamAttemptTest extends ApiTestCase
         $correct = $this->correctOption($question);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -188,7 +188,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['show_result_immediately' => false]);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -205,7 +205,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -228,7 +228,7 @@ class ExamAttemptTest extends ApiTestCase
         [$studentA, , $exam] = $this->enrolledStudentWithPublishedExam();
 
         $this->actingAs($studentA, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $studentA->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -250,7 +250,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -276,7 +276,7 @@ class ExamAttemptTest extends ApiTestCase
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam(['duration_minutes' => 1, 'expiry_mode' => 'expire']);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();

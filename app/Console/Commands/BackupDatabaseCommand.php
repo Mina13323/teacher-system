@@ -4,15 +4,16 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
 /**
  * Takes a point-in-time database dump and rotates old ones.
  *
- * Written without spatie/laravel-backup so the project gains an off-box safety
- * net without a new dependency. Exits non-zero on any failure so a cron or CI
- * alert actually fires instead of silently producing no backup.
+ * Written without an extra dependency. It creates local rotating backups only;
+ * off-host storage/encryption are deployment gaps. Exits non-zero on failures
+ * so a cron or CI alert does not silently report a missing backup as success.
  */
 class BackupDatabaseCommand extends Command
 {
@@ -27,11 +28,25 @@ class BackupDatabaseCommand extends Command
     {
         $connection = (string) ($this->option('connection') ?: config('database.default'));
         $driver = (string) config("database.connections.{$connection}.driver");
+        $disk = (string) ($this->option('disk') ?: 'local');
+
+        if ($disk !== 'local') {
+            $this->error('Only local backup storage is supported; refusing to silently ignore --disk.');
+
+            return self::FAILURE;
+        }
+
+        if (! in_array($driver, ['sqlite', 'mysql', 'mariadb'], true)) {
+            $this->error("No backup strategy for the [{$driver}] driver.");
+
+            return self::FAILURE;
+        }
 
         $this->info("Backing up the [{$connection}] connection (driver: {$driver})...");
 
         $stamp = Carbon::now()->format('Ymd-His');
-        $filename = "backup-{$connection}-{$stamp}-".Str::random(6).'.sql';
+        $extension = $driver === 'sqlite' ? 'sqlite' : 'sql';
+        $filename = "backup-{$connection}-{$stamp}-".Str::random(6).".{$extension}";
         $target = $this->targetDirectory();
 
         if (! is_dir($target) && ! @mkdir($target, 0750, true) && ! is_dir($target)) {
@@ -43,38 +58,33 @@ class BackupDatabaseCommand extends Command
         $path = rtrim($target, '/').'/'.$filename;
 
         try {
-            $sql = match ($driver) {
-                'sqlite' => $this->dumpSqlite($connection),
-                'mysql', 'mariadb' => $this->dumpMysql($connection),
-                default => null,
-            };
+            if ($driver === 'sqlite') {
+                $this->backupSqlite($connection, $path);
+                $bytes = filesize($path);
+                if ($bytes === false || $bytes === 0) {
+                    throw new \RuntimeException('The SQLite backup is missing or empty.');
+                }
+            } else {
+                $sql = $this->dumpMysql($connection);
+                if (trim($sql) === '') {
+                    throw new \RuntimeException('The dump came back empty; refusing to write a useless backup.');
+                }
+                if (file_put_contents($path, $sql, LOCK_EX) === false) {
+                    throw new \RuntimeException("Unable to write the backup to {$path}");
+                }
+                $bytes = strlen($sql);
+            }
         } catch (\Throwable $e) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
             $this->error('Backup failed: '.$e->getMessage());
 
             return self::FAILURE;
         }
 
-        if ($sql === null) {
-            $this->error("No backup strategy for the [{$driver}] driver.");
-
-            return self::FAILURE;
-        }
-
-        if (trim($sql) === '') {
-            $this->error('The dump came back empty; refusing to write a useless backup.');
-
-            return self::FAILURE;
-        }
-
-        if (file_put_contents($path, $sql) === false) {
-            $this->error("Unable to write the backup to {$path}");
-
-            return self::FAILURE;
-        }
-
         @chmod($path, 0640);
-
-        $this->info('Wrote '.$path.' ('.number_format(strlen($sql)).' bytes)');
+        $this->info('Wrote '.$path.' ('.number_format($bytes).' bytes)');
 
         $this->prune($target, (int) $this->option('keep'));
 
@@ -82,9 +92,11 @@ class BackupDatabaseCommand extends Command
     }
 
     /**
-     * SQLite is a single file, so copying it is a valid snapshot.
+     * Use SQLite's online backup operation rather than copying the main file.
+     * A raw copy can omit committed WAL data and is not an SQL dump despite its
+     * extension. VACUUM INTO produces a consistent, standalone SQLite database.
      */
-    private function dumpSqlite(string $connection): ?string
+    private function backupSqlite(string $connection, string $path): void
     {
         $database = (string) config("database.connections.{$connection}.database");
 
@@ -96,13 +108,26 @@ class BackupDatabaseCommand extends Command
             throw new \RuntimeException("The sqlite file was not found: {$database}");
         }
 
-        $contents = file_get_contents($database);
-
-        if ($contents === false) {
-            throw new \RuntimeException("The sqlite file could not be read: {$database}");
+        $pdo = DB::connection($connection)->getPdo();
+        if ($pdo->inTransaction()) {
+            throw new \RuntimeException('SQLite backup cannot run inside an active transaction.');
         }
 
-        return $contents;
+        $quotedPath = $pdo->quote($path);
+        if ($quotedPath === false) {
+            throw new \RuntimeException('Unable to safely quote the SQLite backup path.');
+        }
+
+        $pdo->exec('VACUUM INTO '.$quotedPath);
+
+        $backup = new \PDO('sqlite:'.$path);
+        $backup->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $integrity = $backup->query('PRAGMA quick_check')->fetchColumn();
+        $backup = null;
+
+        if ($integrity !== 'ok') {
+            throw new \RuntimeException('SQLite quick_check rejected the created backup.');
+        }
     }
 
     /**
@@ -198,7 +223,11 @@ class BackupDatabaseCommand extends Command
             return;
         }
 
-        $existing = collect(glob(rtrim($target, '/').'/backup-*.sql') ?: [])
+        $existingFiles = array_merge(
+            glob(rtrim($target, '/').'/backup-*.sql') ?: [],
+            glob(rtrim($target, '/').'/backup-*.sqlite') ?: [],
+        );
+        $existing = collect($existingFiles)
             ->sortByDesc(fn (string $file): int => (int) filemtime($file))
             ->values();
 

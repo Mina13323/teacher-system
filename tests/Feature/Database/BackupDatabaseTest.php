@@ -42,6 +42,7 @@ class BackupDatabaseTest extends ApiTestCase
             $table->string('label')->nullable();
         });
 
+        DB::connection(self::CONNECTION)->statement('PRAGMA journal_mode=WAL');
         DB::connection(self::CONNECTION)->table('widgets')->insert(['label' => 'spare part']);
     }
 
@@ -51,7 +52,10 @@ class BackupDatabaseTest extends ApiTestCase
             @unlink($file);
         }
 
-        @unlink($this->sqliteFile);
+        DB::disconnect(self::CONNECTION);
+        foreach ([$this->sqliteFile, $this->sqliteFile.'-wal', $this->sqliteFile.'-shm'] as $file) {
+            @unlink($file);
+        }
 
         parent::tearDown();
     }
@@ -64,10 +68,13 @@ class BackupDatabaseTest extends ApiTestCase
     /** @return list<string> */
     private function backups(): array
     {
-        return glob($this->backupDir().'/backup-'.self::CONNECTION.'-*.sql') ?: [];
+        return array_merge(
+            glob($this->backupDir().'/backup-'.self::CONNECTION.'-*.sql') ?: [],
+            glob($this->backupDir().'/backup-'.self::CONNECTION.'-*.sqlite') ?: [],
+        );
     }
 
-    public function test_it_writes_a_backup_containing_schema_and_data(): void
+    public function test_it_writes_a_valid_standalone_sqlite_backup_with_schema_and_data(): void
     {
         $this->artisan('db:backup', ['--connection' => self::CONNECTION])
             ->assertSuccessful();
@@ -75,11 +82,31 @@ class BackupDatabaseTest extends ApiTestCase
         $files = $this->backups();
 
         $this->assertNotEmpty($files, 'No backup file was written.');
+        $this->assertStringEndsWith('.sqlite', $files[0], 'A binary SQLite snapshot must not use an .sql extension.');
+        $this->assertSame("SQLite format 3\0", file_get_contents($files[0], false, null, 0, 16));
 
-        $sql = (string) file_get_contents($files[0]);
+        $restorePrefix = tempnam(sys_get_temp_dir(), 'elm-restore-');
+        $restoreFile = $restorePrefix.'.sqlite';
+        @unlink($restorePrefix);
+        $this->assertTrue(copy($files[0], $restoreFile));
 
-        $this->assertStringContainsString('widgets', $sql, 'The schema is missing from the dump.');
-        $this->assertStringContainsString('spare part', $sql, 'The rows are missing from the dump.');
+        config()->set('database.connections.backup_restore_test', [
+            'driver' => 'sqlite',
+            'database' => $restoreFile,
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+        ]);
+        DB::purge('backup_restore_test');
+
+        $this->assertTrue(Schema::connection('backup_restore_test')->hasTable('widgets'));
+        $this->assertSame(
+            'spare part',
+            DB::connection('backup_restore_test')->table('widgets')->value('label'),
+            'The standalone copy must restore representative table data.'
+        );
+
+        DB::disconnect('backup_restore_test');
+        @unlink($restoreFile);
     }
 
     public function test_it_prunes_backups_beyond_the_retention_count(): void
@@ -99,6 +126,14 @@ class BackupDatabaseTest extends ApiTestCase
             $this->backups(),
             'Retention must keep exactly --keep files, newest first.'
         );
+    }
+
+    public function test_it_rejects_an_unsupported_remote_disk_instead_of_writing_locally(): void
+    {
+        $this->artisan('db:backup', ['--connection' => self::CONNECTION, '--disk' => 's3'])
+            ->assertFailed();
+
+        $this->assertEmpty($this->backups());
     }
 
     public function test_it_fails_loudly_on_an_in_memory_database(): void

@@ -35,7 +35,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
         // Save a real answer first — it must survive termination AND resume.
@@ -49,7 +49,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
 
         // Confirmed repeated violations: exceed the frozen threshold, terminate.
         $attempt = ExamAttempt::findOrFail($attemptId);
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attemptId}/terminate", ['reason' => 'TAB_SWITCH'])
             ->assertStatus(200);
@@ -112,24 +112,49 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $this->assertSame(0, $after->time_restored_seconds);
     }
 
-    public function test_resume_past_deadline_gives_back_exactly_the_time_left_at_termination(): void
+    public function test_resume_after_deadline_is_rejected_without_reopening_or_extending_the_attempt(): void
+    {
+        [$teacher, , , $attemptId] = $this->flaggedAttempt();
+
+        $before = ExamAttempt::findOrFail($attemptId);
+        $originalExpiry = $before->expires_at->copy();
+        $originalStatus = $before->status;
+        $originalEndReason = $before->end_reason;
+        $originalAnswerCount = $before->answers()->count();
+        $originalEventCount = $before->integrityEvents()->count();
+
+        $this->travelTo($originalExpiry->copy()->addSeconds(1));
+
+        $this->review($teacher, $attemptId, 'RESUME', 'late review')->assertStatus(422);
+
+        $after = ExamAttempt::findOrFail($attemptId);
+        $this->assertSame($originalStatus, $after->status);
+        $this->assertSame($originalEndReason, $after->end_reason);
+        $this->assertTrue($after->expires_at->equalTo($originalExpiry));
+        $this->assertNull($after->previous_end_reason);
+        $this->assertNull($after->previous_expires_at);
+        $this->assertNull($after->resumed_at);
+        $this->assertNull($after->resumed_by);
+        $this->assertNull($after->time_restored_seconds);
+        $this->assertSame($originalAnswerCount, $after->answers()->count());
+        $this->assertSame($originalEventCount, $after->integrityEvents()->count());
+        $this->assertSame(0, AuditLog::query()->where('action', 'attempt.resume_flagged')->count());
+    }
+
+    public function test_resume_exactly_at_deadline_is_rejected(): void
     {
         [$teacher, , , $attemptId] = $this->flaggedAttempt();
 
         $attempt = ExamAttempt::findOrFail($attemptId);
-        // Simulate: termination happened 10 minutes BEFORE the deadline,
-        // but review happens AFTER the deadline passed.
-        $expires = $attempt->expires_at->copy();
-        $termination = $attempt->integrityEvents()->first();
-        $termination->forceFill(['occurred_at' => $expires->copy()->subMinutes(10)])->save();
+        $expiry = $attempt->expires_at->copy();
+        $this->travelTo($expiry);
 
-        $this->travelTo($expires->copy()->addMinutes(30));
+        $this->review($teacher, $attemptId, 'RESUME', 'at deadline')->assertStatus(422);
 
-        $this->review($teacher, $attemptId, 'RESUME', 'late review')->assertStatus(201);
         $after = ExamAttempt::findOrFail($attemptId);
-        $this->assertSame(600, $after->time_restored_seconds);
-        $this->assertSame('integrity_threshold', $after->previous_end_reason);
-        $this->assertEqualsWithDelta(now()->addSeconds(600)->getTimestamp(), $after->expires_at->getTimestamp(), 5);
+        $this->assertTrue($after->expires_at->equalTo($expiry));
+        $this->assertNull($after->resumed_at);
+        $this->assertSame('integrity_threshold', $after->end_reason);
     }
 
     public function test_resume_is_audited_with_actor_note_and_is_idempotent(): void
@@ -156,7 +181,7 @@ class ResumeFlaggedAttemptTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attemptId = $startRes->json('data.id');
 
         // Voluntary submit — must NOT be resumable.

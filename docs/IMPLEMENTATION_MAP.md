@@ -1,8 +1,10 @@
 # Implementation Map — Production Exam Hardening + LMS UX/Operability Phase
 
-Short map of every surface this phase touches. Status markers: `TODO` → `DONE` per feature.
-All schema changes are **additive**. Historical rows are never rewritten (see
-`docs/PRODUCTION_DATA_SAFETY.md` notes in the final report).
+Short map of implementation surfaces. Status markers describe code coverage, not production clearance.
+Most phase schema changes are additive and attempt history is not rewritten by the listed outcome
+migrations. The later `2026_10_02_000001_restrict_exam_attempt_student_deletion` migration changes
+an existing FK policy from cascade to restrict; it requires backend/DB validation. See
+[`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) for current finding and test status.
 
 ## P0 — Assessment correctness
 
@@ -144,18 +146,25 @@ All schema changes are **additive**. Historical rows are never rewritten (see
   (database queue). New: `ExamStartingSoonNotification`, `ExamClosingSoonNotification`,
   `AssignmentDueSoonNotification`, `CompetitionEndingSoonNotification`,
   `CertificateAvailableNotification`. Command `reminders:dispatch` (scheduled).
-- Web Push: **deferred** (needs VAPID/service-worker subscription infra; in-app delivery is
-  the graceful fallback — documented).
+- Web Push: VAPID subscription/delivery, allowlisted HTTPS endpoints, origin-confined click URLs,
+  quiet-hour gating, dead-endpoint cleanup, and in-app fallback are implemented. PHP transport and
+  endpoint-security feature tests are present but backend PHPUnit execution is **NOT TESTED**.
 
 ## Configuration / ops
 - `routes/console.php`: schedule `attempts:process-expired` (every minute), `reminders:dispatch`.
-- New env vars: none required; optional `EXAMS_DEFAULT_EXPIRY_MODE`, integrity
-  `warning_threshold` via `config/integrity.php`.
-- Queue/scheduler requirements documented for deployment (`queue:work`, `schedule:work`/cron).
+- Relevant env vars include `EXAMS_DEFAULT_EXPIRY_MODE`, integrity settings in
+  `config/integrity.php`, VAPID keys, `PUSH_ALLOWED_ENDPOINT_HOSTS`, push timeouts/caps, and
+  database backup retention options. `db:backup` remains local-only; encryption/off-host delivery
+  and restore drills are open release gates.
+- Queue/scheduler requirements are documented for deployment (`queue:work`, `schedule:work`/cron).
+- PHP/Composer are unavailable in this audit environment: backend tests/migrations are
+  **NOT TESTED**. Frontend tests/build/npm audits passed; see the current audit report.
 
 ## Tests / verification policy
 - Regression tests added per fix; obsolete tests updated only where the new behaviour is
   intentional (heartbeat termination → fairness warnings; blank expiry → auto-submit), each
   change documented in the final report. Existing snapshot/IDOR/competition tests untouched.
-- Runtime note: this sandbox has no PHP/Composer/npm registry access; the suite is executed by
-  CI (`.github/workflows/ci.yml`, PHP 8.2/8.3). All files are statically checked here.
+- Runtime note: PHP and Composer are unavailable locally. `npm ci`, frontend tests/build, and npm
+  audits passed on 2026-10-02; a parser accepted PHP syntax but does not substitute for runtime lint
+  or PHPUnit. The latest observed remote PHP 8.2/8.3 CI jobs are failing; see
+  [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).

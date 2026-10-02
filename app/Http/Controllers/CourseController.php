@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CourseStatus;
-use App\Http\Resources\CourseDetailResource;
+use App\Http\Resources\CoursePreviewResource;
 use App\Http\Resources\CourseResource;
 use App\Models\Course;
 use Illuminate\Http\JsonResponse;
@@ -37,6 +37,6 @@ class CourseController extends Controller
             'units.lessons.videos' => fn ($q) => $q->where('is_published', true)->orderBy('position'),
         ])->loadCount(['units', 'lessons']);
 
-        return $this->success(new CourseDetailResource($course), 'Course retrieved.');
+        return $this->success(new CoursePreviewResource($course), 'Course retrieved.');
     }
 }

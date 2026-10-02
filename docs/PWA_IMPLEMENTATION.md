@@ -1,8 +1,10 @@
-# Teacher-System — Progressive Web App (PWA) Implementation & Security Audit
+# Teacher-System — Progressive Web App (PWA) Implementation Notes
+
+> **Current verification status (2026-10-02):** The frontend unit suite and production build passed, including service-worker generation. This document describes intended PWA behavior; manual browser/device, install, offline/update, accessibility, and stale-worker checks are **NOT TESTED** in the current audit. This is not production clearance; see [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
 
 ## 1. Overview & Architecture
 
-The Teacher-System Vue 3 + Vite Single Page Application has been upgraded to a production-ready Progressive Web App (PWA) using `vite-plugin-pwa` and Workbox. 
+The Teacher-System Vue 3 + Vite Single Page Application is configured as a Progressive Web App (PWA) using `vite-plugin-pwa` and Workbox. Browser/device support and production readiness are not inferred from build success alone.
 
 Users can install Teacher-System on:
 - Android (Chrome, Edge, Firefox, Brave)
@@ -10,15 +12,15 @@ Users can install Teacher-System on:
 - Windows (Chrome, Edge)
 - macOS (Chrome, Edge, Safari)
 
-The PWA runs as a standalone window with native app icons, theme colors, safe-area viewport handling, offline network indicators, and update notifications.
+The PWA runs as a standalone window with native app icons, theme colors, safe-area viewport handling, offline network indicators, and user-confirmed update notifications. The shared portal shell, navigation, dialogs, and install/update notices adapt across phone, tablet, and desktop widths. Offline support intentionally caches only the public app shell and static assets; authenticated API data, exams, protected media, and submissions remain online-only.
 
 ---
 
 ## 2. Web App Manifest Specifications
 
 - **Manifest File:** Generated via `vite-plugin-pwa` at `/manifest.webmanifest`
-- **Application Name:** `Atlas Academy — Geography & History`
-- **Short Name:** `Atlas Academy`
+- **Application Name:** `El Masry — Geography & History`
+- **Short Name:** `El Masry`
 - **Start URL:** `/`
 - **Scope:** `/`
 - **Display Mode:** `standalone`
@@ -47,27 +49,29 @@ The service worker is configured via Workbox with a **strict security-first cach
 - **Notifications & Personal Info:** Private student data and in-app notifications are never stored in service worker caches.
 
 ### ✅ Static Asset Caching Rules:
-- **JS Chunks & CSS:** Cached via Workbox glob patterns (`**/*.{js,css,html,ico,png,svg,woff2}`).
+- **JS Chunks & CSS:** Cached via Workbox's precache glob patterns (`**/*.{js,css,html,ico,png,svg,woff2}`).
 - **Public Fonts:** Google Fonts (`fonts.googleapis.com` & `fonts.gstatic.com`) are cached via `CacheFirst` (max 10 entries, 1 year expiry).
+- **Deployment cache headers:** `index.html`, `manifest.webmanifest`, `sw.js`, and `push-sw.js` are revalidated/no-store; only content-hashed assets receive a one-year immutable cache header. Root icon files can refresh daily. Purge any CDN/Host cache after deploying the corrected headers once.
+- **Update checks:** The app checks on registration, when it returns to the foreground, when connectivity returns, and every 30 minutes while open. Updates remain user-confirmed so a timed exam is not reloaded unexpectedly.
 - **Public Landing Page Assets:** Public graphics and icons are cached safely for offline landing page rendering.
 
 ---
 
 ## 4. Offline & Installation Experience
 
-### Offline Degradation ([OfflineBanner.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/OfflineBanner.vue))
+### Offline Degradation ([OfflineBanner.vue](../resources/js/components/pwa/OfflineBanner.vue))
 - When connection is lost, a non-intrusive warning banner appears: *"You are currently offline. Active features (exams, video playback, live actions) require internet connectivity."*
 - Includes a **Retry** button.
 - When connection returns, displays a brief *"Back online"* green confirmation indicator.
 - Does **NOT** simulate fake offline exam submissions or bypass server validation.
 
-### Install Prompt ([AppInstallPrompt.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/AppInstallPrompt.vue))
+### Install Prompt ([AppInstallPrompt.vue](../resources/js/components/pwa/AppInstallPrompt.vue))
 - Listens to `beforeinstallprompt` event and detects if the app is already running in `standalone` display mode.
 - Renders a floating, elegant install banner with an **Install App** CTA.
 - Provides a **Dismiss** option that remembers user preference per session.
 - On iOS devices, displays custom Safari share instructions: *"To install on iPhone/iPad: Tap Share → Add to Home Screen"*.
 
-### Update Notifications ([PwaUpdateToast.vue](file:///C:/Users/Mina%20Wael/Desktop/teacherAssistant/resources/js/components/pwa/PwaUpdateToast.vue))
+### Update Notifications ([PwaUpdateToast.vue](../resources/js/components/pwa/PwaUpdateToast.vue))
 - Uses `registerType: 'prompt'`.
 - When a new frontend version is built and deployed, a toast appears: *"New version available — Update App"*.
 - Clicking **Update App** safely triggers `updateServiceWorker(true)` to refresh assets without breaking active user sessions.
@@ -76,14 +80,14 @@ The service worker is configured via Workbox with a **strict security-first cach
 
 ## 5. Security & Isolation Audit
 
-| Security Criterion | Audit Verification | Status |
+| Security Criterion | Audit Evidence | Current Status |
 | :--- | :--- | :---: |
-| **No Private API Responses Cached** | Workbox handler for `/^\/api\/.*/` is explicitly `NetworkOnly` | **VERIFIED** |
-| **No Authentication Secrets Cached** | Sanctum tokens, passwords, and user profiles bypass SW cache | **VERIFIED** |
-| **No Protected Video Bypasses** | Video playback tokens and session endpoints are online-only | **VERIFIED** |
-| **No Offline Exam Grading** | Exam submission and timer remain server-authoritative | **VERIFIED** |
-| **No Client-Side Secrets** | Zero secrets or private keys stored in manifest or SW | **VERIFIED** |
-| **Route Guard Integrity** | Vue Router `beforeEach` role guards enforce Sanctum auth | **VERIFIED** |
+| **No Private API Responses Cached** | Workbox handler for `/^\/api\/.*/` is configured as `NetworkOnly` | **CODE REVIEWED; BROWSER NOT TESTED** |
+| **No Authentication Secrets Cached** | Service-worker cache policy excludes authenticated API routes | **CODE REVIEWED; BROWSER NOT TESTED** |
+| **No Protected Video Bypasses** | Video playback token/session endpoints are configured online-only | **CODE REVIEWED; BROWSER NOT TESTED** |
+| **No Offline Exam Grading** | Exam submission and timer remain server-authoritative in the implementation | **CODE REVIEWED; BROWSER NOT TESTED** |
+| **No Client-Side Secrets** | Repository/static review found no intended private key in the manifest/service worker | **CODE REVIEWED; DEPLOYMENT SCAN NOT TESTED** |
+| **Route Guard Integrity** | Vue Router `beforeEach` implements role guards | **CODE REVIEWED; BROWSER/API TESTS NOT TESTED** |
 
 ---
 

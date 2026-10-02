@@ -49,7 +49,7 @@ class AutoSubmitAtDeadlineTest extends ApiTestCase
             ->assertStatus(201);
 
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::findOrFail($startRes->json('data.id'));
@@ -165,12 +165,12 @@ class AutoSubmitAtDeadlineTest extends ApiTestCase
         ]);
 
         $startRes = $this->actingAs($essayAttemptStudent, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start");
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
         if ($startRes->status() === 422) {
             // Previous attempt already handed in via finalize — finish it first.
             $this->artisan('attempts:process-expired')->assertExitCode(0);
             $startRes = $this->actingAs($essayAttemptStudent, 'sanctum')
-                ->postJson("/api/v1/student/exams/{$exam->id}/start");
+                ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true]);
         }
         $startRes->assertStatus(201);
         $essayAttempt = ExamAttempt::findOrFail($startRes->json('data.id'));
@@ -245,7 +245,7 @@ class AutoSubmitAtDeadlineTest extends ApiTestCase
         // The stale in-progress attempt is past its deadline; starting a new
         // one must finalize it first instead of silently blocking or discarding.
         $startRes = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$attempt->exam_id}/start");
+            ->postJson("/api/v1/student/exams/{$attempt->exam_id}/start", ['rules_acknowledged' => true]);
         $startRes->assertStatus(201);
 
         $attempt->refresh();

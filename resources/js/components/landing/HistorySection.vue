@@ -38,7 +38,7 @@ const historyTopics = [
 </script>
 
 <template>
-    <section id="history" class="relative border-t border-ink-200/80 bg-ink-950 py-20 text-white sm:py-28">
+    <section id="history" class="relative overflow-hidden border-t border-ink-200/80 bg-ink-950 py-20 text-white sm:py-28">
         <!-- Ambient Radial Glow -->
         <div class="pointer-events-none absolute left-1/2 top-0 h-96 w-[600px] -translate-x-1/2 rounded-full bg-terracotta-900/10 blur-3xl"></div>
 
@@ -59,8 +59,8 @@ const historyTopics = [
 
             <!-- Timeline Progression Bar (Past -> Today) -->
             <div class="mt-14 rounded-2xl border border-ink-800 bg-ink-900/90 p-6 shadow-2xl backdrop-blur sm:p-8">
-                <div class="mb-6 flex items-center justify-between border-b border-ink-800 pb-4">
-                    <h3 class="font-mono text-xs font-bold uppercase tracking-widest text-terracotta-400">
+                <div class="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 pb-4">
+                    <h3 class="font-mono text-[11px] font-bold uppercase tracking-wider text-terracotta-400 sm:text-xs sm:tracking-widest">
                         CHRONOLOGICAL CAUSALITY FLOW
                     </h3>
                     <span class="text-xs text-ink-400">PAST → TODAY</span>

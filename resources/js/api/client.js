@@ -7,13 +7,17 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
  * server exception strings to the user; only validated field messages and a
  * friendly status-specific message.
  */
+export const DEFAULT_API_TIMEOUT_MS = 30_000;
+
 export class ApiError extends Error {
-    constructor(message, { status = 0, errors = null, data = null } = {}) {
+    constructor(message, { status = 0, errors = null, data = null, code = null } = {}) {
         super(message);
         this.name = 'ApiError';
         this.status = status;
         this.errors = errors;
         this.data = data;
+        this.code = code;
+        this.isTimeout = code === 'ECONNABORTED' || code === 'ETIMEDOUT';
         this.isAuthError = status === 401;
         this.isForbidden = status === 403;
         this.isNotFound = status === 404;
@@ -41,6 +45,8 @@ export class ApiError extends Error {
                 return 'Please review the highlighted fields.';
             case 429:
                 return 'You are making requests too quickly. Please wait a moment.';
+            case 0:
+                return 'The server did not respond in time. Check your connection and try again.';
             case 500:
                 return 'An unexpected error occurred on the server.';
             default:
@@ -51,6 +57,7 @@ export class ApiError extends Error {
 
 const client = axios.create({
     baseURL: BASE_URL,
+    timeout: DEFAULT_API_TIMEOUT_MS,
     headers: { Accept: 'application/json' },
 });
 
@@ -128,7 +135,11 @@ async function request(config) {
             errors = payload.errors || null;
         }
 
-        if (error.code === 'ECONNABORTED') {
+        if (
+            error.code === 'ECONNABORTED'
+            || error.code === 'ETIMEDOUT'
+            || /timeout/i.test(error.message || '')
+        ) {
             status = 0;
         }
 
@@ -152,7 +163,7 @@ async function request(config) {
             }
         }
 
-        throw new ApiError(message, { status, errors, data: error.response?.data });
+        throw new ApiError(message, { status, errors, data: error.response?.data, code: error.code });
     }
 }
 
@@ -162,7 +173,9 @@ async function request(config) {
  * which are never linked directly (no token on <a href> navigations).
  */
 export async function downloadFile(url, filename) {
-    const response = await client.request({ method: 'get', url, responseType: 'blob' });
+    // File exports/attachments retain their existing unbounded download time;
+    // the 30-second JSON API deadline below is for interactive requests.
+    const response = await client.request({ method: 'get', url, responseType: 'blob', timeout: 0 });
     const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -176,9 +189,9 @@ export async function downloadFile(url, filename) {
 }
 
 export default {
-    get: (url, params) => request({ method: 'get', url, params }),
-    post: (url, data) => request({ method: 'post', url, data }),
-    put: (url, data) => request({ method: 'put', url, data }),
-    patch: (url, data) => request({ method: 'patch', url, data }),
-    delete: (url, data) => request({ method: 'delete', url, data }),
+    get: (url, params, options = {}) => request({ method: 'get', url, params, ...options }),
+    post: (url, data, options = {}) => request({ method: 'post', url, data, ...options }),
+    put: (url, data, options = {}) => request({ method: 'put', url, data, ...options }),
+    patch: (url, data, options = {}) => request({ method: 'patch', url, data, ...options }),
+    delete: (url, data, options = {}) => request({ method: 'delete', url, data, ...options }),
 };

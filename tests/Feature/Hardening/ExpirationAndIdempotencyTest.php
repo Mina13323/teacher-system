@@ -35,7 +35,7 @@ class ExpirationAndIdempotencyTest extends ApiTestCase
     protected function start($student, $exam): ExamAttempt
     {
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         return ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -99,7 +99,7 @@ class ExpirationAndIdempotencyTest extends ApiTestCase
 
         // No student endpoint accepts expires_at, so a client cannot extend it.
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['expires_at' => now()->addDay()->toISOString()])
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true,'expires_at' => now()->addDay()->toISOString()])
             ->assertStatus(201);
 
         $this->assertSame(

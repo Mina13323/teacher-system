@@ -28,6 +28,8 @@ class UpdateQuestionRequest extends FormRequest
             'points' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'position' => ['sometimes', 'integer', 'min:1'],
             'reference_answer' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'explanation_enabled' => ['sometimes', 'boolean'],
+            'explanation_required' => ['sometimes', 'boolean'],
         ];
     }
 }

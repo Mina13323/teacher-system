@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { profilePathFor } from '@/utils/authRoutes';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import AppInput from '@/components/ui/AppInput.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -29,7 +30,9 @@ async function submit() {
     errorMsg.value = '';
     try {
         await auth.login(form);
-        const target = route.query.redirect || homeFor(auth.roles);
+        const target = auth.user?.must_change_password
+            ? profilePathFor(auth.roles)
+            : (route.query.redirect || homeFor(auth.roles));
         router.push(target);
     } catch (e) {
         Object.assign(errors, fieldErrors(e));

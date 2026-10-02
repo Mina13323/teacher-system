@@ -273,26 +273,26 @@ class StudentLifecycleTest extends ApiTestCase
             ->assertStatus(403);
     }
 
-    public function test_teacher_can_delete_student_they_manage(): void
+    public function test_teacher_can_deactivate_student_they_manage_without_deleting_it(): void
     {
         $teacher = $this->makeTeacher();
         $this->actingAs($teacher, 'sanctum')
             ->postJson('/api/v1/teacher/students', [
-                'name' => 'To Delete',
-                'email' => 'todelete@example.com',
+                'name' => 'To Deactivate',
+                'email' => 'todeactivate@example.com',
                 'password' => 'secret123',
             ])->assertStatus(201);
 
-        $student = User::where('email', 'todelete@example.com')->firstOrFail();
+        $student = User::where('email', 'todeactivate@example.com')->firstOrFail();
 
         $this->actingAs($teacher, 'sanctum')
-            ->deleteJson("/api/v1/teacher/students/{$student->id}")
-            ->assertStatus(200);
+            ->patchJson("/api/v1/teacher/students/{$student->id}/deactivate")
+            ->assertOk();
 
-        $this->assertDatabaseMissing('users', ['id' => $student->id]);
+        $this->assertDatabaseHas('users', ['id' => $student->id, 'is_active' => false]);
     }
 
-    public function test_teacher_cannot_delete_another_teachers_student(): void
+    public function test_teacher_cannot_deactivate_another_teachers_student(): void
     {
         $teacherA = $this->makeTeacher();
         $teacherB = $this->makeTeacher();
@@ -307,7 +307,7 @@ class StudentLifecycleTest extends ApiTestCase
         $student = User::where('email', 'studenta@example.com')->firstOrFail();
 
         $this->actingAs($teacherB, 'sanctum')
-            ->deleteJson("/api/v1/teacher/students/{$student->id}")
+            ->patchJson("/api/v1/teacher/students/{$student->id}/deactivate")
             ->assertStatus(403);
 
         $this->assertDatabaseHas('users', ['id' => $student->id]);

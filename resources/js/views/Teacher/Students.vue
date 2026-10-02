@@ -178,13 +178,13 @@ const statusFilter = ref('all');
 const sortOrder = ref('name_asc');
 const showDuplicatesOnly = ref(false);
 
-// Delete student state
-const deleteTarget = ref(null);
-const deleteBusy = ref(false);
+// Single-account deactivation state (history is retained).
+const deactivateTarget = ref(null);
+const deactivateBusy = ref(false);
 
-// Batch delete state
-const batchDeleteOpen = ref(false);
-const batchDeleteBusy = ref(false);
+// Batch deactivation state (history is retained).
+const batchDeactivateOpen = ref(false);
+const batchDeactivateBusy = ref(false);
 
 // Suspend modal state
 const suspendTarget = ref(null);
@@ -344,6 +344,8 @@ function toggleSelectStudent(id) {
     const idx = selectedIds.value.indexOf(id);
     if (idx > -1) {
         selectedIds.value.splice(idx, 1);
+    } else if (selectedIds.value.length >= 100) {
+        toast.error(t('students.selectionLimit', { n: 100 }));
     } else {
         selectedIds.value.push(id);
     }
@@ -370,44 +372,44 @@ async function load(p = 1) {
     }
 }
 
-function openDeleteStudent(s) {
-    deleteTarget.value = s;
+function openDeactivateStudent(s) {
+    deactivateTarget.value = s;
 }
 
-async function submitDeleteStudent() {
-    if (!deleteTarget.value) return;
-    deleteBusy.value = true;
+async function submitDeactivateStudent() {
+    if (!deactivateTarget.value) return;
+    deactivateBusy.value = true;
     try {
-        await teacher.deleteStudent(deleteTarget.value.id);
-        toast.success(t('students.deleted') || 'تم حذف حساب الطالب بنجاح');
-        selectedIds.value = selectedIds.value.filter((id) => id !== deleteTarget.value.id);
-        deleteTarget.value = null;
+        await teacher.deactivateStudent(deactivateTarget.value.id);
+        toast.success(t('students.deactivatedHistoryRetained'));
+        selectedIds.value = selectedIds.value.filter((id) => id !== deactivateTarget.value.id);
+        deactivateTarget.value = null;
         load(page.value);
     } catch (e) {
         toast.error(e.message);
     } finally {
-        deleteBusy.value = false;
+        deactivateBusy.value = false;
     }
 }
 
-function openBatchDelete() {
+function openBatchDeactivate() {
     if (!selectedIds.value.length) return;
-    batchDeleteOpen.value = true;
+    batchDeactivateOpen.value = true;
 }
 
-async function submitBatchDelete() {
+async function submitBatchDeactivate() {
     if (!selectedIds.value.length) return;
-    batchDeleteBusy.value = true;
+    batchDeactivateBusy.value = true;
     try {
-        await teacher.batchDeleteStudents(selectedIds.value);
-        toast.success(t('students.batchDeleteSuccess') || 'تم حذف الطلاب المحددين بنجاح');
+        await teacher.batchDeactivateStudents(selectedIds.value);
+        toast.success(t('students.batchDeactivateSuccess'));
         selectedIds.value = [];
-        batchDeleteOpen.value = false;
+        batchDeactivateOpen.value = false;
         load(page.value);
     } catch (e) {
         toast.error(e.message);
     } finally {
-        batchDeleteBusy.value = false;
+        batchDeactivateBusy.value = false;
     }
 }
 
@@ -623,8 +625,8 @@ onMounted(() => load(1));
                 <AppButton v-if="selectedIds.length" variant="outline" size="sm" @click="openPrintSelected">
                     🖨️ {{ $t('students.printSelected') }} ({{ selectedIds.length }})
                 </AppButton>
-                <AppButton v-if="selectedIds.length" variant="outline" size="sm" class="border-rose-300 text-rose-700 hover:bg-rose-50" @click="openBatchDelete">
-                    🗑️ {{ $t('students.deleteSelected') || 'حذف المحددين' }} ({{ selectedIds.length }})
+                <AppButton v-if="selectedIds.length" variant="outline" size="sm" class="border-amber-300 text-amber-700 hover:bg-amber-50" @click="openBatchDeactivate">
+                    ⏸️ {{ $t('students.deactivateSelected') }} ({{ selectedIds.length }})
                 </AppButton>
                 <router-link :to="`/${authRole}/students/registration-link`">
                     <AppButton variant="outline" size="sm">Student registration link</AppButton>
@@ -855,11 +857,11 @@ onMounted(() => load(1));
                                     <AppButton
                                         variant="ghost"
                                         size="sm"
-                                        class="!px-2.5 !py-1 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200"
-                                        :title="$t('students.deleteStudent') || 'حذف الطالب'"
-                                        @click="openDeleteStudent(s)"
+                                        class="!px-2.5 !py-1 text-xs text-amber-700 hover:bg-amber-50 border border-amber-200"
+                                        :title="$t('students.deactivateStudent')"
+                                        @click="openDeactivateStudent(s)"
                                     >
-                                        🗑️ {{ $t('common.delete') || 'حذف' }}
+                                        ⏸️ {{ $t('students.deactivateStudent') }}
                                     </AppButton>
                                 </div>
                             </td>
@@ -1045,28 +1047,27 @@ onMounted(() => load(1));
             @close="closeWhatsApp"
         />
 
-        <!-- Confirm Delete Single Student Modal -->
+        <!-- Deactivation preserves enrollment, attempt, answer, and access history. -->
         <ConfirmDialog
-            :open="Boolean(deleteTarget)"
-            :title="$t('students.deleteStudent') || 'حذف الطالب'"
-            :message="$t('students.deleteStudentConfirm', { name: deleteTarget?.name || '' })"
-            :confirm-text="$t('common.delete') || 'حذف نهائي'"
-            tone="danger"
-            :loading="deleteBusy"
-            @close="deleteTarget = null"
-            @confirm="submitDeleteStudent"
+            :open="Boolean(deactivateTarget)"
+            :title="$t('students.deactivateStudent')"
+            :message="$t('students.deactivateStudentConfirm', { name: deactivateTarget?.name || '' })"
+            :confirm-text="$t('students.deactivateStudent')"
+            tone="warning"
+            :loading="deactivateBusy"
+            @close="deactivateTarget = null"
+            @confirm="submitDeactivateStudent"
         />
 
-        <!-- Confirm Batch Delete Students Modal -->
         <ConfirmDialog
-            :open="batchDeleteOpen"
-            :title="$t('students.deleteSelected') || 'حذف الطلاب المحددين'"
-            :message="$t('students.deleteSelectedConfirm', { n: selectedIds.length })"
-            :confirm-text="$t('common.delete') || 'حذف نهائي'"
-            tone="danger"
-            :loading="batchDeleteBusy"
-            @close="batchDeleteOpen = false"
-            @confirm="submitBatchDelete"
+            :open="batchDeactivateOpen"
+            :title="$t('students.deactivateSelected')"
+            :message="$t('students.deactivateSelectedConfirm', { n: selectedIds.length })"
+            :confirm-text="$t('students.deactivateSelected')"
+            tone="warning"
+            :loading="batchDeactivateBusy"
+            @close="batchDeactivateOpen = false"
+            @confirm="submitBatchDeactivate"
         />
 
         <!-- Bulk import modal: validate -> preview -> confirm -> report -->

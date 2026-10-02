@@ -1,15 +1,61 @@
 <script setup>
-import { computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
-import { publicCatalog, toList } from '@/api';
+import { useToast } from '@/composables/toast';
+import { publicCatalog, student } from '@/api';
+import { useAuthStore } from '@/stores/auth';
 import Icon from '@/components/ui/Icon.vue';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher.vue';
 
 const route = useRoute();
+const router = useRouter();
+const { t } = useI18n();
+const auth = useAuthStore();
+const toast = useToast();
+const enrolling = ref(false);
 const { loading, error, data, run } = useAsync(() => publicCatalog.course(route.params.id));
+const isEnrolled = computed(() => data.value?.is_enrolled === true);
+const hasEnrollmentRecord = computed(() => Boolean(data.value?.enrollment_status));
+const hasActiveAccess = computed(() => auth.accessStatus === 'active' && !auth.isSuspended);
+const hasCourseCapability = computed(() => auth.canAccessLessons || auth.canTakeExams);
+const canSelfEnroll = computed(() => auth.isStudent
+    && hasCourseCapability.value
+    && hasActiveAccess.value
+    && !hasEnrollmentRecord.value);
+const portalHome = computed(() => auth.isStudent ? '/student' : auth.isAssistant ? '/assistant' : auth.isAdmin ? '/admin' : '/teacher');
+
+async function enroll() {
+    if (!data.value || !canSelfEnroll.value || enrolling.value) return;
+
+    enrolling.value = true;
+    try {
+        await student.enroll(data.value.id);
+        toast.success(t('catalog.enrolledToast'));
+        await run();
+        router.push(auth.canAccessLessons ? `/student/courses/${data.value.id}` : '/student/exams');
+    } catch (e) {
+        toast.error(e.message || t('catalog.enrollError'));
+    } finally {
+        enrolling.value = false;
+    }
+}
+
+function openEnrolledCourse() {
+    if (!data.value || !hasActiveAccess.value || !hasCourseCapability.value) return;
+    router.push(auth.canAccessLessons ? `/student/courses/${data.value.id}` : '/student/exams');
+}
+
+function lessonAccessMessage() {
+    if (!hasActiveAccess.value) return t('catalog.activeAccessRequired');
+    if (isEnrolled.value) return t('catalog.lessonAccessRestricted');
+    if (hasEnrollmentRecord.value) return t('catalog.enrollmentNotActive');
+    if (!auth.canAccessLessons) return t('catalog.lessonAccessRestricted');
+    return t('catalog.enrollToStudy');
+}
 
 onMounted(() => run());
 
@@ -43,7 +89,8 @@ const units = computed(() => {
                 <nav class="flex items-center gap-2 sm:gap-3 shrink-0">
                     <LanguageSwitcher class="scale-90 sm:scale-100" />
                     <router-link to="/courses" class="text-xs sm:text-sm font-medium text-ink-600 hover:text-ink-900">{{ $t('nav.courses') }}</router-link>
-                    <router-link to="/login"><AppButton size="sm">{{ $t('auth.signIn') }}</AppButton></router-link>
+                    <router-link v-if="!auth.isAuthenticated" to="/login"><AppButton size="sm">{{ $t('auth.signIn') }}</AppButton></router-link>
+                    <router-link v-else :to="portalHome"><AppButton size="sm" variant="outline">{{ $t('catalog.portal') }}</AppButton></router-link>
                 </nav>
             </div>
         </header>
@@ -62,6 +109,17 @@ const units = computed(() => {
                         <span class="h-1 w-1 rounded-full bg-ink-300" />
                         <span>{{ $t('courses.lessonsCount', { n: data.lessons_count || 0 }) }}</span>
                     </div>
+                    <div v-if="auth.isStudent" class="mt-5 flex flex-wrap items-center gap-3">
+                        <AppButton v-if="isEnrolled" variant="outline" :disabled="!hasActiveAccess || !hasCourseCapability" @click="openEnrolledCourse">
+                            {{ auth.canAccessLessons ? $t('catalog.goToCourse') : $t('catalog.goToExams') }}
+                        </AppButton>
+                        <AppButton v-else :loading="enrolling" :disabled="!canSelfEnroll" @click="enroll">{{ $t('catalog.enrollNow') }}</AppButton>
+                        <p v-if="isEnrolled && !hasActiveAccess" class="text-sm text-amber-700">{{ $t('catalog.activeAccessRequired') }}</p>
+                        <p v-else-if="isEnrolled && !hasCourseCapability" class="text-sm text-amber-700">{{ $t('catalog.courseCapabilityRequired') }}</p>
+                        <p v-else-if="!isEnrolled && !canSelfEnroll" class="text-sm text-amber-700">
+                            {{ hasEnrollmentRecord ? $t('catalog.enrollmentNotActive') : $t('catalog.enrollmentUnavailable') }}
+                        </p>
+                    </div>
                 </div>
 
                 <div class="mt-8 space-y-6">
@@ -75,7 +133,9 @@ const units = computed(() => {
                                     <p class="font-medium text-ink-800" dir="auto">{{ lesson.title }}</p>
                                     <p v-if="lesson.videos?.length" class="text-xs text-ink-400">{{ $t('courses.videosCount', { n: lesson.videos.length }) }}</p>
                                 </div>
-                                <router-link to="/login" class="text-xs font-medium text-terracotta-600 hover:underline">{{ $t('catalog.signInToStudy') }}</router-link>
+                                <router-link v-if="auth.isStudent && isEnrolled && auth.canAccessLessons && hasActiveAccess" :to="`/student/lessons/${lesson.id}`" class="text-xs font-medium text-terracotta-600 hover:underline">{{ $t('catalog.openLesson') }}</router-link>
+                                <span v-else-if="auth.isStudent" class="text-xs text-ink-400">{{ lessonAccessMessage() }}</span>
+                                <span v-else class="text-xs text-ink-400">{{ $t('catalog.signInToStudy') }}</span>
                             </div>
                         </div>
                     </div>

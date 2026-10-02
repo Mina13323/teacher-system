@@ -3,13 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Auth\CreateStudentAction;
+use App\Enums\AcademicYear;
 use App\Http\Requests\PublicStudentRegistrationRequest;
 use App\Models\StudentRegistrationLink;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class StudentRegistrationController extends Controller
 {
@@ -23,7 +20,10 @@ class StudentRegistrationController extends Controller
 
         return $this->success([
             'teacher_name' => $link->teacher->name,
-            'academic_years' => ['secondary_1', 'secondary_2', 'secondary_3'],
+            'academic_years' => array_map(
+                static fn (AcademicYear $year): string => $year->value,
+                AcademicYear::cases(),
+            ),
         ], 'Registration link is active.');
     }
 

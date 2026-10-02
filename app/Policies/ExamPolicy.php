@@ -46,6 +46,19 @@ class ExamPolicy
         return $this->canManage($user, $exam) && $user->hasPermissionTo('students.view');
     }
 
+    public function deleteAttempts(User $user, Exam $exam): bool
+    {
+        return $this->canManage($user, $exam)
+            && $user->hasPermissionTo('exams.delete');
+    }
+
+    public function assignMakeUp(User $user, Exam $exam): bool
+    {
+        return $this->canManage($user, $exam)
+            && $user->hasPermissionTo('exams.update')
+            && $user->hasPermissionTo('students.view');
+    }
+
     private function canManage(User $user, Exam $exam): bool
     {
         return $user->hasRole('admin') || $exam->isManagedBy($user);

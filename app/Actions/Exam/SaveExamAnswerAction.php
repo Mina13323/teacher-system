@@ -37,7 +37,9 @@ class SaveExamAnswerAction
         int $questionId,
         ?int $optionId = null,
         ?string $answerText = null,
-        ?array $optionIds = null
+        ?array $optionIds = null,
+        ?string $explanation = null,
+        bool $explanationProvided = false
     ): ExamAttempt {
         if (! $attempt->status->isInProgress()) {
             throw new InvalidAttemptStateException('This attempt is already completed.');
@@ -54,7 +56,7 @@ class SaveExamAnswerAction
             ? array_values(array_unique(array_map('intval', $optionIds)))
             : ($optionId !== null ? [(int) $optionId] : []);
 
-        DB::transaction(function () use ($attempt, $questionId, $selection, $answerText, $optionIds) {
+        DB::transaction(function () use ($attempt, $questionId, $selection, $answerText, $optionIds, $explanation, $explanationProvided) {
             $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
 
             if (! $locked->status->isInProgress()) {
@@ -128,18 +130,26 @@ class SaveExamAnswerAction
             }
 
             /** @var ExamAnswer $answer */
+            $answerValues = [
+                // Mirror the single selection for legacy readers; null for
+                // a true multi-select set.
+                'option_id' => count($selection) === 1 ? $selection[0] : null,
+                'answer_text' => null,
+                'answered_at' => now(),
+            ];
+
+            if ($attemptQuestion->explanation_enabled && $explanationProvided) {
+                $answerValues['explanation'] = $explanation;
+            } elseif (! $attemptQuestion->explanation_enabled) {
+                $answerValues['explanation'] = null;
+            }
+
             $answer = ExamAnswer::updateOrCreate(
                 [
                     'attempt_id' => $locked->getKey(),
                     'question_id' => $questionId,
                 ],
-                [
-                    // Mirror the single selection for legacy readers; null for
-                    // a true multi-select set.
-                    'option_id' => count($selection) === 1 ? $selection[0] : null,
-                    'answer_text' => null,
-                    'answered_at' => now(),
-                ]
+                $answerValues
             );
 
             // Replace the selection set atomically (idempotent re-saves).

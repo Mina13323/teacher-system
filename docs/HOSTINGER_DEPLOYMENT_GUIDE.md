@@ -1,8 +1,9 @@
-# Teacher-System: Hostinger Production Deployment Guide
+# Teacher-System: Hostinger Deployment Runbook (Not Deployment Clearance)
 
-> [!IMPORTANT]
-> **DEPLOYMENT STATUS: DEPLOYMENT READY**
-> This guide outlines the exact, step-by-step procedure for deploying Teacher-System (Laravel 11 REST API + Vue 3 / Vite PWA Single Page Application) to Hostinger Shared or Cloud Hosting under a single domain.
+> [!CAUTION]
+> **NOT CLEARED FOR PRODUCTION DEPLOYMENT.** This is an operational runbook, not release approval. The current audit has an unsupported/advisory-affected Laravel 11 dependency, failing observed PHP CI, and untested backend, migration, backup/restore, browser, and staging controls. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) and do not deploy until its release gates are satisfied.
+>
+> The code currently uses Laravel 11; its security-support period ended on 2026-03-12. Upgrade to a currently supported, patched framework version and validate the PHP runtime before following this runbook.
 
 ---
 
@@ -12,11 +13,11 @@ The production environment operates under a single-origin architecture:
 
 ```text
 https://your-domain.com/              --> Serves Vue 3 PWA (index.html + JS/CSS assets)
-https://your-domain.com/api/v1/*       --> Executes Laravel 11 REST API (Sanctum Auth)
+https://your-domain.com/api/v1/*       --> Executes Laravel REST API (current lock: Laravel 11; not production-approved)
 https://your-domain.com/storage/*      --> Serves public uploads / static assets
 ```
 
-- **Backend:** Laravel 11 running on PHP 8.2+ / MySQL.
+- **Backend:** Laravel API on PHP / MySQL; the current dependency lock is Laravel 11 and must be upgraded to a supported, patched line before production.
 - **Frontend:** Vue 3 SPA compiled with Vite, enhanced with Service Worker PWA (`vite-plugin-pwa` + Workbox).
 - **Web Server:** Apache with `mod_rewrite` handling static asset resolution, API routing to `index.php`, and SPA route fallback to `index.html`.
 - **Node.js Requirement:** Zero permanently running Node.js / Vite server process required on the production host.
@@ -50,6 +51,10 @@ In Hostinger hPanel:
    - **Database Password:** `<STRONG_SECURE_PASSWORD>`
 3. Note down the host (usually `localhost` or `127.0.0.1` on Hostinger), database name, user, and password.
 
+### Backup and restore release gate
+
+The current `db:backup` command stores local-only files. SQLite uses standalone `VACUUM INTO` artifacts; MySQL/MariaDB uses SQL dumps. No encryption/off-host destination is implemented by this command, and no MySQL restore or production recovery drill has been executed. A local artifact alone is not a proven disaster-recovery plan. Before production, configure encrypted off-host retention outside this command, verify permissions and monitoring, and restore representative data into a disposable target against the intended database engine. These checks remain **NOT TESTED**; do not mark this deployment guide as completed until the current audit's recovery gates are cleared.
+
 ---
 
 ## 5. Environment Variables (.env)
@@ -57,7 +62,7 @@ In Hostinger hPanel:
 Create a new `.env` file on the production server (never commit `.env` to Git):
 
 ```ini
-APP_NAME="Atlas Academy"
+APP_NAME="El Masry"
 APP_ENV=production
 APP_KEY=base64:GENERATE_ON_SERVER_WITH_ARTISAN
 APP_DEBUG=false
@@ -110,19 +115,13 @@ CACHE_STORE=file
 
 ## 7. Vue PWA Frontend Deployment
 
-1. **Build Locally:** Run locally on your development machine:
+1. **Build locally:** Run on your development machine:
    ```bash
    npm run build
    ```
-   This generates compiled assets in `dist/` (`index.html`, `assets/`, `sw.js`, `manifest.webmanifest`, icons).
-2. **Upload Static Artifacts:**
-   Copy all files inside `dist/` directly into Laravel's `public/` folder on Hostinger:
-   - `dist/index.html` $\rightarrow$ `public/index.html`
-   - `dist/assets/*` $\rightarrow$ `public/assets/*`
-   - `dist/sw.js` $\rightarrow$ `public/sw.js`
-   - `dist/manifest.webmanifest` $\rightarrow$ `public/manifest.webmanifest`
-   - `dist/pwa-*.png` $\rightarrow$ `public/pwa-*.png`
-   - `dist/apple-touch-icon.png` $\rightarrow$ `public/apple-touch-icon.png`
+   The build creates `dist/` and publishes the generated SPA/PWA files into the tracked `public/` paths. It also verifies the entrypoint references, manifest, worker, and required icon files.
+2. **Deploy the generated output with the application:**
+   Deploy the refreshed `public/index.html`, `public/assets/`, `public/sw.js`, and `public/manifest.webmanifest` together. Keep the hand-maintained icons and `public/push-sw.js` in place; the service worker imports its Web Push handlers from that file.
 
 ---
 
@@ -155,10 +154,35 @@ Ensure `public/.htaccess` contains:
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
-    # Send API Requests & Existing Files To Front Controller
+    # Never rewrite missing static assets to index.php (avoids HTML/MIME errors)
+    RewriteCond %{REQUEST_URI} \.(?:css|js|map|jpe?g|gif|png|webp|svg|woff2?|ttf|eot|ico)$ [NC,OR]
+    RewriteCond %{REQUEST_URI} ^/assets/ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ - [R=404,L]
+
+    # Send Requests To Front Controller
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    # Keep the app shell, manifest, and service-worker scripts revalidatable.
+    <FilesMatch "^(index\.html|sw\.js|push-sw\.js|manifest\.webmanifest)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+
+    # Static root files (including PWA icons) can refresh daily; workers cannot.
+    <FilesMatch "^(?!sw\.js$|push-sw\.js$).*\.(css|js|woff2?|png|svg|ico)$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+
+    # Only Vite's content-hashed filenames are immutable for a year.
+    <FilesMatch "^[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8,}\.(css|js|woff2?|png|svg|ico)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
 </IfModule>
 
 # Security: Block direct access to hidden files (.env, .git)
@@ -250,12 +274,17 @@ $teacher->assignRole(\App\Enums\UserRole::Teacher);
 
 1. Open `https://your-domain.com/` in Chrome.
 2. Open DevTools $\rightarrow$ **Application** $\rightarrow$ **Manifest**:
-   - Verify Name: `Atlas Academy — Geography & History`
+   - Verify Name: `El Masry — Geography & History`
    - Verify Start URL: `/`
    - Verify Display: `standalone`
 3. Check **Service Workers**:
    - Verify `/sw.js` status is **Activated and Running**.
-4. Check **Cache Storage**:
+   - When a new version is deployed, wait for the update banner and select **Update App**; it stays user-confirmed so an active exam is not interrupted.
+4. Check response headers in the Network panel:
+   - `index.html`, `manifest.webmanifest`, `sw.js`, and `push-sw.js` must revalidate / use `no-store`.
+   - Content-hashed `/assets/*` may use a one-year immutable cache.
+   - Purge the Hostinger/LiteSpeed/CDN cache once after deploying these header changes.
+5. Check **Cache Storage**:
    - Confirm static JS/CSS assets are cached.
    - Confirm **`/api/v1/*` requests are NOT cached** (NetworkOnly).
 
@@ -319,30 +348,30 @@ $teacher->assignRole(\App\Enums\UserRole::Teacher);
 
 ---
 
-## 21. Production Smoke Test
+## 21. Release smoke-test checklist (not executed in the current audit)
 
-- [x] Landing page (`/`) loads without login.
-- [x] Login (`/login`) accepts valid credentials.
-- [x] Direct navigation to `/courses` redirects unauthenticated users to `/login`.
-- [x] `/api/v1/courses` returns `401 Unauthorized` unauthenticated.
-- [x] PWA install banner displays on supported browsers.
-- [x] Service worker precaches static assets and uses `NetworkOnly` for `/api/*`.
-- [x] No `127.0.0.1`, `localhost`, or port `5173`/`8000` URLs present in bundle.
+Run these checks only in an approved staging/deployment environment after all release gates pass.
+
+- [ ] Landing page (`/`) loads without login.
+- [ ] Login (`/login`) accepts valid credentials.
+- [ ] Direct navigation to `/courses` redirects unauthenticated users to `/login`.
+- [ ] `/api/v1/courses` returns `401 Unauthorized` unauthenticated.
+- [ ] PWA install banner displays on supported browsers.
+- [ ] Service worker precaches static assets and uses `NetworkOnly` for `/api/*`.
+- [ ] No `127.0.0.1`, `localhost`, or port `5173`/`8000` URLs present in bundle.
+- [ ] Current audit and CI release gates are cleared before production deployment.
 
 ---
 
 ## 22. Rollback Procedure
 
 If a critical issue occurs during deployment:
-1. Re-upload previous static `dist/` bundle to `public/`.
-2. Revert `.env` modifications if any.
+1. Re-upload a known-good static asset bundle only after confirming it is compatible with the deployed API/schema.
+2. Revert `.env` modifications only after reviewing their impact.
 3. Clear Laravel caches:
    ```bash
    php artisan config:clear
    php artisan route:clear
    php artisan view:clear
    ```
-4. If database migration needs rollback:
-   ```bash
-   php artisan migrate:rollback --step=1 --force
-   ```
+4. **Do not run a generic `migrate:rollback --step=1` as an automatic production rollback.** The current student-attempt FK migration's `down()` restores `ON DELETE CASCADE`; that can re-enable history loss. Any schema rollback needs an approved, migration-specific recovery plan, verified backup, and tested procedure. Migration execution/rollback is **NOT TESTED** in the current audit.

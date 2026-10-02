@@ -5,6 +5,7 @@ namespace Tests\Feature\Exam;
 use App\Enums\UserRole;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptQuestion;
+use Illuminate\Support\Facades\DB;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Exam\Concerns\InteractsWithExams;
 
@@ -37,7 +38,7 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
     private function startAttempt($student, $exam): ExamAttempt
     {
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         return ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -73,6 +74,34 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
             ->assertStatus(200)
             ->assertJsonCount(1, 'data.questions')
             ->assertJsonPath('data.questions.0.question_text', $snapshotQuestion->question_text);
+    }
+
+    public function test_bulk_snapshot_keeps_question_and_option_data_ordered_across_insert_batches(): void
+    {
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
+
+        // Cross the bounded question and option insert batch sizes.
+        for ($position = 2; $position <= 51; $position++) {
+            $this->addSingleChoiceQuestion($exam, [
+                'position' => $position,
+                'question_text' => "Question {$position}",
+            ]);
+        }
+
+        $attempt = $this->startAttempt($student, $exam);
+
+        $this->assertSame(51, $attempt->attemptQuestions()->count());
+        $attemptQuestionIds = $attempt->attemptQuestions()->pluck('id');
+        $this->assertSame(102, DB::table('exam_attempt_options')
+            ->whereIn('attempt_question_id', $attemptQuestionIds)
+            ->count());
+
+        $lastQuestion = $exam->questions()->where('position', 51)->firstOrFail();
+        $lastSnapshot = $attempt->attemptQuestions()->where('position', 51)->firstOrFail();
+        $this->assertSame($lastQuestion->id, $lastSnapshot->question_id);
+        $this->assertSame('Question 51', $lastSnapshot->question_text);
+        $this->assertSame(2, $lastSnapshot->attemptOptions()->count());
+        $this->assertSame('The correct answer', $lastSnapshot->attemptOptions()->orderBy('position')->first()->option_text);
     }
 
     public function test_student_can_still_answer_snapshot_question_after_live_question_deletion(): void
@@ -212,7 +241,7 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
         [$student, , $exam, $teacher] = $this->enrolledStudentWithPublishedExam(['pass_percentage' => 60]);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
@@ -301,7 +330,7 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
         $this->assertNull($first->fresh()->active_key);
 
         $second = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(201);
 
         $this->assertNotSame($first->id, $second->json('data.id'));

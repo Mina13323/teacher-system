@@ -31,15 +31,22 @@
 </IfModule>
 
 <IfModule mod_headers.c>
-    # Never cache entrypoint and PWA service worker
-    <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest)$">
+    # Keep the SPA shell, manifest, and worker scripts revalidatable so new
+    # deployments and imported Web Push handlers are picked up promptly.
+    <FilesMatch "^(index\.html|sw\.js|push-sw\.js|manifest\.webmanifest)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
         Header set Expires "0"
     </FilesMatch>
 
-    # Cache immutable content-hashed assets
-    <FilesMatch "\.(css|js|woff2?|png|svg|ico)$">
+    # Static root files (including PWA icons) can refresh daily; they are not
+    # content-hashed. Never apply this rule to service-worker entrypoints.
+    <FilesMatch "^(?!sw\.js$|push-sw\.js$).*\.(css|js|woff2?|png|svg|ico)$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+
+    # Only Vite's content-hashed filenames are immutable for a year.
+    <FilesMatch "^[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8,}\.(css|js|woff2?|png|svg|ico)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 </IfModule>

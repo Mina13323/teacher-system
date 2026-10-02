@@ -26,6 +26,8 @@ class EnrollmentController extends Controller
 
     public function store(EnrollCourseRequest $request, Course $course): JsonResponse
     {
+        abort_unless($request->user()->isStudent(), 403, 'Only students can self-enroll.');
+
         $enrollment = $this->enrollStudent->execute($request->user(), $course);
 
         return $this->success(
@@ -37,6 +39,8 @@ class EnrollmentController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->assertStudentCanBrowseCourses($request);
+
         $enrollments = Enrollment::query()
             ->where('student_id', $request->user()->getKey())
             ->where('status', EnrollmentStatus::Active->value)
@@ -60,6 +64,8 @@ class EnrollmentController extends Controller
 
     public function show(Request $request, Course $course): JsonResponse
     {
+        $this->assertStudentCanBrowseCourses($request);
+
         $enrolled = Enrollment::query()
             ->where('student_id', $request->user()->getKey())
             ->where('course_id', $course->getKey())
@@ -78,5 +84,15 @@ class EnrollmentController extends Controller
         $course->progress = $course->roadmap_progress;
 
         return $this->success(new StudentCourseResource($course), 'Course retrieved.');
+    }
+
+    private function assertStudentCanBrowseCourses(Request $request): void
+    {
+        abort_unless($request->user()->isStudent(), 403, 'Student account required.');
+        abort_unless(
+            $request->user()->canAccessLessons() && $request->user()->hasActiveAccess(),
+            403,
+            'You do not have access to course lessons.'
+        );
     }
 }

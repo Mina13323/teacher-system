@@ -57,6 +57,6 @@ class ProcessExpiredAttemptsCommand extends Command
 
         $this->info("Processed {$processed} expired attempt(s)".($failed ? ", {$failed} failed" : '').'.');
 
-        return self::SUCCESS;
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

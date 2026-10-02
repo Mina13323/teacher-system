@@ -64,10 +64,22 @@ class StudentPolicy
             && $user->hasPermissionTo('students.manage');
     }
 
+    /** Permanent account removal is intentionally never available to teaching staff. */
     public function delete(User $user, User $student): bool
     {
-        return $user->hasRole('admin')
-            || (($user->hasRole('teacher') || $user->hasRole('assistant')) && $this->managesStudent($user, $student));
+        return $user->isAdmin();
+    }
+
+    /** History-preserving anonymization is an administrator-only operation. */
+    public function anonymize(User $user, User $student): bool
+    {
+        return $user->isAdmin();
+    }
+
+    /** Force deletion is an administrator-only operation with explicit confirmation. */
+    public function forceDelete(User $user, User $student): bool
+    {
+        return $user->isAdmin();
     }
 
     /**
@@ -76,6 +88,10 @@ class StudentPolicy
      */
     private function managesStudent(User $user, User $student): bool
     {
+        if (! $student->isStudent()) {
+            return false;
+        }
+
         // A staff assistant operates on behalf of the single main teacher and
         // may manage any student account (student operations only). They never
         // receive content/exam/competition/analytics powers.

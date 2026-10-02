@@ -28,6 +28,8 @@ class CreateQuestionRequest extends FormRequest
             'points' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'position' => ['nullable', 'integer', 'min:1'],
             'reference_answer' => ['nullable', 'string', 'max:5000'],
+            'explanation_enabled' => ['nullable', 'boolean'],
+            'explanation_required' => ['nullable', 'boolean'],
         ];
     }
 }

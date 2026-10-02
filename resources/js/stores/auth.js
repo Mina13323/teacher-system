@@ -100,7 +100,10 @@ export const useAuthStore = defineStore('auth', {
             return this.profile;
         },
         async changePassword(payload) {
-            return authApi.changePassword(payload);
+            const result = await authApi.changePassword(payload);
+            if (this.user) this.user = { ...this.user, must_change_password: false };
+            if (this.profile) this.profile = { ...this.profile, must_change_password: false };
+            return result;
         },
         async logout() {
             try {

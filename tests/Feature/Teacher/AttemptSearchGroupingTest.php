@@ -46,7 +46,7 @@ class AttemptSearchGroupingTest extends ApiTestCase
     private function takeAttempt($student, $exam, int $correctCount): ExamAttempt
     {
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $attempt = ExamAttempt::query()
             ->where('student_id', $student->id)
@@ -110,6 +110,7 @@ class AttemptSearchGroupingTest extends ApiTestCase
             'integrity_status' => 'flagged',
             'violation_warnings' => 3,
             'status' => ExamAttemptStatus::Grading->value,
+            'grades_published_at' => null,
         ])->save();
 
         $res = $this->actingAs($teacher, 'sanctum')
@@ -120,6 +121,7 @@ class AttemptSearchGroupingTest extends ApiTestCase
         $this->assertSame(1, $group['integrity']['flagged_count']);
         $this->assertSame(3, $group['integrity']['violation_warnings_total']);
         $this->assertSame(1, $group['pending_grading_count']);
+        $this->assertNull($group['best'], 'A partial grade must not be presented as the student’s best final result.');
         $this->assertSame(1, $res->json('data.summary.flagged_count'));
     }
 
@@ -136,6 +138,42 @@ class AttemptSearchGroupingTest extends ApiTestCase
         $students = collect($res->json('data.students'));
         $this->assertCount(1, $students);
         $this->assertSame($s2->id, $students->first()['student_id']);
+    }
+
+    public function test_flat_and_grouped_attempt_views_filter_exact_zero_and_paginate(): void
+    {
+        [$teacher, , $exam, [$studentA, $studentB]] = $this->examWithAttempts();
+        $this->takeAttempt($studentA, $exam, 1); // score 1
+        $this->takeAttempt($studentA, $exam, 2); // score 2
+        $this->takeAttempt($studentB, $exam, 0); // exact score zero
+
+        $flatZero = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts?score=0&per_page=1")
+            ->assertStatus(200);
+        $this->assertCount(1, $flatZero->json('data'));
+        $this->assertSame(1, $flatZero->json('meta.total'));
+        $this->assertSame(0, $flatZero->json('data.0.score'));
+        $this->assertSame($studentB->id, $flatZero->json('data.0.student.id'));
+
+        $flatPage = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts?per_page=1&page=1")
+            ->assertStatus(200);
+        $this->assertCount(1, $flatPage->json('data'));
+        $this->assertSame(3, $flatPage->json('meta.total'));
+        $this->assertSame(3, $flatPage->json('meta.last_page'));
+
+        $groupedZero = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts/grouped?score=0&per_page=1")
+            ->assertStatus(200);
+        $this->assertCount(1, $groupedZero->json('data.students'));
+        $this->assertSame($studentB->id, $groupedZero->json('data.students.0.student_id'));
+        $this->assertSame(1, $groupedZero->json('data.summary.attempts_count'));
+
+        $groupedPage = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts/grouped?per_page=1&page=1")
+            ->assertStatus(200);
+        $this->assertSame(2, $groupedPage->json('data.pagination.total'));
+        $this->assertSame(2, $groupedPage->json('data.pagination.last_page'));
     }
 
     public function test_teacher_b_cannot_group_or_search_another_teachers_exam(): void
@@ -203,7 +241,7 @@ class AttemptSearchGroupingTest extends ApiTestCase
         $student = $students[0];
 
         $start = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
         $attemptId = $start->json('data.id');
 
         $attempt = ExamAttempt::findOrFail($attemptId);

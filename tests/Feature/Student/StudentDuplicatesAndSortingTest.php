@@ -70,19 +70,23 @@ class StudentDuplicatesAndSortingTest extends ApiTestCase
         $this->assertNotContains($unique->id, $dupIds);
     }
 
-    public function test_teacher_can_delete_a_duplicate_student(): void
+    public function test_teacher_can_deactivate_a_duplicate_student_without_deleting_the_account(): void
     {
         $teacher = $this->makeTeacher();
         $student = $this->createStudentFor($teacher, ['name' => 'طالب مكرر', 'email' => 'duplicate@example.com']);
 
         $response = $this->actingAs($teacher, 'sanctum')
-            ->deleteJson("/api/v1/teacher/students/{$student->id}");
+            ->patchJson("/api/v1/teacher/students/{$student->id}/deactivate");
 
         $response->assertOk();
-        $this->assertDatabaseMissing('users', ['id' => $student->id]);
+        $this->assertDatabaseHas('users', ['id' => $student->id, 'is_active' => false]);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'student.deactivate',
+            'target_id' => $student->id,
+        ]);
     }
 
-    public function test_teacher_can_batch_delete_duplicate_students(): void
+    public function test_teacher_can_batch_deactivate_selected_students_without_deleting_them(): void
     {
         $teacher = $this->makeTeacher();
         $s1 = $this->createStudentFor($teacher, ['name' => 'طالب مكرر 1', 'email' => 'dup1@example.com']);
@@ -90,15 +94,15 @@ class StudentDuplicatesAndSortingTest extends ApiTestCase
         $keeper = $this->createStudentFor($teacher, ['name' => 'طالب أصلي', 'email' => 'original@example.com']);
 
         $response = $this->actingAs($teacher, 'sanctum')
-            ->postJson('/api/v1/teacher/students/batch-delete', [
+            ->postJson('/api/v1/teacher/students/batch-deactivate', [
                 'ids' => [$s1->id, $s2->id],
             ]);
 
         $response->assertOk()
-            ->assertJsonPath('data.deleted_count', 2);
+            ->assertJsonPath('data.deactivated_count', 2);
 
-        $this->assertDatabaseMissing('users', ['id' => $s1->id]);
-        $this->assertDatabaseMissing('users', ['id' => $s2->id]);
-        $this->assertDatabaseHas('users', ['id' => $keeper->id]);
+        $this->assertDatabaseHas('users', ['id' => $s1->id, 'is_active' => false]);
+        $this->assertDatabaseHas('users', ['id' => $s2->id, 'is_active' => false]);
+        $this->assertDatabaseHas('users', ['id' => $keeper->id, 'is_active' => true]);
     }
 }

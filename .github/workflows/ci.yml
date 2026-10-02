@@ -255,10 +255,26 @@ jobs:
           # per_page arrives from the client. Reading it directly bypasses
           # MAX_PER_PAGE, so every list endpoint must resolve it through
           # perPage() in the base Controller.
-          raw=$(grep -rn --include='*.php' 'per_page' app/Http/Controllers \
-            | grep -v 'Controllers/Controller.php' || true)
+          raw=$(python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          pattern = re.compile(
+              r"(?:\$request\s*->\s*(?:query|input|integer|get)\s*\(\s*['\"]per_page['\"]"
+              r"|request\(\)\s*->\s*(?:query|input|integer|get)\s*\(\s*['\"]per_page['\"]"
+              r"|\$request\s*\[\s*['\"]per_page['\"]\s*\]"
+              r"|\$request\s*->\s*per_page)"
+          )
+          for path in sorted(Path('app/Http/Controllers').rglob('*.php')):
+              if path.name == 'Controller.php':
+                  continue
+              for number, line in enumerate(path.read_text().splitlines(), start=1):
+                  if pattern.search(line):
+                      print(f'{path}:{number}:{line.strip()}')
+          PY
+          )
           if [ -n "$raw" ]; then
-            echo "::error::per_page is read outside the base Controller:"
+            echo "::error::per_page is read directly from the request outside the base Controller:"
             echo "$raw"
             exit 1
           fi

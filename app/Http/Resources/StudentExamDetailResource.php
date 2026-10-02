@@ -20,6 +20,29 @@ class StudentExamDetailResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $integrityRules = array_merge(
+            config('integrity.defaults', []),
+            $this->relationLoaded('integritySetting') && $this->integritySetting
+                ? $this->integritySetting->only([
+                    'fullscreen_required',
+                    'prevent_copy',
+                    'prevent_paste',
+                    'prevent_context_menu',
+                    'detect_tab_switch',
+                    'detect_window_blur',
+                    'detect_keyboard_shortcuts',
+                    'terminate_on_violation',
+                    'violation_warning_threshold',
+                ])
+                : []
+        );
+        $integrityRules['violation_warning_threshold'] = app(\App\Services\Integrity\IntegrityRiskConfig::class)
+            ->resolveWarningThreshold(
+                ($integrityRules['violation_warning_threshold'] ?? null) === null
+                    ? null
+                    : (int) $integrityRules['violation_warning_threshold']
+            );
+
         return [
             'id' => $this->id,
             'course_id' => $this->course_id,
@@ -37,7 +60,13 @@ class StudentExamDetailResource extends JsonResource
             'starts_at' => $this->starts_at?->toISOString(),
             'ends_at' => $this->ends_at?->toISOString(),
             'is_windowed' => $this->isWindowed(),
+            'integrity_rules' => $integrityRules,
             'effective_deadline' => $this->effectiveDeadline()?->toISOString(),
+            'make_up_available' => $request->user() !== null && $this->makeUpAssignments()
+                ->where('student_id', $request->user()->getKey())
+                ->where('status', 'assigned')
+                ->whereNotNull('active_key')
+                ->exists(),
             'questions_count' => $this->whenCounted('questions'),
             'my_attempts' => $this->whenLoaded('attempts', function () {
                 return $this->attempts
@@ -48,6 +77,7 @@ class StudentExamDetailResource extends JsonResource
                         $published = $attempt->grades_published_at !== null;
 
                         return [
+                            'id' => $attempt->id,
                             'attempt_number' => $attempt->attempt_number,
                             'status' => $attempt->status?->value,
                             'grades_published' => $published,

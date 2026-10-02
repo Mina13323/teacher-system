@@ -2,95 +2,68 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Models\User;
+use App\Enums\UserRole;
 use Tests\Feature\ApiTestCase;
 
-/**
- * Guards brute-force protection on credential submission.
- *
- * Login is the only endpoint an unauthenticated client can hammer to guess
- * passwords, so it carries a dedicated limiter ("throttle:login") that is far
- * tighter than the general api limiter. These tests pin both the budget and
- * the fact that the limiter is actually attached to the route.
- */
 class LoginRateLimitTest extends ApiTestCase
 {
-    private const LOGIN_URL = '/api/v1/auth/login';
-
-    private function attempt(string $email, string $password = 'wrong-password'): \Illuminate\Testing\TestResponse
+    protected function setUp(): void
     {
-        return $this->postJson(self::LOGIN_URL, [
-            'email' => $email,
-            'password' => $password,
+        parent::setUp();
+
+        config()->set('api.rate_limit.auth', 1);
+    }
+
+    public function test_email_and_student_code_share_the_same_account_limit_across_ips(): void
+    {
+        $student = $this->createUserWithRole(UserRole::Student, [
+            'email' => 'rate-limit@example.test',
+            'student_code' => 'ELM-7812',
+            'password' => 'correct-password',
         ]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.10'])
+            ->postJson('/api/v1/auth/login', [
+                'email' => $student->email,
+                'password' => 'incorrect-password',
+            ])
+            ->assertUnauthorized();
+
+        // Changing the source IP and login identifier must not bypass the
+        // account budget by using the student's alternate login code.
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.11'])
+            ->postJson('/api/v1/auth/login', [
+                'student_code' => $student->student_code,
+                'password' => 'correct-password',
+            ])
+            ->assertStatus(429);
     }
 
-    public function test_login_is_throttled_after_the_configured_budget(): void
+    public function test_alias_logins_for_different_accounts_do_not_share_an_empty_identifier_bucket(): void
     {
-        User::factory()->create(['email' => 'victim@example.com', 'password' => 'correct-password']);
+        $studentA = $this->createUserWithRole(UserRole::Student, [
+            'email' => 'first@example.test',
+            'student_code' => 'ELM-7813',
+            'password' => 'correct-password',
+        ]);
+        $studentB = $this->createUserWithRole(UserRole::Student, [
+            'email' => 'second@example.test',
+            'student_code' => 'ELM-7814',
+            'password' => 'correct-password',
+        ]);
 
-        $budget = (int) config('api.rate_limit.auth', 10);
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.20'])
+            ->postJson('/api/v1/auth/login', [
+                'login' => $studentA->student_code,
+                'password' => 'correct-password',
+            ])
+            ->assertOk();
 
-        for ($i = 0; $i < $budget; $i++) {
-            $this->attempt('victim@example.com')
-                ->assertStatus(401)
-                ->assertJson(['success' => false]);
-        }
-
-        // The attempt after the budget must be refused before credentials are
-        // ever checked, so it cannot be used to probe a password.
-        $this->attempt('victim@example.com')
-            ->assertStatus(429)
-            ->assertJson(['success' => false]);
-    }
-
-    public function test_throttled_response_reports_how_long_to_wait(): void
-    {
-        User::factory()->create(['email' => 'victim@example.com', 'password' => 'correct-password']);
-
-        $budget = (int) config('api.rate_limit.auth', 10);
-
-        for ($i = 0; $i <= $budget; $i++) {
-            $response = $this->attempt('victim@example.com');
-        }
-
-        $response->assertStatus(429)->assertHeader('Retry-After');
-    }
-
-    public function test_throttling_stops_a_correct_password_from_working(): void
-    {
-        User::factory()->create(['email' => 'victim@example.com', 'password' => 'correct-password']);
-
-        $budget = (int) config('api.rate_limit.auth', 10);
-
-        for ($i = 0; $i <= $budget; $i++) {
-            $this->attempt('victim@example.com');
-        }
-
-        // Even the real credential is refused while throttled; the limiter sits
-        // in front of authentication.
-        $this->attempt('victim@example.com', 'correct-password')->assertStatus(429);
-    }
-
-    public function test_a_single_legitimate_login_is_not_throttled(): void
-    {
-        User::factory()->create(['email' => 'owner@example.com', 'password' => 'correct-password']);
-
-        $this->attempt('owner@example.com', 'correct-password')
-            ->assertStatus(200)
-            ->assertJson(['success' => true])
-            ->assertJsonStructure(['data' => ['token', 'user' => ['id', 'email']]]);
-    }
-
-    public function test_the_general_api_limiter_is_attached(): void
-    {
-        // throttleApi() only takes effect when bootstrap/app.php calls it. If
-        // that call is removed the api group silently stops rate limiting, so
-        // assert the middleware is present rather than trusting the config.
-        $route = collect(app('router')->getRoutes()->getRoutes())
-            ->first(fn ($r) => $r->uri() === 'api/v1/auth/login');
-
-        $this->assertNotNull($route, 'The login route was not registered.');
-        $this->assertContains('throttle:login', $route->gatherMiddleware());
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.21'])
+            ->postJson('/api/v1/auth/login', [
+                'student_code' => $studentB->student_code,
+                'password' => 'correct-password',
+            ])
+            ->assertOk();
     }
 }

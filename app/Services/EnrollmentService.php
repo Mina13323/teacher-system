@@ -16,11 +16,21 @@ class EnrollmentService
      */
     public function isEnrolled(User $student, int $courseId): bool
     {
-        return Enrollment::query()
+        return $this->statusFor($student, $courseId) === EnrollmentStatus::Active->value;
+    }
+
+    /**
+     * Current enrollment lifecycle state for this student/course pair. A null
+     * result means no historical enrollment exists.
+     */
+    public function statusFor(User $student, int $courseId): ?string
+    {
+        $status = Enrollment::query()
             ->where('student_id', $student->getKey())
             ->where('course_id', $courseId)
-            ->where('status', EnrollmentStatus::Active->value)
-            ->exists();
+            ->value('status');
+
+        return $status === null ? null : (string) $status;
     }
 
     /**

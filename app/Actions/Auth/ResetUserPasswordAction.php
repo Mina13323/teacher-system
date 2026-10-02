@@ -6,14 +6,15 @@ use App\Models\User;
 
 /**
  * Allows a teacher/admin to set a new password for a managed account (e.g. a
- * forgotten-password reset). Revokes the account's existing tokens so a
- * previously issued session cannot be used with the old password.
+ * forgotten-password reset). Requires the account to change the temporary
+ * password and revokes existing tokens so old sessions cannot survive the reset.
  */
 class ResetUserPasswordAction
 {
     public function execute(User $account, string $password): User
     {
         $account->password = $password;
+        $account->must_change_password = true;
         $account->save();
 
         $account->tokens()->delete();

@@ -36,8 +36,8 @@ function closeVideo() {
         <!-- Frame Outer Glow / Border -->
         <div class="relative overflow-hidden rounded-2xl border border-ink-200/80 bg-ink-900 shadow-2xl transition-all duration-500 hover:shadow-terracotta-900/10">
             <!-- Top Editorial Bar -->
-            <div class="flex items-center justify-between border-b border-ink-800 bg-ink-950/90 px-4 py-2.5 text-xs text-ink-300">
-                <div class="flex items-center gap-2 font-mono text-[11px] tracking-wider text-terracotta-400">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 bg-ink-950/90 px-3 py-2.5 text-xs text-ink-300 sm:px-4">
+                <div class="flex min-w-0 flex-wrap items-center gap-2 font-mono text-[11px] tracking-wider text-terracotta-400">
                     <Icon name="compass" :size="14" />
                     <span>30°02'N 31°14'E</span>
                     <span class="text-ink-600">•</span>

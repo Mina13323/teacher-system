@@ -19,7 +19,6 @@ use App\Http\Requests\CreateStudentRequest;
 use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Requests\UpdateStudentRequest;
 use App\Http\Resources\StudentResource;
-use App\Models\CompetitionParticipant;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\User;
@@ -285,6 +284,13 @@ class StudentController extends Controller
         $this->authorize('manage', $student);
 
         $student = $this->setActiveState->execute($student, true);
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute(
+            'student.activate',
+            $student,
+            ['student_id' => $student->id],
+            $request->user(),
+            $request,
+        );
 
         return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student activated.');
     }
@@ -294,8 +300,15 @@ class StudentController extends Controller
         $this->authorize('manage', $student);
 
         $student = $this->setActiveState->execute($student, false);
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute(
+            'student.deactivate',
+            $student,
+            ['student_id' => $student->id],
+            $request->user(),
+            $request,
+        );
 
-        return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student deactivated.');
+        return $this->success(new StudentResource($student->load(['roles', 'latestAccessPeriod'])), 'Student deactivated; history retained.');
     }
 
     public function suspend(Request $request, User $student): JsonResponse
@@ -399,43 +412,45 @@ class StudentController extends Controller
         );
     }
 
-    public function destroy(Request $request, User $student): JsonResponse
-    {
-        $this->authorize('delete', $student);
-
-        $student->tokens()->delete();
-        $student->accessPeriods()->delete();
-        $student->enrollments()->delete();
-        $student->examAttempts()->delete();
-        $student->lessonProgress()->delete();
-        CompetitionParticipant::where('student_id', $student->id)->delete();
-        $student->delete();
-
-        return $this->success(null, 'Student deleted successfully.');
-    }
-
-    public function batchDestroy(Request $request): JsonResponse
+    /**
+     * Deactivate selected student accounts without removing their academic or
+     * enrollment history. Hard deletion is deliberately not available to teachers.
+     */
+    public function batchDeactivate(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'ids' => ['required', 'array', 'min:1'],
-            'ids.*' => ['required', 'integer', 'exists:users,id'],
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['required', 'integer', 'distinct', 'exists:users,id'],
         ]);
 
-        $count = 0;
-        foreach ($validated['ids'] as $id) {
-            $student = User::find($id);
-            if ($student && $request->user()->can('delete', $student)) {
-                $student->tokens()->delete();
-                $student->accessPeriods()->delete();
-                $student->enrollments()->delete();
-                $student->examAttempts()->delete();
-                $student->lessonProgress()->delete();
-                CompetitionParticipant::where('student_id', $student->id)->delete();
-                $student->delete();
-                $count++;
-            }
-        }
+        $count = DB::transaction(function () use ($request, $validated): int {
+            $students = User::query()
+                ->whereIn('id', $validated['ids'])
+                ->lockForUpdate()
+                ->get();
 
-        return $this->success(['deleted_count' => $count], "{$count} students deleted successfully.");
+            foreach ($students as $student) {
+                abort_unless($student->isStudent(), 422, 'Only student accounts may be deactivated.');
+                $this->authorize('manage', $student);
+            }
+
+            foreach ($students as $student) {
+                $this->setActiveState->execute($student, false);
+                app(\App\Actions\Audit\RecordAuditLogAction::class)->execute(
+                    'student.deactivate',
+                    $student,
+                    ['student_id' => $student->id, 'batch' => true],
+                    $request->user(),
+                    $request,
+                );
+            }
+
+            return $students->count();
+        });
+
+        return $this->success(
+            ['deactivated_count' => $count],
+            "{$count} student accounts deactivated; history retained."
+        );
     }
 }

@@ -6,7 +6,6 @@ use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Enums\IntegrityStatus;
 use App\Models\ExamAttempt;
-use App\Models\ExamIntegrityEvent;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -19,12 +18,10 @@ use Illuminate\Support\Facades\DB;
  * Preserved in the append-only audit trail:
  *   Actor / action=attempt.resume_flagged / attempt / timestamp / note.
  *
- * Timer policy (§9 + §12): the server clock stays authoritative. If the
- * original `expires_at` is still in the future it is kept untouched. If the
- * deadline already passed, the student gets back exactly the time that
- * remained when the threshold terminated them (termination time is the
- * immutable ThresholdTermination event); `time_restored_seconds` and
- * `previous_expires_at` record the math.
+ * Timer policy (§9 + §12): the persisted `expires_at` is the hard, original
+ * deadline. Resume is allowed only while that deadline is still in the future;
+ * it is never moved forward or reconstructed from the termination time. A
+ * late review cannot reopen an expired attempt or restore time.
  *
  * Guard: only attempts terminated for `integrity_threshold` (not yet
  * grade-published) may be resumed. Grading state is recomputed on the next
@@ -57,30 +54,15 @@ class ResumeFlaggedAttemptAction
                 throw new \DomainException('Published attempts cannot be resumed.');
             }
 
-            $termination = ExamIntegrityEvent::query()
-                ->where('attempt_id', $locked->getKey())
-                ->where('event_type', \App\Enums\IntegrityEventType::ThresholdTermination->value)
-                ->orderByDesc('occurred_at')
-                ->first();
-            $terminatedAt = $termination?->occurred_at ?? $locked->updated_at ?? now();
-
             $previousExpiresAt = $locked->expires_at?->copy();
-            $timeRestored = 0;
-            if ($previousExpiresAt !== null && $previousExpiresAt->isFuture()) {
-                // Deadline untouched — the student simply keeps the remainder.
-                if ($locked->exam?->ends_at !== null && $previousExpiresAt->greaterThan($locked->exam->ends_at)) {
-                    $locked->expires_at = $locked->exam->ends_at->copy();
-                }
-            } elseif ($previousExpiresAt !== null) {
-                $remaining = (int) max(0, $previousExpiresAt->getTimestamp() - $terminatedAt->getTimestamp());
-                $timeRestored = $remaining;
-                $newExpiresAt = now()->addSeconds($remaining);
-                if ($locked->exam?->ends_at !== null && $newExpiresAt->greaterThan($locked->exam->ends_at)) {
-                    $newExpiresAt = $locked->exam->ends_at->copy();
-                    $timeRestored = (int) max(0, $newExpiresAt->getTimestamp() - now()->getTimestamp());
-                }
-                $locked->expires_at = $newExpiresAt;
+            if ($previousExpiresAt === null || ! $previousExpiresAt->isFuture()) {
+                throw new \DomainException('The attempt deadline has passed; this attempt cannot be resumed.');
             }
+
+            // Keep the original server-authoritative deadline byte-for-byte.
+            // The teacher review time and termination-event timestamp never
+            // create extra exam time.
+            $timeRestored = 0;
 
             $locked->previous_end_reason = $locked->end_reason;
             $locked->previous_expires_at = $previousExpiresAt;

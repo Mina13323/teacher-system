@@ -6,6 +6,7 @@ use App\Enums\ExamAttemptStatus;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAttempt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Submits an attempt. Grading is performed server-side against the frozen
@@ -81,12 +82,42 @@ class SubmitExamAttemptAction
             }
 
             $locked->load(['attemptQuestions.attemptOptions', 'answers.selectedOptions', 'exam']);
+            $this->assertRequiredExplanations($locked);
             $locked->end_reason = 'submitted_by_student';
 
             $graded = $this->gradeAttempt->execute($locked);
 
             return $graded;
         });
+    }
+
+    private function assertRequiredExplanations(ExamAttempt $attempt): void
+    {
+        $answersByQuestion = $attempt->answers->keyBy('question_id');
+
+        foreach ($attempt->attemptQuestions as $attemptQuestion) {
+            if (
+                ! $attemptQuestion->explanation_enabled
+                || ! $attemptQuestion->explanation_required
+                || $attemptQuestion->question_type === 'essay'
+            ) {
+                continue;
+            }
+
+            $answer = $answersByQuestion->get($attemptQuestion->question_id);
+            if (! $answer || ($answer->selectedOptions->isEmpty() && $answer->option_id === null)) {
+                // An unanswered MCQ does not require an explanation.
+                continue;
+            }
+
+            if (trim((string) $answer->explanation) === '') {
+                throw ValidationException::withMessages([
+                    'answers.'.$attemptQuestion->question_id.'.explanation' => [
+                        'Please provide an explanation for your selected answer before submitting.',
+                    ],
+                ]);
+            }
+        }
     }
 
     /**

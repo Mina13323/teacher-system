@@ -137,7 +137,7 @@ class SoftDeleteRecoveryTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         // The data-safety guard is unchanged: history-bearing exams cannot be
         // deleted (not even softly) — archive instead.
@@ -164,7 +164,7 @@ class SoftDeleteRecoveryTest extends ApiTestCase
             ->assertStatus(200);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
             ->assertStatus(404);
     }
 }

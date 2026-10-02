@@ -91,7 +91,7 @@ class JoinCompetitionAction
         $sqlState = $e->errorInfo[0] ?? null;
         $driverCode = $e->errorInfo[1] ?? null;
 
-        return in_array($sqlState, ['23000', '23505'], true)
+        return $sqlState === '23505'
             || (int) $driverCode === 1062
             || str_contains($e->getMessage(), 'UNIQUE constraint failed')
             || str_contains($e->getMessage(), 'unique constraint');

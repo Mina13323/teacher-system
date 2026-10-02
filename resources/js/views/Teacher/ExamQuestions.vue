@@ -59,6 +59,8 @@ function normalize(q) {
         type: q.type || 'single_choice',
         points: q.points ?? 1,
         reference_answer: q.reference_answer || '',
+        explanation_enabled: Boolean(q.explanation_enabled),
+        explanation_required: Boolean(q.explanation_required),
         options: options.map((o) => ({
             id: o.id,
             option_text: o.option_text || '',
@@ -124,12 +126,19 @@ const typeOptions = computed(() => [
 function changeType(q, next) {
     q.type = next;
     if (next === 'essay') {
-        // An essay question carries no answer key. Drop the options rather than
-        // leaving a stale set that would resurface if the type changes back.
+        // Essay answers keep their existing flow; rationale fields apply only to MCQs.
+        q.explanation_enabled = false;
+        q.explanation_required = false;
         q.options = [];
     } else if (q.options.length < 2) {
         while (q.options.length < 4) q.options.push({ id: null, option_text: '', is_correct: false });
     }
+    markDirty();
+}
+
+function setExplanationEnabled(q, enabled) {
+    q.explanation_enabled = Boolean(enabled);
+    if (!q.explanation_enabled) q.explanation_required = false;
     markDirty();
 }
 
@@ -224,6 +233,8 @@ async function saveAll() {
                 type: q.type,
                 points: Number(q.points) || 1,
                 reference_answer: String(q.reference_answer || '').trim() || null,
+                explanation_enabled: !isEssay(q) && Boolean(q.explanation_enabled),
+                explanation_required: !isEssay(q) && Boolean(q.explanation_enabled && q.explanation_required),
             };
             // Only send an id for rows the server already knows about.
             if (q.id > 0) row.id = q.id;
@@ -577,6 +588,30 @@ const isPublished = computed(() => exam.value?.status === 'published');
                                 <Icon name="plus" :size="14" />
                                 {{ $t('examQuestions.addOption') }}
                             </AppButton>
+                        </div>
+
+                        <div v-if="!isEssay(q)" class="space-y-2 rounded-lg border border-ink-100 bg-white p-3">
+                            <label class="flex items-start gap-2 text-sm text-ink-700">
+                                <input
+                                    type="checkbox"
+                                    class="mt-0.5 h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
+                                    :checked="q.explanation_enabled"
+                                    :disabled="isPublished"
+                                    @change="setExplanationEnabled(q, $event.target.checked)"
+                                />
+                                <span>{{ $t('examQuestions.explanationEnabled') }}</span>
+                            </label>
+                            <label v-if="q.explanation_enabled" class="ms-6 flex items-start gap-2 text-sm text-ink-600">
+                                <input
+                                    v-model="q.explanation_required"
+                                    type="checkbox"
+                                    class="mt-0.5 h-4 w-4 rounded border-ink-300 text-terracotta-600 focus:ring-terracotta-400"
+                                    :disabled="isPublished"
+                                    @change="markDirty"
+                                />
+                                <span>{{ $t('examQuestions.explanationRequired') }}</span>
+                            </label>
+                            <p v-if="q.explanation_enabled" class="ms-6 text-xs text-ink-400">{{ $t('examQuestions.explanationHint') }}</p>
                         </div>
 
                         <!-- Essay reference answer -->

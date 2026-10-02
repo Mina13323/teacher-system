@@ -30,7 +30,7 @@ class AuditLogTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $attempt = ExamAttempt::where('student_id', $student->id)->where('exam_id', $exam->id)->firstOrFail();
         $this->actingAs($student, 'sanctum')
@@ -57,10 +57,10 @@ class AuditLogTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $start = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $attempt = ExamAttempt::findOrFail($start->json('data.id'));
-        $attempt->forceFill(['violation_warnings' => 5])->save();
+        $attempt->forceFill(['violation_warnings' => 6])->save();
 
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/terminate", ['reason' => 'TAB_SWITCH'])
@@ -83,7 +83,7 @@ class AuditLogTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $start = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         ExamAttempt::findOrFail($start->json('data.id'))
             ->forceFill(['expires_at' => now()->subMinute()])->save();
@@ -187,7 +187,7 @@ class AuditLogTest extends ApiTestCase
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $start = $this->actingAs($student, 'sanctum')
-            ->postJson("/api/v1/student/exams/{$exam->id}/start")->assertStatus(201);
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
 
         $attempt = ExamAttempt::findOrFail($start->json('data.id'));
         $this->actingAs($student, 'sanctum')

@@ -125,6 +125,10 @@ for (const name of generatedEntries(dist)) {
 // The entrypoint must reference files that actually exist, otherwise a
 // `git pull` would deploy a page that 404s on its own bundle.
 const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
+if (!html.includes('viewport-fit=cover')) fail('public/index.html must include a safe-area-aware mobile viewport.');
+if (!html.includes('rel="manifest"') || !html.includes('/manifest.webmanifest')) {
+    fail('public/index.html is missing the generated PWA manifest link.');
+}
 const refs = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
 if (!refs.length) fail('public/index.html references no /assets/ files — the build did not inject the bundle.');
 const missing = refs.filter((r) => !fs.existsSync(path.join(pub, r)));
@@ -134,6 +138,78 @@ const swPath = path.join(pub, 'sw.js');
 if (!fs.existsSync(swPath)) fail('public/sw.js was not generated — the PWA would lose its service worker.');
 const sw = fs.readFileSync(swPath, 'utf8');
 const precacheCount = (sw.match(/url:"\/?assets\//g) || []).length;
+if (!sw.includes('push-sw.js')) fail('The generated service worker is missing the Web Push handler import.');
+
+// Verify that the install metadata and all declared PWA icons are deployable.
+const manifestPath = path.join(pub, 'manifest.webmanifest');
+if (!fs.existsSync(manifestPath)) fail('public/manifest.webmanifest was not generated.');
+let manifest;
+try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+} catch {
+    fail('public/manifest.webmanifest is not valid JSON.');
+}
+if (manifest.display !== 'standalone' || manifest.start_url !== '/' || manifest.scope !== '/') {
+    fail('The PWA manifest must use standalone display and root start_url/scope.');
+}
+if (!Array.isArray(manifest.icons) || manifest.icons.length < 3) {
+    fail('The PWA manifest must declare standard, high-resolution, and maskable icons.');
+}
+const declaredIconSizes = manifest.icons.map((icon) => String(icon.sizes || ''));
+if (!declaredIconSizes.some((sizes) => sizes.includes('192x192'))
+    || !declaredIconSizes.some((sizes) => sizes.includes('512x512'))
+    || !manifest.icons.some((icon) => String(icon.purpose || '').split(/\s+/).includes('maskable'))) {
+    fail('The PWA manifest must include 192px, 512px, and maskable icons.');
+}
+for (const icon of manifest.icons) {
+    const iconPath = path.resolve(pub, String(icon.src || '').replace(/^\/+/, ''));
+    if (!iconPath.startsWith(`${pub}${path.sep}`) || !fs.existsSync(iconPath) || fs.statSync(iconPath).size === 0) {
+        fail(`The PWA manifest icon is missing or empty: ${icon.src || '(no src)'}`);
+    }
+}
+
+const requiredPwaAssets = [
+    'favicon.ico',
+    'favicon.svg',
+    'apple-touch-icon.png',
+    'pwa-192x192.png',
+    'pwa-512x512.png',
+    'maskable-icon-512x512.png',
+];
+for (const name of requiredPwaAssets) {
+    const assetPath = path.join(pub, name);
+    if (!fs.existsSync(assetPath) || fs.statSync(assetPath).size === 0) {
+        fail(`Required PWA icon is missing or empty: public/${name}`);
+    }
+}
+for (const [name, expectedSize] of [
+    ['apple-touch-icon.png', 180],
+    ['pwa-192x192.png', 192],
+    ['pwa-512x512.png', 512],
+    ['maskable-icon-512x512.png', 512],
+]) {
+    const png = fs.readFileSync(path.join(pub, name));
+    const hasPngSignature = png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const width = png.length >= 24 ? png.readUInt32BE(16) : 0;
+    const height = png.length >= 24 ? png.readUInt32BE(20) : 0;
+    if (!hasPngSignature || width !== expectedSize || height !== expectedSize) {
+        fail(`public/${name} must be a valid ${expectedSize}x${expectedSize} PNG.`);
+    }
+}
+const favicon = fs.readFileSync(path.join(pub, 'favicon.ico'));
+if (favicon.length < 22 || favicon.readUInt16LE(2) !== 1 || favicon.readUInt16LE(4) < 1) {
+    fail('public/favicon.ico is not a valid icon file.');
+}
+
+const apacheRulesPath = path.join(pub, '.htaccess');
+if (!fs.existsSync(apacheRulesPath)) fail('public/.htaccess is missing the PWA cache policy.');
+const apacheRules = fs.readFileSync(apacheRulesPath, 'utf8');
+if (!apacheRules.includes('no-cache, no-store, must-revalidate')
+    || !apacheRules.includes('push-sw\\.js')
+    || !apacheRules.includes('^(?!sw\\.js$|push-sw\\.js$)')
+    || !apacheRules.includes('31536000, immutable')) {
+    fail('public/.htaccess must keep the SPA/service workers revalidatable and only long-cache hashed assets.');
+}
 
 log('');
 log('[build-frontend] published to public/');

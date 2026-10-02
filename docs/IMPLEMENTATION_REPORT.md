@@ -1,11 +1,12 @@
 # FINAL IMPLEMENTATION REPORT — Production Hardening, Operations, Learning Experience & Scale
 
-Branch `arena/01a0efd9-teacher-system`. Commits: `d469062` (Phase 1 core),
-`911ee9d` (Phase 2 core), `1f98880` (P2 backend), `cae6d20` (UX + §30 report),
-`ae07cc5` (gaps closure), plus the final operations/experience/scale commit.
-Every claim below is verifiable in code and tests. Nothing is marked COMPLETED
-on the basis of code existence alone where it was not exercised end-to-end in
-this environment — see §9 for the verification reality.
+Historical implementation snapshot for branch `arena/01a0efd9-teacher-system`. Commits:
+`d469062` (Phase 1 core), `911ee9d` (Phase 2 core), `1f98880` (P2 backend),
+`cae6d20` (UX + §30 report), `ae07cc5` (gaps closure), plus the final operations/experience/scale
+commit. This is not current production clearance: the 2026-10-02 audit in
+[`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md) supersedes its readiness claims.
+A later remote CI run reported PHP 8.2/8.3 failures; current local backend tests are **NOT TESTED**.
+Use §9 only as historical evidence for the earlier run.
 
 ---
 
@@ -105,10 +106,13 @@ recovery happens inside `in_progress` by design.
 
 ## 5. Data safety
 
-- **Existing attempts/answers/grades/snapshots**: every migration in this
-  program is additive (nullable columns, new tables, new indexes). No attempt,
-  answer, grade, snapshot or enrollment row was updated or deleted by any
-  migration. `previous_*`/`resumed_*` columns record override provenance
+- **Historical phase migrations**: migrations in the original implementation
+  program were additive (nullable columns, new tables, new indexes); they did not
+  update or delete attempt, answer, grade, snapshot, or enrollment rows.
+  A later audit migration, `2026_10_02_000001_restrict_exam_attempt_student_deletion`,
+  changes the existing `exam_attempts.student_id` FK from cascade to restrict
+  without rewriting rows. Its rollback restores cascade and must not be run
+  casually; both directions are **NOT TESTED**. `previous_*`/`resumed_*` columns record override provenance
   WITHOUT rewriting the original termination facts (they stay in
   `exam_integrity_events`, `exam_integrity_reviews`, and `audit_logs`).
 - **Resume** is the only operation that mutates an attempt's live state, it is
@@ -250,18 +254,20 @@ recovery happens inside `in_progress` by design.
   export scoping/queueing · import dedup · Q&A moderation · roadmap gate ·
   push idempotency/quiet-hours · concurrency (unique active_key, lockForUpdate
   finalize, ShouldBeUnique jobs).
-- **Build status — honest**: this environment has no PHP/Composer/Node
-  toolchain and no network. All PHP passed a string/comment-aware tokenizer
-  balance scan; all JS passed `node --check`; SFC scripts and templates
-  checked structurally; i18n EN/AR parity verified by import. The full test
-  suite, frontend build and lint run in CI as the runtime gate. No test was
-  written to "pass around" a bug — where behaviour changed intentionally
-  (warn-first termination, resume semantics) the tests encode the new contract
-  and the change is documented.
-- **Runtime gate — RUN AND PASSED (2026-09-30)**: the full suite is green in
-  GitHub Actions — **710 tests / 3314 assertions, 0 failures, 0 errors** on
-  both PHP 8.2 and PHP 8.3 (`ci.yml`, commit `bf5e1f0`), alongside repo
-  guards and the production frontend build. Getting there was a root-cause
+- **Historical build note from this phase:** that earlier sandbox lacked
+  PHP/Composer/Node and network, so it used tokenizer/static checks only. In
+  the 2026-10-02 audit environment, `npm ci`, frontend tests (27), production
+  build, and full/production npm audits passed. PHP and Composer remain
+  unavailable; a parser accepted 600 PHP files but this is not PHP lint or
+  PHPUnit. See [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md).
+  Tests encode intentional policy changes (warn-first termination and resume
+  semantics); backend behavior remains unverified until PHP CI runs green.
+- **Historical runtime gate — PASSED on 2026-09-30, later superseded**: the
+  full suite was green in GitHub Actions — **710 tests / 3314 assertions, 0
+  failures, 0 errors** on PHP 8.2 and 8.3 (`ci.yml`, commit `bf5e1f0`). A later
+  run (`36943046841`, 2026-10-01) on the branch reported failing PHP 8.2/8.3
+  jobs and a failed pagination guard; logs were unavailable. Do not treat the
+  older green run as current release evidence. Getting there was a root-cause
   fix campaign, not test weakening: soft-delete traits actually applied on
   `Course/Exam/Lesson/Unit`; the review payload reconciled to one contract
   (stable keys, null values before publication — where two tests encoded
@@ -272,9 +278,9 @@ recovery happens inside `in_progress` by design.
   double-grading sentinel; `integrity.risk_points.*` config paths corrected;
   competition ranking honours "flagged ≠ disqualified". Dependency lock is
   stable (`laravel/framework` 11.57.0 pinned for platform PHP 8.3.33); the
-  seven acknowledged security advisories remain suppressed for dependency
-  resolution only — the honest remedy is the Laravel 12 migration listed
-  below.
+  acknowledged security advisories remain suppressed for dependency
+  resolution only; this is not remediation. See the current audit for the
+  required supported, patched framework upgrade and Composer verification.
 
 ## 10. Remaining work — COMPLETED / PARTIALLY COMPLETED / DEFERRED
 
@@ -286,14 +292,16 @@ exports (CSV/XLSX/PDF/print + queueing), student & teacher dashboard UI blocks.
 level + ProtectedPlayer video-timestamp UI hook), search, roadmap enforcement switch + tests.
 **COMPLETED** — Phase 5: metrics, observability context, performance indexes,
 safe catalog cache, OpenAPI, queue job hardening.
-**COMPLETED** — Verification gate: full test suite green (710 tests / 3314
-assertions) on PHP 8.2 + 8.3 in CI, plus repo guards and frontend build.
+**HISTORICAL verification gate (passed 2026-09-30; superseded)** — an older
+run was green (710 tests / 3314 assertions) on PHP 8.2 + 8.3. The later
+2026-10-01 branch run failed both PHP jobs and the pagination guard; current
+backend tests are **NOT TESTED**. See `PRODUCTION_READINESS_AUDIT.md`.
 
-**TOP REMAINING (recommended next)** — Laravel 12 / `laravel/framework` 12.x
-migration: the only honest remedy for the seven acknowledged dependency
-advisories (`config.policy.advisories.ignore-id`, acknowledged for
-dependency resolution ONLY). Post-migration, remove the suppressions and
-re-verify the full suite.
+**CURRENT RELEASE BLOCKER** — Laravel 11 is outside its security-support
+period and advisory ignores remain in Composer configuration. Upgrade to a
+currently supported, patched framework release, remove ignores after actual
+remediation, and pass Composer audit plus the full compatibility/test matrix;
+see the current production-readiness audit for advisory references and gates.
 
 **PARTIALLY COMPLETED**
 - Failed-login audit events: logins are rate-limited and successful logins are

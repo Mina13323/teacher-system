@@ -4,6 +4,7 @@ namespace App\Services\Push;
 
 use App\Models\PushSubscription;
 use App\Models\User;
+use App\Support\Push\WebPushEndpoint;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -78,6 +79,12 @@ class WebPushSender
      */
     public function sendToSubscription(PushSubscription $subscription, string $payload): int
     {
+        // Re-check stored rows too: subscriptions may predate the controller
+        // validation or have been written by an administrative import.
+        if (! WebPushEndpoint::isAllowed($subscription->endpoint)) {
+            return 0;
+        }
+
         $uaPublic = self::b64urlDecode((string) $subscription->p256dh());
         $uaAuth = self::b64urlDecode((string) $subscription->authKey());
         if (strlen($uaPublic) !== 65 || strlen($uaAuth) !== 16) {
@@ -193,7 +200,15 @@ class WebPushSender
         }
 
         try {
-            $response = Http::withHeaders($headerMap)
+            $response = Http::withOptions([
+                // A push service redirect could otherwise turn an allowed
+                // endpoint into an internal-network request with VAPID headers.
+                'allow_redirects' => false,
+                'connect_timeout' => max(1, (int) config('push.connect_timeout', 3)),
+                'timeout' => max(1, (int) config('push.timeout', 10)),
+                'verify' => true,
+            ])
+                ->withHeaders($headerMap)
                 ->withBody($body, 'application/octet-stream')
                 ->post($url);
 

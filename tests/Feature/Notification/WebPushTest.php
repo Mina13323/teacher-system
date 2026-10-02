@@ -22,6 +22,12 @@ class WebPushTest extends ApiTestCase
 {
     use InteractsWithExams;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['push.allowed_endpoint_hosts' => ['push.example']]);
+    }
+
     private function fakeSubscription(User $user, string $endpoint = 'https://push.example/ep-1'): PushSubscription
     {
         return PushSubscription::create([
@@ -71,6 +77,64 @@ class WebPushTest extends ApiTestCase
 
         $index = $this->actingAs($student, 'sanctum')->getJson('/api/v1/push-subscriptions')->assertStatus(200);
         $this->assertCount(1, $index->json('data.subscriptions'));
+    }
+
+    public function test_subscription_limit_is_enforced_for_each_account(): void
+    {
+        config(['push.max_subscriptions_per_user' => 2]);
+        $student = $this->createUserWithRole(UserRole::Student);
+
+        foreach (['first', 'second', 'third'] as $endpoint) {
+            $this->actingAs($student, 'sanctum')
+                ->postJson('/api/v1/push-subscriptions', [
+                    'endpoint' => "https://push.example/{$endpoint}",
+                    'keys' => ['p256dh' => 'p256dh-key', 'auth' => 'auth-key'],
+                ])
+                ->assertStatus(201);
+        }
+
+        $this->assertSame(2, $student->pushSubscriptions()->count());
+    }
+
+    public function test_subscription_endpoints_must_be_https_and_on_the_configured_push_allowlist(): void
+    {
+        $student = $this->createUserWithRole(UserRole::Student);
+        $keys = ['keys' => ['p256dh' => 'p256dh-key', 'auth' => 'auth-key']];
+
+        foreach ([
+            'http://push.example/insecure',
+            'https://127.0.0.1/private',
+            'https://localhost/private',
+            'https://attacker.example/collect',
+            'https://user@push.example/credentials',
+            'https://push.example:8443/unusual-port',
+        ] as $endpoint) {
+            $this->actingAs($student, 'sanctum')
+                ->postJson('/api/v1/push-subscriptions', $keys + ['endpoint' => $endpoint])
+                ->assertUnprocessable();
+        }
+
+        $this->assertSame(0, PushSubscription::count());
+    }
+
+    public function test_another_user_cannot_reassign_or_overwrite_a_push_endpoint(): void
+    {
+        $owner = $this->createUserWithRole(UserRole::Student);
+        $attacker = $this->createUserWithRole(UserRole::Student);
+        $existing = $this->fakeSubscription($owner, 'https://push.example/victim-endpoint');
+
+        $this->actingAs($attacker, 'sanctum')
+            ->postJson('/api/v1/push-subscriptions', [
+                'endpoint' => $existing->endpoint,
+                'keys' => ['p256dh' => 'attacker-p256dh', 'auth' => 'attacker-auth'],
+            ])
+            ->assertStatus(409);
+
+        $this->assertDatabaseHas('push_subscriptions', [
+            'id' => $existing->id,
+            'user_id' => $owner->id,
+        ]);
+        $this->assertSame(['p256dh' => str_repeat('A', 87), 'auth' => str_repeat('B', 22)], $existing->fresh()->keys);
     }
 
     public function test_unsubscribe_only_touches_own_subscription(): void
@@ -143,6 +207,22 @@ class WebPushTest extends ApiTestCase
     }
 
     // ---- Encryption self-test + dead endpoint cleanup -----------------------
+
+    public function test_sender_rechecks_existing_rows_and_never_transports_to_disallowed_hosts(): void
+    {
+        $student = $this->createUserWithRole(UserRole::Student);
+        $legacy = $this->fakeSubscription($student, 'https://127.0.0.1/internal');
+        $transportCalls = 0;
+        $sender = new WebPushSender(function (string $url, array $headers, string $body) use (&$transportCalls): array {
+            $transportCalls++;
+
+            return [200, ''];
+        });
+
+        $this->assertSame(0, $sender->sendToSubscription($legacy, 'payload'));
+        $this->assertSame(0, $transportCalls);
+        $this->assertNotNull(PushSubscription::find($legacy->id));
+    }
 
     public function test_payload_encryption_and_dead_endpoint_cleanup(): void
     {

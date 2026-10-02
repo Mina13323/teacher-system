@@ -31,6 +31,7 @@ class LoginRequest extends FormRequest
             'email' => [
                 'required',
                 'string',
+                'max:255',
                 function ($attribute, $value, $fail) {
                     if (str_contains($value, '@')) {
                         if (! filter_var($value, FILTER_VALIDATE_EMAIL)) {
@@ -41,7 +42,7 @@ class LoginRequest extends FormRequest
                     }
                 },
             ],
-            'password' => ['required', 'string'],
+            'password' => ['required', 'string', 'max:255'],
         ];
     }
 }

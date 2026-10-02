@@ -4,18 +4,24 @@ import { usePwa } from '@/composables/usePwa';
 import Icon from '@/components/ui/Icon.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
-const { isInstallable, isInstalled, isIos, promptInstall } = usePwa();
+const { isInstallable, isInstalled, isIos, needRefresh, promptInstall } = usePwa();
 const isDismissed = ref(false);
 
 onMounted(() => {
-    if (sessionStorage.getItem('pwa_prompt_dismissed') === '1') {
-        isDismissed.value = true;
+    try {
+        isDismissed.value = sessionStorage.getItem('pwa_prompt_dismissed') === '1';
+    } catch {
+        // Installation help remains available if browser storage is disabled.
     }
 });
 
 function dismiss() {
     isDismissed.value = true;
-    sessionStorage.setItem('pwa_prompt_dismissed', '1');
+    try {
+        sessionStorage.setItem('pwa_prompt_dismissed', '1');
+    } catch {
+        // The local component state still dismisses the prompt for this visit.
+    }
 }
 
 async function handleInstall() {
@@ -29,8 +35,8 @@ async function handleInstall() {
 <template>
     <!-- Display only if not installed and not dismissed -->
     <div
-        v-if="!isInstalled && !isDismissed && (isInstallable || isIos)"
-        class="fixed bottom-5 start-5 z-50 max-w-sm rounded-2xl border border-ink-200 bg-white p-4 shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-4"
+        v-if="!needRefresh && !isInstalled && !isDismissed && (isInstallable || isIos)"
+        class="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] start-3 end-3 z-50 w-auto max-w-sm rounded-2xl border border-ink-200 bg-white p-4 shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 lg:bottom-5 lg:start-5 lg:end-auto"
     >
         <div class="flex items-start gap-3">
             <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-terracotta-600 text-white shadow-md">

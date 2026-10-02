@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { formatDate } from '@/utils/format';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
 import { useToast } from '@/composables/toast';
@@ -18,7 +18,6 @@ import WhatsAppContactModal from '@/components/students/WhatsAppContactModal.vue
 
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 const toast = useToast();
 const id = computed(() => {
     const raw = route.params.id;
@@ -87,24 +86,6 @@ async function loadStudent() {
         return;
     }
     student.value = await teacher.student(id.value);
-}
-
-// Delete modal state
-const showDeleteConfirm = ref(false);
-const deleteBusy = ref(false);
-
-async function submitDelete() {
-    if (!id.value) return;
-    deleteBusy.value = true;
-    try {
-        await teacher.deleteStudent(id.value);
-        toast.success(t('students.deleted'));
-        router.push(`/${authRole.value}/students`);
-    } catch (e) {
-        toast.error(e.message);
-    } finally {
-        deleteBusy.value = false;
-    }
 }
 
 // Quick Active State Toggle (Unsuspend / Suspend)
@@ -314,13 +295,6 @@ onMounted(async () => {
                     <router-link v-if="authRole === 'teacher'" :to="`/teacher/analytics/students/${student.id}`">
                         <AppButton variant="secondary">{{ $t('students.viewAnalytics') }}</AppButton>
                     </router-link>
-                    <AppButton
-                        variant="ghost"
-                        class="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                        @click="showDeleteConfirm = true"
-                    >
-                        🗑️ {{ $t('common.delete') }}
-                    </AppButton>
                 </div>
             </AppCard>
 
@@ -446,19 +420,6 @@ onMounted(async () => {
                         {{ $t('whatsapp.sendCredentials') }}
                     </AppButton>
                     <AppButton @click="revealCredentials = null">{{ $t('common.confirm') }}</AppButton>
-                </div>
-            </div>
-        </AppModal>
-
-        <!-- Delete Student Modal -->
-        <AppModal :open="showDeleteConfirm" :title="$t('students.deleteStudent')" size="sm" @close="showDeleteConfirm = false">
-            <div class="space-y-4">
-                <p class="text-sm text-ink-700" dir="auto">
-                    {{ $t('students.deleteStudentConfirm', { name: student?.name || '' }) }}
-                </p>
-                <div class="flex justify-end gap-2 pt-2">
-                    <AppButton variant="outline" :disabled="deleteBusy" @click="showDeleteConfirm = false">{{ $t('common.cancel') }}</AppButton>
-                    <AppButton variant="danger" :loading="deleteBusy" @click="submitDelete">{{ $t('common.delete') }}</AppButton>
                 </div>
             </div>
         </AppModal>

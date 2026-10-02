@@ -41,6 +41,8 @@ class SyncExamQuestionsRequest extends FormRequest
             'questions.*.type' => ['required', new Enum(QuestionType::class)],
             'questions.*.points' => ['required', 'integer', 'min:1', 'max:1000'],
             'questions.*.reference_answer' => ['nullable', 'string', 'max:5000'],
+            'questions.*.explanation_enabled' => ['nullable', 'boolean'],
+            'questions.*.explanation_required' => ['nullable', 'boolean'],
 
             'questions.*.options' => ['nullable', 'array', 'max:10'],
             'questions.*.options.*.id' => ['nullable', 'integer', 'exists:options,id'],

@@ -20,6 +20,7 @@ class ChangePasswordAction
         }
 
         $user->password = $newPassword;
+        $user->must_change_password = false;
         $user->save();
 
         // Invalidate all of the user's other tokens so a leaked token is revoked.

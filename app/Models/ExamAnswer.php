@@ -23,6 +23,8 @@ class ExamAnswer extends Model
         // SaveExamAnswerAction, so it must be mass assignable or the student's
         // essay text is silently dropped and the teacher grades a blank.
         'answer_text',
+        // Separate optional MCQ rationale; never used for objective scoring.
+        'explanation',
         // Grading metadata. Only ever set server-side by GradeEssayAnswerAction
         // from the authenticated staff user; never taken from request input.
         'feedback',

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { profilePathFor } from '@/utils/authRoutes';
 
 const routes = [
     { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue'), meta: { public: true } },
@@ -20,7 +21,9 @@ const routes = [
             { path: 'lessons/:id', name: 'student.lesson', component: () => import('@/views/Student/Lesson.vue') },
             { path: 'exams', name: 'student.exams', component: () => import('@/views/Student/Exams.vue') },
             { path: 'exams/:id', name: 'student.exam', component: () => import('@/views/Student/ExamShow.vue') },
-            { path: 'exams/:id/start', name: 'student.exam.start', component: () => import('@/views/Student/ExamTake.vue') },
+            // Legacy start URLs must pass through exam details so the student
+            // can acknowledge the rules before an attempt is created.
+            { path: 'exams/:id/start', name: 'student.exam.start', redirect: (to) => ({ name: 'student.exam', params: { id: to.params.id } }) },
             { path: 'attempts/:id', name: 'student.attempt', component: () => import('@/views/Student/ExamTake.vue') },
             { path: 'assignments', name: 'student.assignments', component: () => import('@/views/Student/Assignments.vue') },
             { path: 'certificates', name: 'student.certificates', component: () => import('@/views/Student/Certificates.vue') },
@@ -147,6 +150,11 @@ router.beforeEach(async (to) => {
         } catch {
             /* handled below */
         }
+    }
+
+    if (auth.user?.must_change_password && !to.meta.public) {
+        const profilePath = profilePathFor(auth.roles);
+        if (to.path !== profilePath) return profilePath;
     }
 
     if (to.meta.public) {

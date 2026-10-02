@@ -27,7 +27,7 @@ async function update() {
 <template>
     <div
         v-if="needRefresh"
-        class="fixed bottom-5 end-5 z-50 flex max-w-sm items-center gap-3 rounded-2xl border border-terracotta-200 bg-ink-900 p-4 text-white shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-4"
+        class="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] start-3 end-3 z-50 flex w-auto max-w-sm items-center gap-3 rounded-2xl border border-terracotta-200 bg-ink-900 p-4 text-white shadow-2xl transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 lg:bottom-5 lg:start-auto lg:end-5"
     >
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-terracotta-600 text-white">
             <Icon name="sparkles" :size="20" />

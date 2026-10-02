@@ -59,7 +59,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('profile', [ProfileController::class, 'show']);
@@ -83,7 +83,7 @@ Route::prefix('public/student-registration/{token}')
     });
 
 // ---- Course catalog (authenticated users only) -----------------------------
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
     Route::get('courses', [CourseController::class, 'index']);
     Route::get('courses/{course}', [CourseController::class, 'show']);
 });
@@ -93,7 +93,7 @@ Route::middleware('auth:sanctum')->group(function () {
 // policy/ownership authorization; this middleware is a second, group-level gate
 // so that a single forgotten authorize() call cannot expose a teacher endpoint
 // to a student. Uses the Spatie `role` alias registered in bootstrap/app.php.
-Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|admin'])->group(function () {
+Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', 'role:teacher|assistant|admin'])->group(function () {
     Route::get('dashboard', [TeacherDashboardController::class, 'index']);
 
     Route::get('courses', [TeacherCourseController::class, 'index']);
@@ -151,6 +151,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    Route::post('exams/{exam}/attempts/bulk-delete', [TeacherExamController::class, 'deleteSelectedAttempts']);
+    Route::get('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'makeUpAssignments']);
+    Route::post('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'assignMakeUps']);
+    Route::delete('exams/{exam}/make-up-assignments/{assignment}', [TeacherExamController::class, 'revokeMakeUp']);
     Route::get('exams/{exam}/results/export', [TeacherExportController::class, 'results']);
     Route::get('attempts/{attempt}', [TeacherAttemptController::class, 'show']);
     Route::post('attempts/{attempt}/grade-essay', [TeacherAttemptController::class, 'gradeEssay']);
@@ -167,6 +171,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('exams/{exam}/questions', [TeacherQuestionController::class, 'store']);
     Route::get('questions/{question}', [TeacherQuestionController::class, 'show']);
     Route::put('questions/{question}', [TeacherQuestionController::class, 'update']);
+    Route::post('questions/{question}/regrade-submitted-attempts', [TeacherQuestionController::class, 'regradeSubmittedAttempts']);
     Route::post('questions/{question}/image', [TeacherQuestionController::class, 'uploadImage']);
     Route::delete('questions/{question}/image', [TeacherQuestionController::class, 'removeImage']);
     Route::delete('questions/{question}', [TeacherQuestionController::class, 'destroy']);
@@ -203,7 +208,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     // Student account management (teacher-owned LMS)
     Route::get('students', [TeacherStudentController::class, 'index']);
     Route::post('students', [TeacherStudentController::class, 'store']);
-    Route::post('students/batch-delete', [TeacherStudentController::class, 'batchDestroy']);
+    Route::post('students/batch-deactivate', [TeacherStudentController::class, 'batchDeactivate']);
     // Queued export status + download (requester-only).
     Route::get('exports/{export}', [\App\Http\Controllers\Teacher\ExportController::class, 'show']);
     Route::get('exports/{export}/download', [\App\Http\Controllers\Teacher\ExportController::class, 'download']);
@@ -224,7 +229,6 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
     Route::post('students/{student}/reset-password', [TeacherStudentController::class, 'resetPassword']);
     Route::post('students/{student}/reset-credentials', [TeacherStudentController::class, 'resetCredentials']);
     Route::post('students/{student}/renew', [TeacherStudentController::class, 'renew']);
-    Route::delete('students/{student}', [TeacherStudentController::class, 'destroy']);
     Route::post('students/{student}/notify', [NotificationController::class, 'sendMessage']);
 
     // Assistant account management (teacher/admin). Assistants are operational
@@ -261,7 +265,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'role:teacher|assistant|ad
 });
 
 // ---- Admin: system & account oversight --------------------------------------
-Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+Route::prefix('admin')->middleware(['auth:sanctum', 'force.password.change'])->group(function () {
     Route::get('dashboard', [AdminDashboardController::class, 'index']);
     Route::get('teachers', [AdminTeacherController::class, 'index']);
     Route::post('teachers', [AdminTeacherController::class, 'store']);
@@ -273,7 +277,8 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::get('students', [AdminStudentController::class, 'index']);
     Route::get('students/{student}', [AdminStudentController::class, 'show']);
     Route::put('students/{student}', [AdminStudentController::class, 'update']);
-    Route::delete('students/{student}', [AdminStudentController::class, 'destroy']);
+    Route::post('students/{student}/anonymize', [AdminStudentController::class, 'anonymize']);
+    Route::post('students/{student}/force-delete', [AdminStudentController::class, 'forceDelete']);
     Route::patch('students/{student}/activate', [AdminStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [AdminStudentController::class, 'deactivate']);
     Route::post('students/{student}/reset-password', [AdminStudentController::class, 'resetPassword']);
@@ -285,7 +290,7 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
 });
 
 // ---- Notifications (any authenticated user) ----------------------------------
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{notification}/read', [NotificationController::class, 'read']);
@@ -311,7 +316,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
-Route::prefix('student')->middleware(['auth:sanctum'])->group(function () {
+Route::prefix('student')->middleware(['auth:sanctum', 'force.password.change'])->group(function () {
     Route::get('dashboard', [StudentDashboardController::class, 'index']);
 
     Route::get('courses', [EnrollmentController::class, 'index']);
