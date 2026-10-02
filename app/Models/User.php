@@ -75,7 +75,22 @@ class User extends Authenticatable
             'academic_year' => AcademicYear::class,
             'academic_subject' => AcademicSubject::class,
             'profile_completed_at' => 'datetime',
+            // DATA-002: permanent anonymization marker.
+            'anonymized_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether this account has been anonymized.
+     *
+     * Once true, the account must not be re-activated, have its password
+     * reset, or have its profile data updated through ordinary flows.
+     * Only a super-admin–level, explicitly confirmed, audited action
+     * may touch an anonymized account.
+     */
+    public function isAnonymized(): bool
+    {
+        return $this->anonymized_at !== null;
     }
 
     /**

@@ -26,6 +26,11 @@ class RegenerateStudentCredentialsAction
      */
     public function execute(User $student): array
     {
+        // DATA-002: anonymized accounts must not receive new usable credentials.
+        if ($student->isAnonymized()) {
+            abort(409, 'This account has been anonymized. Credentials cannot be regenerated.');
+        }
+
         if (empty($student->student_code)) {
             $student->student_code = $this->credentialsService->generateStudentCode();
         }

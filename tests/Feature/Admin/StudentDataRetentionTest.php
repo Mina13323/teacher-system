@@ -262,4 +262,85 @@ class StudentDataRetentionTest extends ApiTestCase
 
         $this->assertDatabaseHas('users', ['id' => $student->id]);
     }
+
+    public function test_anonymization_sets_the_anonymized_at_marker(): void
+    {
+        $admin = $this->createUserWithRole(UserRole::Admin);
+        $student = $this->createStudent();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$student->id}/anonymize", [
+                'confirmation' => "ANONYMIZE STUDENT {$student->id}",
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $student->id,
+            'is_active' => false,
+        ]);
+
+        // anonymized_at must be a non-null timestamp after the action.
+        $fresh = \App\Models\User::find($student->id);
+        $this->assertNotNull($fresh->anonymized_at, 'anonymized_at must be set after anonymization.');
+        $this->assertTrue($fresh->isAnonymized(), 'isAnonymized() must return true.');
+    }
+
+    public function test_anonymized_account_cannot_be_reactivated_through_ordinary_flows(): void
+    {
+        $admin = $this->createUserWithRole(UserRole::Admin);
+        $student = $this->createStudent();
+
+        // Anonymize first.
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$student->id}/anonymize", [
+                'confirmation' => "ANONYMIZE STUDENT {$student->id}",
+            ])
+            ->assertOk();
+
+        // Attempt to reactivate — must be rejected with 409.
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson("/api/v1/admin/students/{$student->id}/activate")
+            ->assertStatus(409);
+
+        // Account must remain deactivated.
+        $this->assertDatabaseHas('users', ['id' => $student->id, 'is_active' => false]);
+    }
+
+    public function test_credential_regeneration_is_blocked_for_anonymized_accounts(): void
+    {
+        $teacher = $this->createUserWithRole(UserRole::Teacher);
+        $admin = $this->createUserWithRole(UserRole::Admin);
+        $student = $this->createStudent(['created_by' => $teacher->id]);
+
+        // Anonymize.
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$student->id}/anonymize", [
+                'confirmation' => "ANONYMIZE STUDENT {$student->id}",
+            ])
+            ->assertOk();
+
+        // Credential reset must be rejected for anonymized accounts.
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/students/{$student->id}/reset-credentials")
+            ->assertStatus(409);
+    }
+
+    public function test_password_reset_is_blocked_for_anonymized_accounts(): void
+    {
+        $admin = $this->createUserWithRole(UserRole::Admin);
+        $student = $this->createStudent();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$student->id}/anonymize", [
+                'confirmation' => "ANONYMIZE STUDENT {$student->id}",
+            ])
+            ->assertOk();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$student->id}/reset-password", [
+                'password' => 'NewSecurePassword123!',
+                'password_confirmation' => 'NewSecurePassword123!',
+            ])
+            ->assertStatus(409);
+    }
 }

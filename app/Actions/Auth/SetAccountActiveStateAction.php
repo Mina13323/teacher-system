@@ -21,6 +21,14 @@ class SetAccountActiveStateAction
             $account = User::query()->lockForUpdate()->findOrFail($account->getKey());
             $isStudent = $account->isStudent();
 
+            // DATA-002: anonymized accounts must never be reactivated through
+            // ordinary flows. A permanent durable marker (anonymized_at) is set
+            // by AnonymizeStudentAction and is only clearable by a super-admin
+            // through a separate, explicitly confirmed, audited action.
+            if ($active && $account->isAnonymized()) {
+                abort(409, 'This account has been anonymized and cannot be reactivated through ordinary flows.');
+            }
+
             $account->is_active = $active;
             $account->save();
 

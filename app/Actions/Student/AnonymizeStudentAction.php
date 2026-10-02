@@ -52,6 +52,9 @@ class AnonymizeStudentAction
                 'must_change_password' => true,
                 'bio' => null,
                 'notification_preferences' => null,
+                // DATA-002: permanent marker. Non-null value blocks re-activation,
+                // credential reset, and profile edits via ordinary flows.
+                'anonymized_at' => now(),
             ])->save();
 
             $audit = $this->audit->execute(

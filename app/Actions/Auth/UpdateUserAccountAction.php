@@ -16,6 +16,10 @@ class UpdateUserAccountAction
 {
     public function execute(User $account, array $data): User
     {
+        if ($account->isAnonymized()) {
+            abort(409, 'This account has been anonymized and cannot be updated.');
+        }
+
         $fillable = [
             'name',
             'phone',

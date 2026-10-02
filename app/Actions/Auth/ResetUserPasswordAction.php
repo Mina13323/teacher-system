@@ -13,6 +13,10 @@ class ResetUserPasswordAction
 {
     public function execute(User $account, string $password): User
     {
+        if ($account->isAnonymized()) {
+            abort(409, 'This account has been anonymized and its password cannot be reset.');
+        }
+
         $account->password = $password;
         $account->must_change_password = true;
         $account->save();

@@ -13,7 +13,9 @@ concurrency:
 jobs:
   backend:
     name: Tests (PHP ${{ matrix.php }})
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 ahead of the ubuntu-latest → Ubuntu 26 migration
+    # scheduled for 2026-10-19. Re-evaluate once Ubuntu 26 stabilises.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -21,7 +23,7 @@ jobs:
         php: ['8.2', '8.3']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -46,6 +48,16 @@ jobs:
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Composer validate
+        run: composer validate --strict
+
+      - name: Composer security audit
+        # Exits non-zero if any un-ignored vulnerability is found.
+        # Laravel framework advisories remain ignored in composer.json pending
+        # the Laravel 13 upgrade (DEP-001). league/commonmark advisories
+        # (GHSA-97jj-33gv-5xf9, GHSA-3q6v-r5mr-hxv8) are remediated at 2.10.3.
+        run: composer audit
 
       - name: Prepare environment
         run: |
@@ -94,13 +106,13 @@ jobs:
   regenerate-lock:
     name: Regenerate composer.lock (opt-in)
     if: contains(github.event.head_commit.message, '[regen-lock]')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The lock must land on the branch; artifact download is not reliable from
     # every environment, so the job commits the file back with the repo token.
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup PHP (matches config.platform.php)
         uses: shivammathur/setup-php@v2
@@ -192,15 +204,17 @@ jobs:
 
   frontend:
     name: Frontend build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 24 is the current LTS; GitHub Actions migrated to Node 24
+          # runtime by September 2026. Node 20 support was removed.
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -230,9 +244,9 @@ jobs:
     # Cheap checks that do not need a runtime. Each one exists because it has
     # already been violated once in this repository's history.
     name: Repo guards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: No environment file is tracked
         run: |
