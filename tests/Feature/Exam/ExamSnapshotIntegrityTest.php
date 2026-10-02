@@ -88,6 +88,11 @@ class ExamSnapshotIntegrityTest extends ApiTestCase
             ]);
         }
 
+        $this->assertSame(
+            51,
+            $exam->questions()->count(),
+            'The live exam fixture must contain all questions before snapshotting.'
+        );
         $attempt = $this->startAttempt($student, $exam);
 
         $this->assertSame(51, $attempt->attemptQuestions()->count());

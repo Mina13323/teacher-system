@@ -226,14 +226,18 @@ class ExamWindowTest extends ApiTestCase
         $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt4->expires_at->toISOString());
         $this->assertSame(60, (int) $attempt4->started_at->diffInMinutes($attempt4->expires_at));
 
-        // Student 5 enters at 02:00 AM -> allowed, 0 min left!
+        // Student 5 arrives exactly at the window end. Starts at now >= ends_at
+        // must be rejected rather than creating a zero-time attempt.
         $student5 = $this->createUserWithRole(UserRole::Student);
         $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/courses/{$course->id}/enroll")->assertStatus(201);
         $this->travelTo(Carbon::parse('2026-10-11 02:00:00', 'UTC'));
-        $this->actingAs($student5, 'sanctum')->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])->assertStatus(201);
-        $attempt5 = ExamAttempt::where('student_id', $student5->id)->sole();
-        $this->assertSame('2026-10-11T02:00:00.000000Z', $attempt5->expires_at->toISOString());
-        $this->assertSame(0, (int) $attempt5->started_at->diffInMinutes($attempt5->expires_at));
+        $this->actingAs($student5, 'sanctum')
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
+            ->assertStatus(422);
+        $this->assertDatabaseMissing('exam_attempts', [
+            'student_id' => $student5->id,
+            'exam_id' => $exam->id,
+        ]);
 
         // Student 6 tries to enter at 02:01 AM -> rejected with 422!
         $student6 = $this->createUserWithRole(UserRole::Student);

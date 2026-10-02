@@ -13,9 +13,9 @@ use App\Models\User;
  *   - they created the student account, OR
  *   - the student is actively enrolled in at least one course the teacher owns.
  *
- * Administrators may manage any account. A teacher can never reach a student
- * that is neither one they created nor enrolled in one of their courses, which
- * prevents cross-teacher access to another teacher's students.
+ * Enrollment into an owned course may also adopt an unowned legacy student,
+ * but never an account owned by another teacher. Administrators may manage any
+ * account; course authorization remains a separate gate for enrollment.
  */
 class StudentPolicy
 {
@@ -37,10 +37,34 @@ class StudentPolicy
 
     public function view(User $user, User $student): bool
     {
-        // A teacher may view a specific student only if they actually manage that
-        // student (created the account or own a course they are enrolled in).
         // The broad `students.view` permission is used by viewAny for listing,
         // which the controller additionally scopes.
+        return $this->managesStudent($user, $student);
+    }
+
+    /**
+     * A teacher may enroll an unowned legacy student or a student they already
+     * manage, but may not take over an account owned by another teacher. The
+     * course itself is separately authorized by CoursePolicy.
+     */
+    public function enroll(User $user, User $student): bool
+    {
+        if (! $student->isStudent()) {
+            return false;
+        }
+
+        if ($user->hasRole('assistant')) {
+            return true;
+        }
+
+        if (! $user->hasRole('teacher')) {
+            return false;
+        }
+
+        if (config('app.co_teaching', false) || $student->created_by === null) {
+            return true;
+        }
+
         return $this->managesStudent($user, $student);
     }
 
@@ -84,7 +108,7 @@ class StudentPolicy
 
     /**
      * Whether the teacher manages this student (created them or owns a course
-     * the student is enrolled in).
+     * the student is actively enrolled in).
      */
     private function managesStudent(User $user, User $student): bool
     {

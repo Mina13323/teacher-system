@@ -42,6 +42,21 @@ class TeacherEnrollmentTest extends ApiTestCase
         ]);
     }
 
+    public function test_teacher_cannot_enroll_a_student_account_owned_by_another_teacher(): void
+    {
+        $teacher = $this->makeTeacher();
+        $otherTeacher = $this->makeTeacher();
+        $course = $this->createCourse($teacher, ['status' => 'published']);
+        $student = $this->createUserWithRole(UserRole::Student, ['created_by' => $otherTeacher->id]);
+
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/courses/{$course->id}/students", [
+                'student_id' => $student->id,
+            ])->assertStatus(403);
+
+        $this->assertDatabaseCount('enrollments', 0);
+    }
+
     public function test_teacher_cannot_enroll_a_student_in_another_teachers_course(): void
     {
         $teacherA = $this->makeTeacher();

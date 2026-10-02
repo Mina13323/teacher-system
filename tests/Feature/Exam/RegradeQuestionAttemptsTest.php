@@ -151,10 +151,18 @@ class RegradeQuestionAttemptsTest extends ApiTestCase
         $question = $multi['question'];
         $student = $this->createUserWithRole(UserRole::Student);
         $this->enrollStudent($student, $course);
+
+        // Freeze the incorrect key [correct 1, wrong 1] into the new attempt;
+        // the student's intended selection is [correct 1, correct 2].
+        $this->actingAs($teacher, 'sanctum')
+            ->putJson("/api/v1/teacher/options/{$multi['correct'][1]->id}", ['is_correct' => false])
+            ->assertStatus(200);
+        $this->actingAs($teacher, 'sanctum')
+            ->putJson("/api/v1/teacher/options/{$multi['wrong'][0]->id}", ['is_correct' => true])
+            ->assertStatus(200);
+
         $attempt = $this->startAttempt($student, $exam);
 
-        // The student selected the intended key [correct 1, correct 2], but
-        // the live and frozen key still incorrectly marks [correct 1, wrong 1].
         $intendedSelection = [$multi['correct'][0]->id, $multi['correct'][1]->id];
         $this->actingAs($student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt->id}/answers", [

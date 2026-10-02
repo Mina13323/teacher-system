@@ -90,8 +90,8 @@ class CourseStudentController extends Controller
         }
 
         $student = User::findOrFail($request->integer('student_id'));
-        $this->authorize('view', $student);
         abort_unless($student->isStudent(), 404, 'Student not found.');
+        $this->authorize('enroll', $student);
 
         $enrollment = $this->enrollStudent->execute($student, $course);
 
