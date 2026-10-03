@@ -884,4 +884,96 @@ class RegradeQuestionAttemptsTest extends ApiTestCase
             'option_id' => $originalCorrect->id,
         ]);
     }
+
+    /**
+     * User bug reproduction:
+     * Question options originally [Option 1: Russia (correct), Option 2: Nigeria (wrong)].
+     * Student selects Option 2 (Nigeria). Initial score = 0.
+     * Teacher renames Option 1 to "ب- نيجيريا" and marks it correct.
+     * Teacher renames Option 2 to "ب- روسيا".
+     * Teacher regrades.
+     * The system must resolve the correct answer by normalized text, award 1 point to the student,
+     * and update both teacher attempt review and student attempt review to show Nigeria as correct.
+     */
+    public function test_regrade_resolves_options_by_normalized_text_when_teacher_swaps_or_edits_option_wording(): void
+    {
+        [$teacher, $student, , $exam, $question] = $this->singleChoiceFixture();
+
+        // Configure options to exact user names
+        $options = $question->options()->orderBy('position')->get();
+        $opt1 = $options[0];
+        $opt2 = $options[1];
+        $opt1->update(['option_text' => 'أ- روسيا', 'is_correct' => true]);
+        $opt2->update(['option_text' => 'ب- نيجيريا', 'is_correct' => false]);
+
+        $attempt = $this->startAttempt($student, $exam);
+
+        // Student selects Option 2 (Nigeria)
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attempt->id}/answers", [
+                'question_id' => $question->id,
+                'option_id' => $opt2->id,
+            ])
+            ->assertStatus(200);
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attempt->id}/submit")
+            ->assertStatus(200);
+
+        // Before regrade: student scored 0 points
+        $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.score', 0);
+
+        // Teacher edits Option 1 to "ب- نيجيريا" and marks it correct
+        $this->actingAs($teacher, 'sanctum')
+            ->putJson("/api/v1/teacher/options/{$opt1->id}", [
+                'option_text' => 'ب- نيجيريا',
+                'is_correct' => true,
+            ])
+            ->assertStatus(200);
+
+        // Teacher edits Option 2 to "ب- روسيا"
+        $this->actingAs($teacher, 'sanctum')
+            ->putJson("/api/v1/teacher/options/{$opt2->id}", [
+                'option_text' => 'ب- روسيا',
+                'is_correct' => false,
+            ])
+            ->assertStatus(200);
+
+        // Teacher triggers regrade passing the updated correct option ids
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/questions/{$question->id}/regrade-submitted-attempts", [
+                'confirmed' => true,
+                'correct_option_ids' => [$opt1->id],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.attempts_regraded', 1)
+            ->assertJsonPath('data.scores_changed', 1);
+
+        // After regrade: student score updated to 1
+        $studentReview = $this->actingAs($student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.score', 1)
+            ->assertJsonPath('data.percentage', 100)
+            ->assertJsonPath('data.questions.0.review.is_correct', true)
+            ->assertJsonPath('data.questions.0.review.points_earned', 1);
+
+        // Teacher attempt review modal endpoint reflects the same updated grade and option breakdown
+        $teacherReview = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/attempts/{$attempt->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.score', 1)
+            ->assertJsonPath('data.percentage', 100)
+            ->assertJsonPath('data.questions.0.is_correct', true)
+            ->assertJsonPath('data.questions.0.points_earned', 1);
+
+        // Check snapshot option breakdown in teacher review: Nigeria is marked correct
+        $nigeriaOpt = collect($teacherReview->json('data.questions.0.options'))->firstWhere('option_text', 'ب- نيجيريا');
+        $this->assertNotNull($nigeriaOpt);
+        $this->assertTrue($nigeriaOpt['is_correct']);
+        $this->assertTrue($nigeriaOpt['is_selected']);
+    }
 }

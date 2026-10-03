@@ -117,6 +117,7 @@ class RegradeQuestionAttemptsAction
                 ->chunkById(50, function ($attempts) use (
                     $questionId,
                     $liveType,
+                    $liveOptions,
                     $correctOptionIds,
                     &$oldCorrectOptionIds,
                     &$oldCorrectOptionTexts,
@@ -135,21 +136,54 @@ class RegradeQuestionAttemptsAction
                             continue;
                         }
 
-                        // Do not reinterpret historical questions whose type or
-                        // option set changed after students took them. A regrade
-                        // is safe only when the corrected key existed in each
-                        // submitted attempt's original snapshot.
                         $snapshotType = $attemptQuestion->question_type
                             ?? QuestionType::SingleChoice->value;
-                        $snapshotOptionIds = $attemptQuestion->attemptOptions
-                            ->pluck('option_id')
-                            ->map(fn ($id) => (int) $id)
-                            ->all();
 
-                        if (
-                            $snapshotType !== $liveType
-                            || array_diff($correctOptionIds, $snapshotOptionIds) !== []
-                        ) {
+                        if ($snapshotType !== $liveType) {
+                            throw ValidationException::withMessages([
+                                'correct_option_ids' => [
+                                    'The corrected answer key cannot be applied because this question type changed after at least one submitted attempt began.',
+                                ],
+                            ]);
+                        }
+
+                        $snapshotOptions = $attemptQuestion->attemptOptions;
+                        $liveCorrectOptions = $liveOptions->filter(fn ($o) => (bool) $o->is_correct);
+                        $matchedSnapshotRowIds = [];
+
+                        foreach ($liveCorrectOptions as $liveOpt) {
+                            $liveTextNorm = $this->normalizeOptionText($liveOpt->option_text);
+                            $liveId = (int) $liveOpt->getKey();
+
+                            // 1. Priority 1: exact option_id match AND normalized text match
+                            $match = $snapshotOptions->first(function ($so) use ($liveId, $liveTextNorm, $matchedSnapshotRowIds) {
+                                return ! in_array((int) $so->getKey(), $matchedSnapshotRowIds, true)
+                                    && (int) $so->option_id === $liveId
+                                    && $this->normalizeOptionText($so->option_text) === $liveTextNorm;
+                            });
+
+                            // 2. Priority 2: match by normalized text (handles swapped/edited options and re-created options)
+                            if (! $match && $liveTextNorm !== '') {
+                                $match = $snapshotOptions->first(function ($so) use ($liveTextNorm, $matchedSnapshotRowIds) {
+                                    return ! in_array((int) $so->getKey(), $matchedSnapshotRowIds, true)
+                                        && $this->normalizeOptionText($so->option_text) === $liveTextNorm;
+                                });
+                            }
+
+                            // 3. Priority 3: match by option_id (handles untouched options where text was not edited)
+                            if (! $match) {
+                                $match = $snapshotOptions->first(function ($so) use ($liveId, $matchedSnapshotRowIds) {
+                                    return ! in_array((int) $so->getKey(), $matchedSnapshotRowIds, true)
+                                        && (int) $so->option_id === $liveId;
+                                });
+                            }
+
+                            if ($match) {
+                                $matchedSnapshotRowIds[] = (int) $match->getKey();
+                            }
+                        }
+
+                        if (count($matchedSnapshotRowIds) !== $liveCorrectOptions->count()) {
                             throw ValidationException::withMessages([
                                 'correct_option_ids' => [
                                     'The corrected answer key cannot be applied because this question changed after at least one submitted attempt began.',
@@ -172,8 +206,8 @@ class RegradeQuestionAttemptsAction
                                 ->all();
                         }
 
-                        foreach ($attemptQuestion->attemptOptions as $snapshotOption) {
-                            $isCorrect = in_array((int) $snapshotOption->option_id, $correctOptionIds, true);
+                        foreach ($snapshotOptions as $snapshotOption) {
+                            $isCorrect = in_array((int) $snapshotOption->getKey(), $matchedSnapshotRowIds, true);
 
                             if ((bool) $snapshotOption->is_correct !== $isCorrect) {
                                 $snapshotOption->is_correct = $isCorrect;
@@ -342,5 +376,28 @@ class RegradeQuestionAttemptsAction
             'scores_changed' => $work['scores_changed'],
             'published_scores_changed' => $work['published_scores_changed'],
         ];
+    }
+
+    /**
+     * Normalizes option text by removing leading bullet/index prefixes and normalizing Arabic characters.
+     */
+    public function normalizeOptionText(?string $text): string
+    {
+        if ($text === null) {
+            return '';
+        }
+
+        // Strip leading option letters/numbers: "أ-", "ب -", "1.", "A)", "1 - ", etc.
+        $cleaned = preg_replace('/^[\s\(\[]*[\p{L}\p{N}]+[\s\)\.\-\:]+\s*/u', '', trim($text));
+
+        // Normalize common Arabic glyph variants (alif, taa marbuta, alif maqsura)
+        $normalized = str_replace(
+            ['أ', 'إ', 'آ', 'ٱ', 'ة', 'ى'],
+            ['ا', 'ا', 'ا', 'ا', 'ه', 'ي'],
+            $cleaned ?? $text
+        );
+
+        // Normalize multiple whitespace characters
+        return trim(preg_replace('/\s+/u', ' ', $normalized));
     }
 }
