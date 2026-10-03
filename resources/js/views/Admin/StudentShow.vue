@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { formatDate } from '@/utils/format';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
@@ -54,11 +54,33 @@ function expectedForceDeletePhrase() {
     return `FORCE DELETE STUDENT ${student.value?.id}`;
 }
 
+function isTypingArabicText(text) {
+    return /[\u0600-\u06FF]/.test(text || '');
+}
+
+async function copyPhrase(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        toast.success(t('common.copied') || 'تم نسخ الكود بنجاح');
+    } catch {
+        toast.info(text);
+    }
+}
+
+const isForceDeleteValid = computed(() => {
+    return !!forceDeleteHistoryConfirmed.value
+        && forceDeletePhrase.value.trim().toUpperCase() === expectedForceDeletePhrase();
+});
+
+const isAnonymizeValid = computed(() => {
+    return anonymizePhrase.value.trim().toUpperCase() === expectedAnonymizePhrase();
+});
+
 async function anonymizeStudent() {
-    if (!student.value || anonymizePhrase.value !== expectedAnonymizePhrase()) return;
+    if (!student.value || !isAnonymizeValid.value) return;
     anonymizeBusy.value = true;
     try {
-        await admin.anonymizeStudent(student.value.id, anonymizePhrase.value);
+        await admin.anonymizeStudent(student.value.id, expectedAnonymizePhrase());
         toast.success(t('students.anonymizeSuccess'));
         anonymizeOpen.value = false;
         anonymizePhrase.value = '';
@@ -71,14 +93,12 @@ async function anonymizeStudent() {
 }
 
 async function forceDeleteStudent() {
-    if (!student.value
-        || forceDeletePhrase.value !== expectedForceDeletePhrase()
-        || !forceDeleteHistoryConfirmed.value) return;
+    if (!student.value || !isForceDeleteValid.value) return;
 
     forceDeleteBusy.value = true;
     try {
         await admin.forceDeleteStudent(student.value.id, {
-            confirmation: forceDeletePhrase.value,
+            confirmation: expectedForceDeletePhrase(),
             delete_academic_history: true,
         });
         toast.success(t('students.forceDeleteSuccess'));
@@ -166,39 +186,134 @@ onMounted(load);
 
         <AppModal :open="anonymizeOpen" :title="$t('students.anonymizeStudent')" size="md" @close="anonymizeOpen = false">
             <div class="space-y-4">
-                <p class="text-sm text-ink-700">{{ $t('students.anonymizeDetails') }}</p>
-                <AppInput
-                    v-model="anonymizePhrase"
-                    :label="$t('students.typeConfirmation')"
-                    id="admin-student-anonymize-confirmation"
-                    autocomplete="off"
-                />
-                <p class="rounded-lg bg-ink-50 p-3 font-mono text-xs text-ink-700">{{ expectedAnonymizePhrase() }}</p>
+                <p class="text-sm text-ink-700 leading-relaxed">{{ $t('students.anonymizeDetails') }}</p>
+
+                <!-- Confirmation code display with copy and auto-fill -->
+                <div class="rounded-xl border border-ink-200 bg-ink-50/80 p-3.5 space-y-2">
+                    <div class="flex items-center justify-between text-xs font-medium text-ink-700">
+                        <span>كود التأكيد المطلوب كتابته:</span>
+                        <div class="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-md bg-white border border-ink-200 px-2.5 py-1 text-xs font-semibold text-ink-700 hover:bg-ink-100 transition-colors shadow-2xs"
+                                @click="copyPhrase(expectedAnonymizePhrase())"
+                            >
+                                📋 نسخ الكود
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700 transition-colors shadow-2xs"
+                                @click="anonymizePhrase = expectedAnonymizePhrase()"
+                            >
+                                ✍️ إدراج تلقائي
+                            </button>
+                        </div>
+                    </div>
+                    <div class="rounded-lg bg-white px-3 py-2 font-mono text-sm font-bold text-ink-900 border border-ink-200 tracking-wider text-center select-all">
+                        {{ expectedAnonymizePhrase() }}
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="block text-xs font-medium text-ink-700" for="admin-student-anonymize-confirmation">
+                        أدخل كود التأكيد أعلاه (أو اضغط "إدراج تلقائي"):
+                    </label>
+                    <AppInput
+                        v-model="anonymizePhrase"
+                        :placeholder="expectedAnonymizePhrase()"
+                        id="admin-student-anonymize-confirmation"
+                        autocomplete="off"
+                        class="font-mono text-sm"
+                    />
+                </div>
+
+                <div v-if="isTypingArabicText(anonymizePhrase)" class="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800 flex items-center justify-between">
+                    <span>⚠️ المطلوب إدخال الكود الإنجليزي أعلاه وليس النص العربي.</span>
+                    <button type="button" class="font-bold underline text-amber-900 hover:text-amber-950" @click="anonymizePhrase = expectedAnonymizePhrase()">
+                        اضغط هنا للإدراج
+                    </button>
+                </div>
             </div>
             <template #footer>
                 <AppButton variant="outline" :disabled="anonymizeBusy" @click="anonymizeOpen = false">{{ $t('common.cancel') }}</AppButton>
-                <AppButton variant="warning" :disabled="anonymizePhrase !== expectedAnonymizePhrase()" :loading="anonymizeBusy" @click="anonymizeStudent">{{ $t('students.anonymizeStudent') }}</AppButton>
+                <AppButton
+                    variant="warning"
+                    :disabled="!isAnonymizeValid"
+                    :loading="anonymizeBusy"
+                    @click="anonymizeStudent"
+                >
+                    {{ $t('students.anonymizeStudent') }}
+                </AppButton>
             </template>
         </AppModal>
 
         <AppModal :open="forceDeleteOpen" :title="$t('students.forceDeleteStudent')" size="md" :close-on-backdrop="false" @close="forceDeleteOpen = false">
             <div class="space-y-4">
-                <p class="text-sm font-medium text-rose-700">{{ $t('students.forceDeleteDetails') }}</p>
-                <label class="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                    <input v-model="forceDeleteHistoryConfirmed" type="checkbox" class="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500">
-                    <span>{{ $t('students.confirmDeleteAcademicHistory') }}</span>
+                <p class="text-sm font-medium text-rose-700 leading-relaxed">{{ $t('students.forceDeleteDetails') }}</p>
+
+                <!-- Checkbox for explicit academic history deletion -->
+                <label class="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-sm text-rose-800 cursor-pointer">
+                    <input v-model="forceDeleteHistoryConfirmed" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500">
+                    <span class="font-medium leading-snug">{{ $t('students.confirmDeleteAcademicHistory') }}</span>
                 </label>
-                <AppInput
-                    v-model="forceDeletePhrase"
-                    :label="$t('students.typeConfirmation')"
-                    id="admin-student-force-delete-confirmation"
-                    autocomplete="off"
-                />
-                <p class="rounded-lg bg-rose-50 p-3 font-mono text-xs text-rose-800">{{ expectedForceDeletePhrase() }}</p>
+
+                <!-- Confirmation code display with copy and auto-fill -->
+                <div class="rounded-xl border border-rose-200 bg-rose-50 p-3.5 space-y-2">
+                    <div class="flex items-center justify-between text-xs font-medium text-rose-800">
+                        <span>كود التأكيد المطلوب كتابته:</span>
+                        <div class="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-md bg-white border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 transition-colors shadow-2xs"
+                                @click="copyPhrase(expectedForceDeletePhrase())"
+                            >
+                                📋 نسخ الكود
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700 transition-colors shadow-2xs"
+                                @click="forceDeletePhrase = expectedForceDeletePhrase()"
+                            >
+                                ✍️ إدراج تلقائي
+                            </button>
+                        </div>
+                    </div>
+                    <div class="rounded-lg bg-white px-3 py-2 font-mono text-sm font-bold text-rose-900 border border-rose-200 tracking-wider text-center select-all">
+                        {{ expectedForceDeletePhrase() }}
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="block text-xs font-medium text-ink-700" for="admin-student-force-delete-confirmation">
+                        أدخل كود التأكيد أعلاه (أو اضغط "إدراج تلقائي"):
+                    </label>
+                    <AppInput
+                        v-model="forceDeletePhrase"
+                        :placeholder="expectedForceDeletePhrase()"
+                        id="admin-student-force-delete-confirmation"
+                        autocomplete="off"
+                        class="font-mono text-sm"
+                    />
+                </div>
+
+                <!-- Helpful guidance if user typed Arabic text instead of code -->
+                <div v-if="isTypingArabicText(forceDeletePhrase)" class="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800 flex items-center justify-between">
+                    <span>⚠️ المطلوب إدخال الكود الإنجليزي أعلاه وليس النص العربي.</span>
+                    <button type="button" class="font-bold underline text-amber-900 hover:text-amber-950" @click="forceDeletePhrase = expectedForceDeletePhrase()">
+                        اضغط هنا للإدراج
+                    </button>
+                </div>
             </div>
             <template #footer>
                 <AppButton variant="outline" :disabled="forceDeleteBusy" @click="forceDeleteOpen = false">{{ $t('common.cancel') }}</AppButton>
-                <AppButton variant="danger" :disabled="forceDeletePhrase !== expectedForceDeletePhrase() || !forceDeleteHistoryConfirmed" :loading="forceDeleteBusy" @click="forceDeleteStudent">{{ $t('students.forceDeleteStudent') }}</AppButton>
+                <AppButton
+                    variant="danger"
+                    :disabled="!isForceDeleteValid"
+                    :loading="forceDeleteBusy"
+                    @click="forceDeleteStudent"
+                >
+                    {{ $t('students.forceDeleteStudent') }}
+                </AppButton>
             </template>
         </AppModal>
     </div>

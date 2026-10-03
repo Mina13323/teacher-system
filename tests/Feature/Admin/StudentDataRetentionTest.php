@@ -343,4 +343,36 @@ class StudentDataRetentionTest extends ApiTestCase
             ])
             ->assertStatus(409);
     }
+
+    public function test_force_delete_and_anonymize_accept_case_insensitive_and_trimmed_confirmation(): void
+    {
+        $admin = $this->createUserWithRole(UserRole::Admin);
+        $studentA = $this->createStudent([
+            'email' => 'student-a@example.test',
+            'student_code' => 'HIST-010',
+        ]);
+        $studentB = $this->createStudent([
+            'email' => 'student-b@example.test',
+            'student_code' => 'HIST-011',
+        ]);
+
+        // Anonymize with lowercase and whitespace
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$studentA->id}/anonymize", [
+                'confirmation' => "  anonymize student {$studentA->id}  ",
+            ])
+            ->assertOk();
+
+        // Force delete with lowercase and whitespace
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/admin/students/{$studentB->id}/force-delete", [
+                'confirmation' => "  force delete student {$studentB->id}  ",
+                'delete_academic_history' => true,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('users', ['id' => $studentB->id]);
+    }
 }
+
+

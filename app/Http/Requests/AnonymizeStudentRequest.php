@@ -16,6 +16,18 @@ class AnonymizeStudentRequest extends FormRequest
     /**
      * @return array<string, mixed>
      */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('confirmation') && is_string($this->confirmation)) {
+            $this->merge([
+                'confirmation' => strtoupper(trim($this->confirmation)),
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         /** @var User|null $student */
