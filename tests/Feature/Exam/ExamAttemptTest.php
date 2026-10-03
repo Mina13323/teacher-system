@@ -47,6 +47,17 @@ class ExamAttemptTest extends ApiTestCase
         ]);
     }
 
+    public function test_starting_attempt_requires_rules_acknowledged(): void
+    {
+        [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", []);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['rules_acknowledged']);
+    }
+
     public function test_snapshot_is_frozen_at_start(): void
     {
         [$student, , $exam] = $this->enrolledStudentWithPublishedExam();
