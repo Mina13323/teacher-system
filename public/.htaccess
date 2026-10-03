@@ -37,7 +37,8 @@
     </FilesMatch>
 
     # 2. Static root files (including non-hashed media/icons) can refresh daily.
-    <FilesMatch "\.(png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot)$">
+    # Never apply this rule to service-worker entrypoints.
+    <FilesMatch "^(?!sw\.js$|push-sw\.js$).*\.(png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|css|js)$">
         Header set Cache-Control "public, max-age=86400"
     </FilesMatch>
 

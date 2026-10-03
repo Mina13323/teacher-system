@@ -25,12 +25,22 @@ class OptionController extends Controller
 
     public function store(CreateOptionRequest $request, Question $question): JsonResponse
     {
-        $option = Option::create([
-            'question_id' => $question->getKey(),
-            'option_text' => $request->validated('option_text'),
-            'is_correct' => $request->boolean('is_correct'),
-            'position' => $request->validated('position', (int) $question->options()->max('position') + 1),
-        ]);
+        $option = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $question) {
+            $isCorrect = $request->boolean('is_correct');
+            $isSingleChoice = $question->type === \App\Enums\QuestionType::SingleChoice
+                || $question->type?->value === 'single_choice';
+
+            if ($isCorrect && $isSingleChoice) {
+                $question->options()->update(['is_correct' => false]);
+            }
+
+            return Option::create([
+                'question_id' => $question->getKey(),
+                'option_text' => $request->validated('option_text'),
+                'is_correct' => $isCorrect,
+                'position' => $request->validated('position', (int) $question->options()->max('position') + 1),
+            ]);
+        });
 
         return $this->success(
             new OptionResource($option),
@@ -41,8 +51,21 @@ class OptionController extends Controller
 
     public function update(UpdateOptionRequest $request, Option $option): JsonResponse
     {
-        $option->fill($request->validated());
-        $option->save();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $option) {
+            $option->fill($request->validated());
+            $option->save();
+
+            // When marking an option as correct on a single-choice question,
+            // automatically unset is_correct on all other options of that question.
+            $question = $option->question;
+            $isSingleChoice = $question && ($question->type === \App\Enums\QuestionType::SingleChoice || $question->type?->value === 'single_choice');
+            if ($request->boolean('is_correct') && $isSingleChoice) {
+                Option::query()
+                    ->where('question_id', $option->question_id)
+                    ->where('id', '!=', $option->id)
+                    ->update(['is_correct' => false]);
+            }
+        });
 
         return $this->success(
             new OptionResource($option->fresh()),

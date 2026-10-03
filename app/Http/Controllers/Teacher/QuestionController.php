@@ -101,10 +101,18 @@ class QuestionController extends Controller
      */
     public function regradeSubmittedAttempts(RegradeQuestionAttemptsRequest $request, Question $question): JsonResponse
     {
+        $explicitCorrectOptionIds = null;
+        if ($request->has('correct_option_ids')) {
+            $explicitCorrectOptionIds = array_map('intval', (array) $request->input('correct_option_ids'));
+        } elseif ($request->filled('correct_option_id')) {
+            $explicitCorrectOptionIds = [(int) $request->input('correct_option_id')];
+        }
+
         $result = $this->regradeAttempts->execute(
             $request->user(),
             $question,
-            $request->validated('reason')
+            $request->validated('reason'),
+            $explicitCorrectOptionIds
         );
 
         return $this->success($result, 'Submitted attempts regraded.');

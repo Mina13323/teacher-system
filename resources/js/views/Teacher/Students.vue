@@ -640,26 +640,26 @@ onMounted(() => load(1));
 
         <!-- Filter Controls -->
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between no-print">
-            <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center flex-wrap">
-                <div class="w-full max-w-xs">
+            <div class="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2.5 flex-1">
+                <div class="w-full sm:w-64">
                     <AppInput v-model="search" :placeholder="$t('common.search') + '...'" id="student-search" @input="load(1)" />
                 </div>
-                <div class="w-full max-w-[180px]">
+                <div class="w-full sm:w-44">
                     <AppSelect v-model="yearFilter" :options="yearOptions" id="filter-year" @change="load(1)" />
                 </div>
-                <div class="w-full max-w-[180px]">
+                <div class="w-full sm:w-44">
                     <AppSelect v-model="subjectFilter" :options="subjectOptions" id="filter-subject" @change="load(1)" />
                 </div>
-                <div class="w-full max-w-[160px]">
+                <div class="w-full sm:w-40">
                     <AppSelect v-model="statusFilter" :options="statusOptions" id="filter-status" @change="load(1)" />
                 </div>
-                <div class="w-full max-w-[200px]">
+                <div class="w-full sm:w-48">
                     <AppSelect v-model="sortOrder" :options="sortOptions" id="filter-sort" @change="load(1)" />
                 </div>
                 <AppButton
                     :variant="showDuplicatesOnly ? 'primary' : 'outline'"
                     size="sm"
-                    class="whitespace-nowrap"
+                    class="w-full sm:w-auto justify-center whitespace-nowrap"
                     :class="showDuplicatesOnly ? '!bg-amber-600 hover:!bg-amber-700 !border-amber-600 !text-white font-bold' : ''"
                     @click="toggleDuplicates"
                 >

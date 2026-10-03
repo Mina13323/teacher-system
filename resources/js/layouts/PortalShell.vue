@@ -127,7 +127,7 @@ watch(() => route.path, () => {
             </div>
 
             <div class="flex items-center gap-1 sm:gap-2 shrink-0">
-                <LanguageSwitcher class="me-0.5 sm:me-1 scale-90 sm:scale-100" />
+                <LanguageSwitcher class="me-0.5 sm:me-1" />
                 <router-link
                     :to="notificationsRoute"
                     class="relative flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-ink-600 hover:bg-ink-100"

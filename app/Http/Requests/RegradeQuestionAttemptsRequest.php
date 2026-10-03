@@ -25,6 +25,9 @@ class RegradeQuestionAttemptsRequest extends FormRequest
         return [
             'confirmed' => ['required', 'accepted'],
             'reason' => ['nullable', 'string', 'max:1000'],
+            'correct_option_ids' => ['sometimes', 'array'],
+            'correct_option_ids.*' => ['integer'],
+            'correct_option_id' => ['sometimes', 'nullable', 'integer'],
         ];
     }
 }

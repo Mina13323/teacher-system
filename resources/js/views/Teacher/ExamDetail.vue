@@ -507,8 +507,14 @@ async function saveOption() {
 }
 async function toggleCorrect(q, option) {
     try {
-        await teacher.updateOption(option.id, { option_text: option.option_text, is_correct: !option.is_correct });
-        option.is_correct = !option.is_correct;
+        const nextCorrect = !option.is_correct;
+        await teacher.updateOption(option.id, { option_text: option.option_text, is_correct: nextCorrect });
+        option.is_correct = nextCorrect;
+        if (q.type === 'single_choice' && nextCorrect) {
+            q.options?.forEach((o) => {
+                if (o.id !== option.id) o.is_correct = false;
+            });
+        }
         toast.success(option.is_correct ? t('exams.markedCorrect') : t('exams.markedIncorrect'));
     } catch (e) {
         toast.error(e.message);
@@ -524,7 +530,15 @@ async function regradeQuestionAttempts() {
 
     regradeBusy.value = true;
     try {
-        const result = await teacher.regradeQuestionAttempts(question.id, { confirmed: true });
+        const payload = { confirmed: true };
+        const correctIds = (question.options || [])
+            .filter((o) => Boolean(o.is_correct))
+            .map((o) => o.id);
+        if (correctIds.length > 0) {
+            payload.correct_option_ids = correctIds;
+        }
+
+        const result = await teacher.regradeQuestionAttempts(question.id, payload);
         const regraded = Number(result?.attempts_regraded) || 0;
         const scoresChanged = Number(result?.scores_changed) || 0;
         toast.success(regraded === 0
@@ -850,48 +864,50 @@ function attemptStatusLabel(statusOrAttempt) {
             <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
                 <!-- Task toolbar: group, search, export -->
-                <div class="flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-white p-3 shadow-sm">
-                    <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm">
-                        <button type="button" class="px-3 py-1.5 transition font-medium" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
-                        <button type="button" class="px-3 py-1.5 transition font-medium" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
+                <div class="flex flex-col lg:flex-row lg:items-center gap-3 rounded-xl border border-ink-100 bg-white p-3.5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 min-w-0">
+                        <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm shrink-0 w-full sm:w-auto">
+                            <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
+                            <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
+                        </div>
+
+                        <!-- Search Input for Student Name, Code, Email, Phone -->
+                        <div class="relative flex-1 min-w-0">
+                            <input
+                                v-model="studentSearch"
+                                type="search"
+                                class="w-full rounded-lg border border-ink-200 ps-9 pe-8 py-2 text-sm focus:border-terracotta-500 focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+                                :placeholder="$t('exams.searchStudentsPlaceholder')"
+                                @input="onStudentSearch"
+                            />
+                            <span class="absolute inset-y-0 start-0 flex items-center ps-2.5 pointer-events-none text-ink-400 text-sm">
+                                🔍
+                            </span>
+                            <button
+                                v-if="studentSearch"
+                                type="button"
+                                class="absolute inset-y-0 end-0 flex items-center pe-2.5 text-ink-400 hover:text-ink-700"
+                                @click="clearStudentSearch"
+                            >
+                                ✕
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Search Input for Student Name, Code, Email, Phone -->
-                    <div class="relative flex-1 min-w-[15rem]">
-                        <input
-                            v-model="studentSearch"
-                            type="search"
-                            class="w-full rounded-lg border border-ink-200 ps-9 pe-8 py-1.5 text-sm focus:border-terracotta-500 focus:outline-none focus:ring-1 focus:ring-terracotta-500"
-                            :placeholder="$t('exams.searchStudentsPlaceholder')"
-                            @input="onStudentSearch"
-                        />
-                        <span class="absolute inset-y-0 start-0 flex items-center ps-2.5 pointer-events-none text-ink-400 text-sm">
-                            🔍
-                        </span>
-                        <button
-                            v-if="studentSearch"
-                            type="button"
-                            class="absolute inset-y-0 end-0 flex items-center pe-2.5 text-ink-400 hover:text-ink-700"
-                            @click="clearStudentSearch"
-                        >
-                            ✕
-                        </button>
+                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2.5 w-full sm:w-auto">
+                        <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                        <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                        <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="col-span-2 sm:col-span-1 w-full sm:w-28" @update:model-value="onAttemptFilterChange" />
                     </div>
 
-                    <div class="flex flex-wrap items-end gap-2">
-                        <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="min-w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="min-w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="w-28" @update:model-value="onAttemptFilterChange" />
-                    </div>
-
-                    <div class="ms-auto flex flex-wrap items-center justify-end gap-2">
-                        <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" @click="deleteSelectedOpen = true">
+                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-2 w-full lg:w-auto pt-2 border-t border-ink-100 lg:border-t-0 lg:pt-0">
+                        <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
                             {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
                         </AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
+                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
                     </div>
                 </div>
 
@@ -930,19 +946,19 @@ function attemptStatusLabel(statusOrAttempt) {
                             <div v-if="expandedStudent === g.student_id" class="divide-y divide-ink-100 border-t border-ink-100 bg-ink-50/40">
                                 <div v-for="a in g.attempts" :key="a.id" class="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
                                     <div class="min-w-0 flex-1">
-                                        <p class="text-xs text-ink-400">
+                                        <p class="text-xs text-ink-500">
                                             {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
-                                            {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span> ({{ a.percentage ?? '—' }}%)
+                                            {{ $t('exams.scoreLabel') }} <strong class="text-ink-800">{{ a.score ?? '—' }}</strong> ({{ a.percentage ?? '—' }}%)
                                             · {{ a.outcome }}
                                             <span v-if="a.end_reason" class="ms-1">· {{ a.end_reason }}</span>
                                         </p>
                                     </div>
-                                    <div class="flex items-center justify-between sm:justify-end gap-2">
+                                    <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
                                         <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
-                                        <div class="flex items-center gap-2">
-                                            <AppButton variant="outline" size="sm" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
-                                            <router-link :to="`/teacher/integrity/attempts/${a.id}`">
-                                                <AppButton variant="ghost" size="sm">🔍 {{ $t('exams.integrityAction') }}</AppButton>
+                                        <div class="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+                                            <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                            <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
+                                                <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">🔍 {{ $t('exams.integrityAction') }}</AppButton>
                                             </router-link>
                                         </div>
                                     </div>
@@ -965,10 +981,10 @@ function attemptStatusLabel(statusOrAttempt) {
                 <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                     <div class="divide-y divide-ink-100">
                         <div v-for="a in attempts" :key="a.id" class="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="flex items-start sm:items-center gap-3 min-w-0 flex-1">
                                 <input
                                     type="checkbox"
-                                    class="h-4 w-4 shrink-0 rounded border-ink-300 text-rose-600 focus:ring-rose-400"
+                                    class="mt-1 sm:mt-0 h-4 w-4 shrink-0 rounded border-ink-300 text-rose-600 focus:ring-rose-400"
                                     :checked="selectedAttemptIds.includes(Number(a.id))"
                                     :disabled="a.status === 'in_progress' && !selectedAttemptIds.includes(Number(a.id))"
                                     :aria-label="$t('exams.selectAttempt', { n: a.attempt_number, student: a.student?.name })"
@@ -977,38 +993,40 @@ function attemptStatusLabel(statusOrAttempt) {
                                 />
                                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600">{{ (a.student?.name || 'U').slice(0, 1) }}</div>
                                 <div class="min-w-0 flex-1">
-                                    <div class="flex flex-wrap items-center gap-1.5">
-                                        <p class="font-medium text-ink-800" dir="auto">{{ a.student?.name }}</p>
-                                        <bdi dir="ltr" class="inline-block font-mono text-xs text-ink-500">({{ a.student?.student_code || '---' }})</bdi>
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                                            <p class="font-medium text-ink-800 text-sm sm:text-base leading-snug" dir="auto">{{ a.student?.name }}</p>
+                                            <bdi dir="ltr" class="inline-block font-mono text-xs text-ink-500 bg-ink-50 px-1.5 py-0.5 rounded font-semibold">({{ a.student?.student_code || '---' }})</bdi>
+                                        </div>
+                                        <div class="sm:hidden shrink-0">
+                                            <AppBadge :tone="attemptTone(a)">
+                                                {{ attemptStatusLabel(a) }}
+                                            </AppBadge>
+                                        </div>
                                     </div>
-                                    <p class="mt-0.5 text-xs text-ink-400">
-                                        {{ $t('exams.attemptNumber', { n: a.attempt_number }) }} ·
-                                        {{ $t('exams.scoreLabel') }} <span class="font-bold text-ink-700">{{ a.score ?? '—' }}</span>
-                                        ({{ a.percentage ?? '—' }}%)
-                                        <span v-if="a.grades_published_at || a.status === 'published'" class="text-emerald-600 font-semibold ms-2">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
-                                        <span v-else-if="a.status === 'in_progress'" class="text-sky-600 font-semibold ms-2">⏱ {{ $t('exams.inProgressNoticeBadge') }}</span>
-                                        <span v-else-if="a.status === 'expired'" class="text-rose-600 font-semibold ms-2">⌛ {{ $t('exams.statusExpiredLabel') }}</span>
-                                        <span v-else class="text-amber-600 font-semibold ms-2">⏳ {{ $t('exams.gradingDraftBadge') }}</span>
-                                    </p>
-                                </div>
-                                <div class="sm:hidden shrink-0">
-                                    <AppBadge :tone="attemptTone(a)">
-                                        {{ attemptStatusLabel(a) }}
-                                    </AppBadge>
+                                    <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-500">
+                                        <span>{{ $t('exams.attemptNumber', { n: a.attempt_number }) }}</span>
+                                        <span class="text-ink-300">·</span>
+                                        <span>{{ $t('exams.scoreLabel') }} <strong class="text-ink-800">{{ a.score ?? '—' }}</strong> ({{ a.percentage ?? '—' }}%)</span>
+                                        <span v-if="a.grades_published_at || a.status === 'published'" class="text-emerald-700 font-medium">✓ {{ $t('exams.gradesRecordedBadge') }}</span>
+                                        <span v-else-if="a.status === 'in_progress'" class="text-sky-700 font-medium">⏱ {{ $t('exams.inProgressNoticeBadge') }}</span>
+                                        <span v-else-if="a.status === 'expired'" class="text-rose-700 font-medium">⌛ {{ $t('exams.statusExpiredLabel') }}</span>
+                                        <span v-else class="text-amber-700 font-medium">⏳ {{ $t('exams.gradingDraftBadge') }}</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
+                            <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2.5 sm:border-0 sm:pt-0">
                                 <div class="hidden sm:block">
                                     <AppBadge :tone="attemptTone(a)">
                                         {{ attemptStatusLabel(a) }}
                                     </AppBadge>
                                 </div>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
-                                    <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center" @click="openGrading(a)">
+                                    <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
                                         📝 {{ $t('exams.gradeAction') }}
                                     </AppButton>
                                     <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
-                                        <AppButton variant="ghost" size="sm" class="w-full text-center justify-center">
+                                        <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">
                                             🔍 {{ $t('exams.integrityAction') }}
                                         </AppButton>
                                     </router-link>
