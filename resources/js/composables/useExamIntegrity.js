@@ -259,7 +259,7 @@ export function useExamIntegrity(options = {}) {
     }
 
     function onPaste(e) {
-        if (isEditableTarget(e.target) || !rules().prevent_paste) return;
+        if (!rules().prevent_paste) return;
         e.preventDefault();
         record('PASTE_ATTEMPT');
     }
@@ -277,20 +277,25 @@ export function useExamIntegrity(options = {}) {
     }
 
     function onKeydown(e) {
-        // Never interfere with active text editing, IME composition or
-        // accessibility shortcuts inside an editable response control.
-        if (isEditableTarget(e.target) || e.isComposing || e.keyCode === 229) return;
+        if (e.isComposing || e.keyCode === 229) return;
 
         const modifier = e.ctrlKey || e.metaKey;
         const key = e.key?.toLowerCase();
+
+        if (modifier && rules().prevent_paste && (key === 'v' || (e.shiftKey && e.key === 'Insert'))) {
+            e.preventDefault();
+            record('PASTE_ATTEMPT', { source: 'keyboard-shortcut' });
+            return;
+        }
+
+        // Never interfere with active text editing, IME composition or
+        // accessibility shortcuts inside an editable response control.
+        if (isEditableTarget(e.target)) return;
+
         if (modifier && rules().prevent_copy && ['a', 'c', 'x'].includes(key)) {
             e.preventDefault();
             if (key === 'c') record('COPY_ATTEMPT', { source: 'keyboard-shortcut' });
             if (key === 'x') record('CUT_ATTEMPT', { source: 'keyboard-shortcut' });
-        }
-        if (modifier && rules().prevent_paste && key === 'v') {
-            e.preventDefault();
-            record('PASTE_ATTEMPT', { source: 'keyboard-shortcut' });
         }
 
         if (!rules().detect_keyboard_shortcuts) return;

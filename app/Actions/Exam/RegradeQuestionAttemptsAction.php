@@ -264,7 +264,7 @@ class RegradeQuestionAttemptsAction
 
                         $attempt->score = $result['earned_points'];
                         $attempt->percentage = $result['percentage'];
-                        $attempt->raw_percentage = $result['raw_percentage'];
+                        $attempt->raw_percentage = round($result['raw_percentage'], 3);
                         $attempt->status = $wasPublished
                             ? ExamAttemptStatus::Published->value
                             : ($result['requires_manual_grading']
@@ -279,7 +279,7 @@ class RegradeQuestionAttemptsAction
                             || $oldOutcome !== $newOutcome
                             || ($oldRawPercentage === null
                                 ? $attempt->raw_percentage !== null
-                                : abs((float) $oldRawPercentage - (float) $attempt->raw_percentage) > 0.000001);
+                                : abs((float) $oldRawPercentage - (float) $attempt->raw_percentage) > 0.001);
 
                         $answerChanged = $oldAnswerCorrect !== $answer->is_correct
                             || $oldAnswerPoints !== $answer->points_earned;

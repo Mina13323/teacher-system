@@ -724,10 +724,103 @@ function finish() {
     router.push('/student/exams');
 }
 
+let lastClipboardToastTime = 0;
+function showClipboardToast(msg) {
+    const now = Date.now();
+    if (now - lastClipboardToastTime > 1500) {
+        lastClipboardToastTime = now;
+        toast.error(msg);
+    }
+}
+
+function isExamActive() {
+    return Boolean(attempt.value && attempt.value.status === 'in_progress' && !result.value);
+}
+
+function handleCopy(e) {
+    if (!isExamActive()) return;
+    e.preventDefault();
+    showClipboardToast(t('examTake.copyBlocked'));
+}
+
+function handleCut(e) {
+    if (!isExamActive()) return;
+    e.preventDefault();
+    showClipboardToast(t('examTake.copyBlocked'));
+}
+
+function handlePaste(e) {
+    if (!isExamActive()) return;
+    e.preventDefault();
+    showClipboardToast(t('examTake.pasteBlocked'));
+}
+
+function handleContextMenu(e) {
+    if (!isExamActive()) return;
+    e.preventDefault();
+}
+
+function handleDragDrop(e) {
+    if (!isExamActive()) return;
+    e.preventDefault();
+}
+
+function handleKeyDown(e) {
+    if (!isExamActive()) return;
+
+    const modifier = e.ctrlKey || e.metaKey;
+    const key = e.key?.toLowerCase();
+
+    // Block Ctrl+C (copy), Ctrl+X (cut)
+    if (modifier && ['c', 'x'].includes(key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        showClipboardToast(t('examTake.copyBlocked'));
+        return;
+    }
+
+    // Block Ctrl+V (paste) and Shift+Insert (paste)
+    if ((modifier && key === 'v') || (e.shiftKey && e.key === 'Insert')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showClipboardToast(t('examTake.pasteBlocked'));
+        return;
+    }
+
+    // Block Ctrl+Insert (copy)
+    if (e.ctrlKey && e.key === 'Insert') {
+        e.preventDefault();
+        e.stopPropagation();
+        showClipboardToast(t('examTake.copyBlocked'));
+        return;
+    }
+
+    // Block Ctrl+P (print), Ctrl+S (save), Ctrl+U (view source)
+    if (modifier && ['p', 's', 'u'].includes(key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
+
+    // Block F12 and Ctrl+Shift+I/J/C (Developer tools)
+    if (e.key === 'F12' || (modifier && e.shiftKey && ['i', 'j', 'c'].includes(key))) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
+}
+
 onMounted(() => {
     loadAttempt();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    window.addEventListener('copy', handleCopy);
+    window.addEventListener('cut', handleCut);
+    window.addEventListener('paste', handlePaste);
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('dragover', handleDragDrop);
+    window.addEventListener('drop', handleDragDrop);
     startFlushTimer();
 });
 
@@ -742,6 +835,13 @@ onBeforeUnmount(() => {
     persistRecovery();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
+    window.removeEventListener('copy', handleCopy);
+    window.removeEventListener('cut', handleCut);
+    window.removeEventListener('paste', handlePaste);
+    window.removeEventListener('contextmenu', handleContextMenu);
+    window.removeEventListener('keydown', handleKeyDown, true);
+    window.removeEventListener('dragover', handleDragDrop);
+    window.removeEventListener('drop', handleDragDrop);
 });
 </script>
 
@@ -832,7 +932,14 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Active attempt -->
-        <template v-else-if="attempt">
+        <div
+            v-else-if="attempt"
+            class="space-y-4 exam-protected-screen select-none"
+            @copy="handleCopy"
+            @paste="handlePaste"
+            @cut="handleCut"
+            @contextmenu="handleContextMenu"
+        >
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-100 bg-white px-3 py-3 shadow-sm sm:px-5 sm:py-4">
                 <div class="min-w-0 flex-1">
                     <h1 class="break-words text-base font-semibold text-ink-900 sm:text-lg" dir="auto">{{ attempt.exam_title }}</h1>
@@ -906,6 +1013,10 @@ onBeforeUnmount(() => {
                         :placeholder="$t('examTake.essayPlaceholder')"
                         :disabled="blocked"
                         dir="auto"
+                        @paste.prevent="handlePaste"
+                        @copy.prevent="handleCopy"
+                        @cut.prevent="handleCut"
+                        @drop.prevent="handleDragDrop"
                     />
                     <div class="flex justify-end">
                         <AppButton size="sm" variant="outline" :loading="savingAnswer" @click="saveEssay(currentQuestion.id)">
@@ -953,6 +1064,10 @@ onBeforeUnmount(() => {
                         dir="auto"
                         @update:model-value="onMcqExplanationInput(currentQuestion.id, $event)"
                         @blur="saveMcqExplanation(currentQuestion.id)"
+                        @paste.prevent="handlePaste"
+                        @copy.prevent="handleCopy"
+                        @cut.prevent="handleCut"
+                        @drop.prevent="handleDragDrop"
                     />
                 </div>
             </div>
@@ -982,7 +1097,7 @@ onBeforeUnmount(() => {
             <div class="flex justify-end pt-2">
                 <AppButton variant="success" :loading="submitting" :disabled="submittingBusy || blocked || missingRequiredExplanations.length > 0" @click="confirmOpen = true">{{ $t('examTake.submitExam') }}</AppButton>
             </div>
-        </template>
+        </div>
 
         <ConfirmDialog
             :open="confirmOpen"
@@ -1005,10 +1120,30 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Best-effort selection discouragement for question/option text only. Editable
-   answer fields are intentionally outside this class and remain selectable. */
+.exam-protected-screen {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.exam-protected-screen ::selection {
+    background: transparent;
+}
+
+.exam-protected-screen textarea,
+.exam-protected-screen input {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
 .exam-protected-text {
     -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
 }

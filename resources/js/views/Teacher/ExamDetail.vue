@@ -541,9 +541,13 @@ async function regradeQuestionAttempts() {
         const result = await teacher.regradeQuestionAttempts(question.id, payload);
         const regraded = Number(result?.attempts_regraded) || 0;
         const scoresChanged = Number(result?.scores_changed) || 0;
-        toast.success(regraded === 0
-            ? t('exams.regradeNoAttempts')
-            : t('exams.regradeSuccess', { attempts: regraded, scores: scoresChanged }));
+        if (regraded === 0) {
+            toast.info(t('exams.regradeNoAttempts'));
+        } else if (scoresChanged === 0) {
+            toast.info(t('exams.regradeNoChange', { attempts: regraded }));
+        } else {
+            toast.success(t('exams.regradeSuccess', { attempts: regraded, scores: scoresChanged }));
+        }
         regradeTarget.value = null;
         await refresh();
     } catch (e) {
