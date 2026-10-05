@@ -70,7 +70,7 @@ class ExamController extends Controller
             return [
                 'id' => $attempt->id,
                 'attempt_number' => $attempt->attempt_number,
-                'status' => $attempt->status?->value,
+                'status' => $attempt->displayStatus(),
                 'grades_published' => $published,
                 'score' => $published ? $attempt->score : null,
                 'percentage' => $published ? $attempt->percentage : null,

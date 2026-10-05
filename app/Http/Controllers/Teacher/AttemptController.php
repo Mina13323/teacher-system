@@ -22,20 +22,7 @@ class AttemptController extends Controller
     {
         $this->authorize('viewStaff', $attempt);
 
-        if ($attempt->status?->isInProgress()) {
-            $exam = $attempt->exam;
-            if ($attempt->expires_at === null && $attempt->started_at !== null && $exam) {
-                $computedExpiry = $exam->calculateAttemptExpiry($attempt->started_at);
-                if ($computedExpiry && $computedExpiry->isPast()) {
-                    $attempt->expires_at = $computedExpiry;
-                    $attempt->save();
-                }
-            }
 
-            if ($attempt->isExpired()) {
-                $attempt = app(\App\Actions\Exam\FinalizeExpiredAttemptAction::class)->execute($attempt);
-            }
-        }
 
         $attempt->load(['exam', 'student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions']);
 

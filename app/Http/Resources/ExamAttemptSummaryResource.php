@@ -16,7 +16,7 @@ class ExamAttemptSummaryResource extends JsonResource
             'exam_id' => $this->exam_id,
             'student_id' => $this->student_id,
             'attempt_number' => $this->attempt_number,
-            'status' => $this->status?->value,
+            'status' => $this->resource->displayStatus(),
             'grades_published' => $this->grades_published_at !== null,
             'score' => $this->score,
             'percentage' => $this->percentage,

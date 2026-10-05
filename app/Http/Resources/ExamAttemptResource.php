@@ -48,7 +48,7 @@ class ExamAttemptResource extends JsonResource
             'exam_id' => $this->exam_id,
             'exam_title' => $this->whenLoaded('exam', fn () => $this->exam->title),
             'attempt_number' => $this->attempt_number,
-            'status' => $this->status?->value,
+            'status' => $this->resource->displayStatus(),
             'started_at' => $this->started_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),
             'expires_at' => $this->expires_at?->toISOString(),

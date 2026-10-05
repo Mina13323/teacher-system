@@ -46,7 +46,7 @@ class SaveExamAnswerAction
         }
 
         if ($attempt->isExpired()) {
-            $this->expireAttempt($attempt);
+            app(FinalizeExpiredAttemptAction::class)->execute($attempt);
             throw new InvalidAttemptStateException('This attempt has expired.');
         }
 
@@ -56,28 +56,56 @@ class SaveExamAnswerAction
             ? array_values(array_unique(array_map('intval', $optionIds)))
             : ($optionId !== null ? [(int) $optionId] : []);
 
-        DB::transaction(function () use ($attempt, $questionId, $selection, $answerText, $optionIds, $explanation, $explanationProvided) {
+        /** @var ExamAttemptQuestion|null $attemptQuestion */
+        $attemptQuestion = ExamAttemptQuestion::query()
+            ->where('attempt_id', $attempt->getKey())
+            ->where('question_id', $questionId)
+            ->first();
+
+        if (! $attemptQuestion) {
+            throw new InvalidAttemptStateException('This question is not part of the attempt.');
+        }
+
+        $isEssay = $attemptQuestion->question_type === QuestionType::Essay->value;
+
+        if (! $isEssay) {
+            if ($selection === []) {
+                if ($optionIds === null) {
+                    throw new InvalidAttemptStateException('An option must be selected for multiple-choice questions.');
+                }
+            } else {
+                $snapshotOptionIds = ExamAttemptOption::query()
+                    ->where('attempt_question_id', $attemptQuestion->getKey())
+                    ->pluck('option_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                foreach ($selection as $selectedId) {
+                    if (! in_array($selectedId, $snapshotOptionIds, true)) {
+                        throw new InvalidAttemptStateException('This option does not belong to the chosen question.');
+                    }
+                }
+
+                $isMulti = $attemptQuestion->question_type === QuestionType::MultipleChoice->value;
+                if (! $isMulti && count($selection) > 1) {
+                    throw new InvalidAttemptStateException('Only one option can be selected for a single-choice question.');
+                }
+            }
+        }
+
+        DB::transaction(function () use ($attempt, $attemptQuestion, $questionId, $selection, $answerText, $optionIds, $explanation, $explanationProvided, $isEssay) {
             $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
 
-            if (! $locked->status->isInProgress()) {
+            if (! $locked || ! $locked->status->isInProgress()) {
                 throw new InvalidAttemptStateException('This attempt is already completed.');
             }
 
             if ($locked->isExpired()) {
+                app(FinalizeExpiredAttemptAction::class)->execute($locked);
                 throw new InvalidAttemptStateException('This attempt has expired.');
             }
 
-            /** @var ExamAttemptQuestion|null $attemptQuestion */
-            $attemptQuestion = ExamAttemptQuestion::query()
-                ->where('attempt_id', $locked->getKey())
-                ->where('question_id', $questionId)
-                ->first();
-
-            if (! $attemptQuestion) {
-                throw new InvalidAttemptStateException('This question is not part of the attempt.');
-            }
-
-            if ($attemptQuestion->question_type === QuestionType::Essay->value) {
+            if ($isEssay) {
                 ExamAnswer::updateOrCreate(
                     [
                         'attempt_id' => $locked->getKey(),
@@ -93,46 +121,17 @@ class SaveExamAnswerAction
                 return;
             }
 
-            // Choice question: every selected id must belong to the frozen
-            // snapshot of THIS question, and the set size must match the type.
-            if ($selection === []) {
-                if ($optionIds !== null) {
-                    // Explicit empty set from a multi-select aware client:
-                    // clear the selection (question returns to "unanswered").
-                    ExamAnswer::query()
-                        ->where('attempt_id', $locked->getKey())
-                        ->where('question_id', $questionId)
-                        ->delete(); // cascades exam_answer_options rows
+            // Choice question: clear answer if empty selection sent
+            if ($selection === [] && $optionIds !== null) {
+                ExamAnswer::query()
+                    ->where('attempt_id', $locked->getKey())
+                    ->where('question_id', $questionId)
+                    ->delete();
 
-                    return;
-                }
-
-                // Legacy clients must always send a selection.
-                throw new InvalidAttemptStateException('An option must be selected for multiple-choice questions.');
+                return;
             }
 
-            $snapshotOptionIds = ExamAttemptOption::query()
-                ->where('attempt_question_id', $attemptQuestion->getKey())
-                ->pluck('option_id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
-
-            foreach ($selection as $selectedId) {
-                if (! in_array($selectedId, $snapshotOptionIds, true)) {
-                    throw new InvalidAttemptStateException('This option does not belong to the chosen question.');
-                }
-            }
-
-            $isMulti = $attemptQuestion->question_type === QuestionType::MultipleChoice->value;
-
-            if (! $isMulti && count($selection) > 1) {
-                throw new InvalidAttemptStateException('Only one option can be selected for a single-choice question.');
-            }
-
-            /** @var ExamAnswer $answer */
             $answerValues = [
-                // Mirror the single selection for legacy readers; null for
-                // a true multi-select set.
                 'option_id' => count($selection) === 1 ? $selection[0] : null,
                 'answer_text' => null,
                 'answered_at' => now(),
@@ -152,23 +151,32 @@ class SaveExamAnswerAction
                 $answerValues
             );
 
-            // Replace the selection set atomically (idempotent re-saves).
-            $answer->selectedOptions()->delete();
-            foreach ($selection as $selectedId) {
-                ExamAnswerOption::create([
+            // Sync answer options efficiently: skip churn if already matching
+            $currentOptions = ExamAnswerOption::query()
+                ->where('answer_id', $answer->getKey())
+                ->pluck('option_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            sort($currentOptions);
+            $sortedSelection = $selection;
+            sort($sortedSelection);
+
+            if ($currentOptions !== $sortedSelection) {
+                ExamAnswerOption::query()->where('answer_id', $answer->getKey())->delete();
+                $now = now();
+                $rows = array_map(fn ($id) => [
                     'answer_id' => $answer->getKey(),
-                    'option_id' => $selectedId,
-                ]);
+                    'option_id' => $id,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ], $selection);
+                if (! empty($rows)) {
+                    ExamAnswerOption::insert($rows);
+                }
             }
         });
 
-        return $attempt->fresh();
-    }
-
-    private function expireAttempt(ExamAttempt $attempt): void
-    {
-        $attempt->status = ExamAttemptStatus::Expired->value;
-        $attempt->active_key = null;
-        $attempt->save();
+        return $attempt;
     }
 }

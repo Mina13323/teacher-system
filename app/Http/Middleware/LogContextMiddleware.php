@@ -4,38 +4,87 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * PHASE 5 §42 — Structured log/error context.
+ * PHASE 5 §42 & Production Observability Middleware.
  *
- * Every request carries a `request_id` plus safe actor/route context into the
- * logs, so failures can be traced end-to-end (request → route → role → attempt
- * when the route has one). Never logs credentials, tokens or answer content —
- * only identifiers and route metadata.
+ * Tracks request execution duration, database query metrics (count, total DB time,
+ * slowest query), and safe structured context (request_id, route, method, status,
+ * user_id, attempt_id).
+ *
+ * CRITICAL SAFETY: Never logs passwords, tokens, cookies, auth headers, or request bodies.
  */
 class LogContextMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $requestId = (string) (Str::uuid());
+        $startTime = microtime(true);
+        $requestId = (string) Str::uuid();
 
-        $context = [
+        $queryCount = 0;
+        $totalDbTime = 0.0;
+        $slowestQueryTime = 0.0;
+
+        DB::listen(function ($query) use (&$queryCount, &$totalDbTime, &$slowestQueryTime) {
+            $queryCount++;
+            $time = (float) $query->time; // in milliseconds in Laravel
+            $totalDbTime += $time;
+            if ($time > $slowestQueryTime) {
+                $slowestQueryTime = $time;
+            }
+        });
+
+        $initialContext = [
             'request_id' => $requestId,
             'route' => $request->route()?->getName() ?? $request->path(),
             'method' => $request->method(),
-            'user_id' => $request->user()?->getAuthIdentifier(),
-            'user_role' => $request->user()?->roles?->first()?->name,
             'attempt_id' => (fn ($a) => is_object($a) ? $a->getKey() : $a)($request->route('attempt')),
         ];
-        $context = array_filter($context, fn ($v) => $v !== null);
 
-        // Shared for every log line emitted during this request.
-        \Illuminate\Support\Facades\Log::withContext($context);
+        Log::withContext(array_filter($initialContext, fn ($v) => $v !== null));
 
-        $response = $next($request);
+        try {
+            $response = $next($request);
+        } finally {
+            $durationMs = round((microtime(true) - $startTime) * 1000, 2);
+            $user = $request->user();
+            $attempt = $request->route('attempt');
+            $attemptId = is_object($attempt) ? $attempt->getKey() : $attempt;
+            $status = isset($response) ? $response->getStatusCode() : 500;
+
+            $metrics = [
+                'request_id' => $requestId,
+                'route' => $request->route()?->getName() ?? $request->path(),
+                'method' => $request->method(),
+                'status' => $status,
+                'duration_ms' => $durationMs,
+                'db_queries' => $queryCount,
+                'db_duration_ms' => round($totalDbTime, 2),
+                'slowest_query_ms' => round($slowestQueryTime, 2),
+                'user_id' => $user?->getAuthIdentifier(),
+                'attempt_id' => $attemptId,
+            ];
+
+            // Re-apply full context including user/metrics for any downstream error handlers
+            Log::withContext(array_filter($metrics, fn ($v) => $v !== null));
+
+            // Structured request performance logging:
+            // Log as warning if request duration or query time crosses threshold
+            if ($durationMs >= 2000 || $slowestQueryTime >= 500) {
+                Log::warning('api.request.slow', $metrics);
+            } else {
+                Log::info('api.request.completed', $metrics);
+            }
+        }
+
         $response->headers->set('X-Request-Id', $requestId);
+        $response->headers->set('X-Request-Duration-Ms', (string) $durationMs);
+        $response->headers->set('X-DB-Queries', (string) $queryCount);
+        $response->headers->set('X-DB-Duration-Ms', (string) round($totalDbTime, 2));
 
         return $response;
     }

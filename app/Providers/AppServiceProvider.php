@@ -83,10 +83,14 @@ class AppServiceProvider extends ServiceProvider
             if ($identifier !== '') {
                 $email = mb_strtolower($identifier);
                 $studentCode = mb_strtoupper($identifier);
-                $userId = User::query()
-                    ->where('email', $email)
-                    ->orWhere('student_code', $studentCode)
-                    ->value('id');
+                $userId = \Illuminate\Support\Facades\Cache::remember(
+                    'login_uid:'.hash('sha256', $email),
+                    300,
+                    fn () => User::query()
+                        ->where('email', $email)
+                        ->orWhere('student_code', $studentCode)
+                        ->value('id')
+                );
                 $accountKey = $userId !== null
                     ? 'user:'.$userId
                     : 'identifier:'.hash('sha256', $email);

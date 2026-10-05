@@ -37,15 +37,37 @@ class ProcessExpiredAttemptsCommand extends Command
         $failed = 0;
 
         ExamAttempt::query()
+            ->with('exam')
             ->where('status', ExamAttemptStatus::InProgress->value)
-            ->where('expires_at', '<', now())
-            ->orderBy('expires_at')
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereNotNull('expires_at')
+                        ->where('expires_at', '<=', now());
+                })->orWhere(function ($q) {
+                    $q->whereNull('expires_at')
+                        ->whereNotNull('started_at');
+                })->orWhereHas('exam', function ($examQ) {
+                    $examQ->whereNotNull('ends_at')
+                        ->where('ends_at', '<=', now());
+                });
+            })
+            ->orderBy('id')
             ->limit($limit)
             ->get()
             ->each(function (ExamAttempt $attempt) use ($finalizeExpired, &$processed, &$failed) {
                 try {
-                    $finalizeExpired->execute($attempt);
-                    $processed++;
+                    if ($attempt->expires_at === null && $attempt->started_at !== null && $attempt->exam !== null) {
+                        $computedExpiry = $attempt->exam->calculateAttemptExpiry($attempt->started_at);
+                        if ($computedExpiry && $computedExpiry->isPast()) {
+                            $attempt->expires_at = $computedExpiry;
+                            $attempt->save();
+                        }
+                    }
+
+                    if ($attempt->isExpired()) {
+                        $finalizeExpired->execute($attempt);
+                        $processed++;
+                    }
                 } catch (\Throwable $e) {
                     $failed++;
                     $this->error("Attempt {$attempt->getKey()}: {$e->getMessage()}");

@@ -34,7 +34,7 @@ class GradeExamAttemptAction
             'answers.selectedOptions',
         ]);
 
-        return DB::transaction(function () use ($attempt) {
+        $run = function () use ($attempt) {
             $answersByQuestion = $attempt->answers->keyBy('question_id');
 
             foreach ($attempt->attemptQuestions as $attemptQuestion) {
@@ -86,7 +86,9 @@ class GradeExamAttemptAction
             if (! $result['requires_manual_grading'] && ($attempt->exam?->show_result_immediately ?? true)) {
                 $attempt->grades_published_at = $now;
                 if ($attempt->student) {
-                    $attempt->student->notify(new \App\Notifications\ResultAvailableNotification($attempt));
+                    DB::afterCommit(function () use ($attempt) {
+                        $attempt->student->notify(new \App\Notifications\ResultAvailableNotification($attempt));
+                    });
                 }
             }
 
@@ -96,6 +98,8 @@ class GradeExamAttemptAction
             $attempt->save();
 
             return $attempt->fresh();
-        });
+        };
+
+        return DB::transactionLevel() > 0 ? $run() : DB::transaction($run);
     }
 }

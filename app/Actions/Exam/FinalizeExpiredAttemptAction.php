@@ -57,12 +57,16 @@ class FinalizeExpiredAttemptAction
 
                 $graded = $this->gradeAttempt->execute($locked->fresh());
 
-                $this->auditLog->execute('attempt.auto_submit', $graded, [
+                $auditData = [
                     'student_id' => $graded->student_id,
                     'exam_id' => $graded->exam_id,
                     'submitted_at' => $graded->submitted_at?->toISOString(),
                     'score' => $graded->score,
-                ]);
+                ];
+
+                DB::afterCommit(function () use ($graded, $auditData) {
+                    $this->auditLog->execute('attempt.auto_submit', $graded, $auditData);
+                });
 
                 return $graded;
             }
@@ -73,11 +77,15 @@ class FinalizeExpiredAttemptAction
             $locked->end_reason = 'expired';
             $locked->save();
 
-            $this->auditLog->execute('attempt.expire', $locked, [
+            $auditData = [
                 'student_id' => $locked->student_id,
                 'exam_id' => $locked->exam_id,
                 'policy' => 'expire',
-            ]);
+            ];
+
+            DB::afterCommit(function () use ($locked, $auditData) {
+                $this->auditLog->execute('attempt.expire', $locked, $auditData);
+            });
 
             return $locked->fresh();
         });

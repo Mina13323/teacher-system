@@ -199,6 +199,23 @@ class ExamAttempt extends Model
     }
 
     /**
+     * Virtual/display status derived from authoritative timestamps.
+     * Allows GET requests to render expired/auto-submitting state accurately
+     * without performing synchronous database mutations or grading.
+     */
+    public function displayStatus(): string
+    {
+        if ($this->status === ExamAttemptStatus::InProgress && $this->isExpired()) {
+            $exam = $this->relationLoaded('exam') ? $this->exam : null;
+            $autoSubmit = $exam === null || $exam->autoSubmitsAtDeadline();
+
+            return $autoSubmit ? ExamAttemptStatus::Submitted->value : ExamAttemptStatus::Expired->value;
+        }
+
+        return $this->status?->value ?? ExamAttemptStatus::InProgress->value;
+    }
+
+    /**
      * The backend is the source of truth for expiration.
      */
     public function isExpired(): bool
@@ -236,7 +253,7 @@ class ExamAttempt extends Model
     public function outcome(): AttemptOutcome
     {
         // 1. Never-graded, time-expired attempt (strict 'expire' policy).
-        if ($this->status === ExamAttemptStatus::Expired) {
+        if ($this->status === ExamAttemptStatus::Expired || ($this->status === ExamAttemptStatus::InProgress && $this->isExpired() && ! ($this->exam?->autoSubmitsAtDeadline() ?? true))) {
             return AttemptOutcome::Expired;
         }
 

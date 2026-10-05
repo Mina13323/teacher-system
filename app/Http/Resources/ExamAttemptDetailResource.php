@@ -26,7 +26,7 @@ class ExamAttemptDetailResource extends JsonResource
             'exam_title' => $this->whenLoaded('exam', fn () => $this->exam->title),
             'student' => $this->whenLoaded('student', fn () => new UserResource($this->student)),
             'attempt_number' => $this->attempt_number,
-            'status' => $this->status?->value,
+            'status' => $this->resource->displayStatus(),
             'grades_published' => $this->grades_published_at !== null,
             'grades_published_at' => $this->grades_published_at?->toISOString(),
             'score' => $this->score,

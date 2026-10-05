@@ -35,6 +35,9 @@ const confirmOpen = ref(false);
 const timeLeft = ref(0);
 const expired = ref(false);
 let timer = null;
+let flushInFlight = false;
+let globalAnswerSeq = 0;
+const questionSaveSeq = new Map();
 
 /**
  * True once the attempt can no longer be mutated. Driven by the server's own
@@ -189,36 +192,56 @@ function markConnection(ok) {
 }
 
 async function flushPending() {
-    const entries = Object.entries(pendingAnswers.value);
-    if (!entries.length || blocked.value) return;
+    if (flushInFlight || blocked.value || attempt.value?.status !== 'in_progress') return;
+    flushInFlight = true;
 
-    for (const [qId, payload] of entries) {
-        try {
-            const updated = await student.answer(attempt.value.id, payload);
-            attempt.value = normalizeAttempt(updated);
-            delete pendingAnswers.value[qId];
-            persistRecovery();
-            markConnection(true);
-        } catch (e) {
-            if (e.status === 422 || e.isValidation) {
-                // Server refused (attempt closed) — drop the stale entry and
-                // let handleRejection surface the server's truth.
-                delete pendingAnswers.value[qId];
+    try {
+        const entries = Object.entries(pendingAnswers.value);
+        if (!entries.length) return;
+
+        for (const [qId, payload] of entries) {
+            if (blocked.value || attempt.value?.status !== 'in_progress') break;
+
+            const numericQId = Number(qId);
+            const thisSeq = ++globalAnswerSeq;
+            questionSaveSeq.set(numericQId, thisSeq);
+
+            try {
+                const updated = await student.answer(attempt.value.id, payload);
+                if (questionSaveSeq.get(numericQId) === thisSeq) {
+                    applyUpdatedAttemptPreservingNewer(updated);
+                }
+                if (pendingAnswers.value[qId] === payload) {
+                    delete pendingAnswers.value[qId];
+                }
                 persistRecovery();
-                await handleRejection(e);
+                markConnection(true);
+            } catch (e) {
+                if (e.status === 422 || e.isValidation) {
+                    // Server refused (attempt closed or invalid) — drop this entry if not updated
+                    if (pendingAnswers.value[qId] === payload) {
+                        delete pendingAnswers.value[qId];
+                    }
+                    persistRecovery();
+                    await handleRejection(e);
+                    return;
+                }
+                // Network/server hiccup: keep the entry, retry on the next tick.
+                markConnection(false);
                 return;
             }
-            // Network/server hiccup: keep the entry, retry on the next tick.
-            markConnection(false);
-            return;
         }
+    } finally {
+        flushInFlight = false;
     }
 }
 
 function startFlushTimer() {
     stopFlushTimer();
     flushTimer = setInterval(() => {
-        if (Object.keys(pendingAnswers.value).length) flushPending();
+        if (!flushInFlight && Object.keys(pendingAnswers.value).length) {
+            flushPending();
+        }
     }, 5000);
 }
 
@@ -382,6 +405,52 @@ function normalizeAttempt(a) {
     };
 }
 
+function applyUpdatedAttemptPreservingNewer(updated) {
+    if (!updated) return;
+    const fresh = normalizeAttempt(updated);
+    if (!attempt.value) {
+        attempt.value = fresh;
+        return;
+    }
+
+    // Merge server attempt, but if the student currently has pending local selections or text for question Q,
+    // preserve the student's current local state for Q rather than reverting to this older server response.
+    const mergedQuestions = fresh.questions.map((freshQ) => {
+        const localPending = pendingAnswers.value[freshQ.id];
+        if (!localPending) {
+            return freshQ;
+        }
+
+        if (freshQ.question_type === 'essay') {
+            return {
+                ...freshQ,
+                answer_text: localPending.answer_text ?? freshQ.answer_text,
+            };
+        }
+
+        if (Array.isArray(localPending.option_ids)) {
+            const selectedSet = new Set(localPending.option_ids.map(Number));
+            return {
+                ...freshQ,
+                selected_option_ids: [...localPending.option_ids],
+                selected_option_id: localPending.option_ids.length === 1 ? localPending.option_ids[0] : null,
+                options: freshQ.options.map((opt) => ({
+                    ...opt,
+                    selected: selectedSet.has(Number(opt.id)),
+                })),
+                explanation: localPending.explanation ?? freshQ.explanation,
+            };
+        }
+
+        return freshQ;
+    });
+
+    attempt.value = {
+        ...fresh,
+        questions: mergedQuestions,
+    };
+}
+
 function initEssayAnswers() {
     if (!attempt.value?.questions) return;
     attempt.value.questions.forEach((q) => {
@@ -489,6 +558,9 @@ function fmt(ms) {
  * because the attempt has expired. Re-read the attempt so the UI reflects the
  * server's truth, and lock the screen if it is no longer editable.
  */
+let lastRejectionToastTime = 0;
+let lastRejectionToastMsg = '';
+
 async function handleRejection(e) {
     if (e?.status === 422) {
         try {
@@ -497,14 +569,25 @@ async function handleRejection(e) {
             if (fresh?.status === 'expired' || fresh?.status === 'submitted') {
                 expired.value = true;
                 stopMonitoring();
-                toast.error(t('examTake.expiredBlocked'));
+                const now = Date.now();
+                if (now - lastRejectionToastTime > 1500 || lastRejectionToastMsg !== 'expiredBlocked') {
+                    lastRejectionToastTime = now;
+                    lastRejectionToastMsg = 'expiredBlocked';
+                    toast.error(t('examTake.expiredBlocked'));
+                }
                 return;
             }
         } catch {
             /* fall through to the generic message */
         }
     }
-    toast.error(e?.message || t('examTake.timeExpired', { message: '' }));
+    const msg = e?.message || t('examTake.timeExpired', { message: '' });
+    const now = Date.now();
+    if (now - lastRejectionToastTime > 1500 || lastRejectionToastMsg !== msg) {
+        lastRejectionToastTime = now;
+        lastRejectionToastMsg = msg;
+        toast.error(msg);
+    }
 }
 
 /**
@@ -539,7 +622,7 @@ function onMcqExplanationInput(questionId, value) {
     }, 700));
 }
 
-async function saveMcqExplanation(questionId) {
+async function saveMcqExplanation(questionId, { silent = false } = {}) {
     const pendingTimer = explanationSaveTimers.get(questionId);
     if (pendingTimer) {
         clearTimeout(pendingTimer);
@@ -563,31 +646,59 @@ async function saveMcqExplanation(questionId) {
     pendingAnswers.value[q.id] = payload;
     persistRecovery();
 
+    const thisSeq = ++globalAnswerSeq;
+    questionSaveSeq.set(q.id, thisSeq);
+
     try {
         const updated = await student.answer(attempt.value.id, payload);
-        attempt.value = normalizeAttempt(updated);
-        delete pendingAnswers.value[q.id];
+        if (questionSaveSeq.get(q.id) === thisSeq) {
+            applyUpdatedAttemptPreservingNewer(updated);
+        }
+        if (pendingAnswers.value[q.id] === payload) {
+            delete pendingAnswers.value[q.id];
+        }
         persistRecovery();
         markConnection(true);
         return true;
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
-            delete pendingAnswers.value[q.id];
+            if (pendingAnswers.value[q.id] === payload) {
+                delete pendingAnswers.value[q.id];
+            }
             persistRecovery();
-            await handleRejection(e);
+            if (!silent) {
+                await handleRejection(e);
+            }
+            return { error: e };
         } else {
             markConnection(false);
+            return false;
         }
-        return false;
     }
 }
 
 async function saveAllMcqExplanations() {
     for (const q of questions.value) {
+        if (attempt.value?.status !== 'in_progress' || blocked.value || expired.value) {
+            break;
+        }
         if (q.explanation_enabled && q.question_type !== 'essay' && currentSelection(q).length) {
-            await saveMcqExplanation(q.id);
+            const res = await saveMcqExplanation(q.id, { silent: true });
+            if (res && res.error) {
+                const isAttemptLevel = res.error.status === 422 && (
+                    String(res.error.message || '').toLowerCase().includes('expired') ||
+                    String(res.error.message || '').toLowerCase().includes('completed') ||
+                    String(res.error.message || '').toLowerCase().includes('closed') ||
+                    res.error.code === 'INVALID_ATTEMPT_STATE'
+                );
+                if (isAttemptLevel || attempt.value?.status !== 'in_progress') {
+                    await handleRejection(res.error);
+                    return false;
+                }
+            }
         }
     }
+    return true;
 }
 
 async function answer(optionId) {
@@ -615,15 +726,24 @@ async function answer(optionId) {
     pendingAnswers.value[q.id] = payload;
     persistRecovery();
 
+    const thisSeq = ++globalAnswerSeq;
+    questionSaveSeq.set(q.id, thisSeq);
+
     try {
         const updated = await student.answer(attempt.value.id, payload);
-        attempt.value = normalizeAttempt(updated);
-        delete pendingAnswers.value[q.id];
+        if (questionSaveSeq.get(q.id) === thisSeq) {
+            applyUpdatedAttemptPreservingNewer(updated);
+        }
+        if (pendingAnswers.value[q.id] === payload) {
+            delete pendingAnswers.value[q.id];
+        }
         persistRecovery();
         markConnection(true);
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
-            delete pendingAnswers.value[q.id];
+            if (pendingAnswers.value[q.id] === payload) {
+                delete pendingAnswers.value[q.id];
+            }
             persistRecovery();
             await handleRejection(e);
         } else {
@@ -635,21 +755,31 @@ async function answer(optionId) {
 }
 
 async function saveEssay(qId) {
-    if (blocked.value || attempt.value?.status !== 'in_progress') return;
+    if (blocked.value || attempt.value?.status !== 'in_progress' || savingAnswer.value) return;
     savingAnswer.value = true;
     const payload = { question_id: qId, answer_text: essayAnswers.value[qId] || '' };
     pendingAnswers.value[qId] = payload;
     persistRecovery();
+
+    const thisSeq = ++globalAnswerSeq;
+    questionSaveSeq.set(qId, thisSeq);
+
     try {
         const updated = await student.answer(attempt.value.id, payload);
-        attempt.value = normalizeAttempt(updated);
-        delete pendingAnswers.value[qId];
+        if (questionSaveSeq.get(qId) === thisSeq) {
+            applyUpdatedAttemptPreservingNewer(updated);
+        }
+        if (pendingAnswers.value[qId] === payload) {
+            delete pendingAnswers.value[qId];
+        }
         persistRecovery();
         markConnection(true);
         toast.success(t('examTake.essaySaved'));
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
-            delete pendingAnswers.value[qId];
+            if (pendingAnswers.value[qId] === payload) {
+                delete pendingAnswers.value[qId];
+            }
             persistRecovery();
             await handleRejection(e);
         } else {
@@ -671,8 +801,14 @@ async function submit() {
     stopFlushTimer();
     try {
         // Persist rationale drafts and queued answers before final submission.
-        await saveAllMcqExplanations();
+        const ok = await saveAllMcqExplanations();
+        if (!ok || attempt.value?.status !== 'in_progress' || blocked.value) {
+            return;
+        }
         await flushPending();
+        if (attempt.value?.status !== 'in_progress' || blocked.value) {
+            return;
+        }
         const res = await student.submit(attempt.value.id);
         acceptSubmission(res);
     } catch (e) {

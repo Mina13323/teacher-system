@@ -7,6 +7,11 @@ const state = reactive({
 });
 
 function add(message, type = 'info', timeout = 4000) {
+    if (!message) return null;
+    const existing = state.items.find((item) => item.message === message && item.type === type);
+    if (existing) {
+        return existing.id;
+    }
     const id = state.nextId++;
     state.items.push({ id, message, type });
     if (timeout > 0) {

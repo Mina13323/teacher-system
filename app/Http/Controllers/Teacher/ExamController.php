@@ -163,7 +163,6 @@ class ExamController extends Controller
     {
         $this->authorize('viewAttempts', $exam);
 
-        $this->finalizeExpiredAttempts($exam);
         $filters = $this->attemptFilterValues($request);
 
         // Page student groups in SQL; do not hydrate the whole exam history to
@@ -218,7 +217,7 @@ class ExamController extends Controller
                     ] : null,
                     'latest' => [
                         'id' => $latest->id,
-                        'status' => $latest->status?->value,
+                        'status' => $latest->displayStatus(),
                         'outcome' => $latest->outcome()->value,
                         'score' => $latest->score,
                         'percentage' => $latest->percentage,
@@ -277,11 +276,10 @@ class ExamController extends Controller
     {
         $this->authorize('viewAttempts', $exam);
 
-        $this->finalizeExpiredAttempts($exam);
         $filters = $this->attemptFilterValues($request);
 
         $query = $exam->attempts()
-            ->with(['student', 'exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions'])
+            ->with(['student', 'exam'])
             ->orderByDesc('started_at')
             ->orderByDesc('id');
         $query = $this->applyAttemptFilters($query, $filters);
@@ -368,7 +366,23 @@ class ExamController extends Controller
         }
 
         if (isset($filters['status'])) {
-            $query->where('status', $filters['status']);
+            if ($filters['status'] === \App\Enums\ExamAttemptStatus::InProgress->value) {
+                $query->where('status', \App\Enums\ExamAttemptStatus::InProgress->value)
+                    ->where(function ($q) {
+                        $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+                    });
+            } elseif ($filters['status'] === \App\Enums\ExamAttemptStatus::Expired->value) {
+                $query->where(function ($q) {
+                    $q->where('status', \App\Enums\ExamAttemptStatus::Expired->value)
+                        ->orWhere(function ($expiredQ) {
+                            $expiredQ->where('status', \App\Enums\ExamAttemptStatus::InProgress->value)
+                                ->whereNotNull('expires_at')
+                                ->where('expires_at', '<=', now());
+                        });
+                });
+            } else {
+                $query->where('status', $filters['status']);
+            }
         }
 
         if (array_key_exists('score', $filters) && $filters['score'] !== null) {
@@ -473,45 +487,4 @@ class ExamController extends Controller
 
         return $this->success(new ExamMakeUpAssignmentResource($assignment), 'Make-up assignment revoked.');
     }
-
-    /**
-     * Ensure any in-progress attempts whose server deadline has already passed
-     * are finalized and auto-graded immediately when staff open the attempts
-     * list, even if the background scheduler has not run yet.
-     */
-    private function finalizeExpiredAttempts(Exam $exam): void
-    {
-        $query = $exam->attempts()
-            ->where('status', \App\Enums\ExamAttemptStatus::InProgress->value);
-
-        // A closed exam window makes every still-open attempt eligible. Before
-        // that, only inspect attempts that have a missing or elapsed deadline.
-        if ($exam->ends_at === null || ! $exam->ends_at->isPast()) {
-            $query->where(function ($candidate) {
-                $candidate->whereNull('expires_at')
-                    ->orWhere('expires_at', '<=', now());
-            });
-        }
-
-        $query->orderBy('id')->chunkById(100, function ($attempts) use ($exam) {
-            $finalizer = app(\App\Actions\Exam\FinalizeExpiredAttemptAction::class);
-
-            foreach ($attempts as $attempt) {
-                $attempt->setRelation('exam', $exam);
-
-                if ($attempt->expires_at === null && $attempt->started_at !== null) {
-                    $computedExpiry = $exam->calculateAttemptExpiry($attempt->started_at);
-                    if ($computedExpiry && $computedExpiry->isPast()) {
-                        $attempt->expires_at = $computedExpiry;
-                        $attempt->save();
-                    }
-                }
-
-                if ($attempt->isExpired()) {
-                    $finalizer->execute($attempt);
-                }
-            }
-        });
-    }
-
 }

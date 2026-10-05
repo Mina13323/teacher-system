@@ -259,15 +259,31 @@ class AttemptSearchGroupingTest extends ApiTestCase
             'expires_at' => now()->subMinutes(5),
         ]);
 
-        // Opening the teacher attempts tab auto-finalizes and grades the expired attempt on read.
+        // Opening the teacher attempts tab renders the virtual status without mutating or grading on read.
         $res = $this->actingAs($teacher, 'sanctum')
             ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts")
             ->assertStatus(200);
 
         $row = collect($res->json('data'))->firstWhere('id', $attemptId);
         $this->assertNotNull($row);
-        $this->assertSame(ExamAttemptStatus::Submitted->value, $row['status']);
-        $this->assertSame(1, $row['score']);
-        $this->assertSame(50, $row['percentage']);
+        $this->assertSame(ExamAttemptStatus::Submitted->value, $row['status'], 'Virtual status reflects auto-submit policy');
+        $this->assertSame(ExamAttemptStatus::InProgress->value, ExamAttempt::find($attemptId)->status->value, 'GET endpoint must remain read-only and not mutate DB');
+
+        // Background scheduler processes and grades the expired attempt.
+        $this->artisan('attempts:process-expired')->assertExitCode(0);
+
+        $attempt->refresh();
+        $this->assertSame(ExamAttemptStatus::Submitted->value, $attempt->status->value);
+        $this->assertSame(1, (int) $attempt->score);
+        $this->assertSame(50, (int) $attempt->percentage);
+
+        // Subsequent GET reflects the persisted score.
+        $resAfter = $this->actingAs($teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/exams/{$exam->id}/attempts")
+            ->assertStatus(200);
+
+        $rowAfter = collect($resAfter->json('data'))->firstWhere('id', $attemptId);
+        $this->assertSame(1, $rowAfter['score']);
+        $this->assertSame(50, $rowAfter['percentage']);
     }
 }
