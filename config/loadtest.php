@@ -30,6 +30,10 @@ return [
     // Dedicated, documented, staging-only password for every fixture account.
     'password' => env('LOADTEST_PASSWORD') ?: 'LoadTest#Staging-2026',
 
+    // Per-IP login budget for fixture students ONLY (normal limit: api.rate_limit.auth).
+    // Applies only when LoadTestLoginAllowance passes; the per-account limit is unchanged.
+    'login_per_minute_per_ip' => 600,
+
     'max_students' => 5000,
     'default_students' => 10,
 ];

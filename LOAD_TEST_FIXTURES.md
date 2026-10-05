@@ -102,7 +102,8 @@ students → teacher.
 
 ## Load-test notes
 
-* `POST /auth/login` is throttled to 10/min per IP **and** per account (`config/api.php`); 1500 logins from one IP will
-  be throttled unless the load generator logs in slowly, spreads IPs, or pre-issues tokens. This is intentional production
-  behaviour and is not relaxed by the fixtures.
+* `POST /auth/login` stays throttled to 10/min per IP and per account for everyone. Fixture students alone get a larger
+  per-IP bucket (`loadtest.login_per_minute_per_ip`, 600/min), and only when APP_ENV, APP_URL host and database are the
+  staging ones AND the email is exactly `loadtest.student.NNNN@staging.maherelmasry.com` (`LoadTestLoginAllowance`).
+  The per-account limit still applies.
 * Authenticated API budget is 120 requests/min per user.

@@ -76,9 +76,14 @@ class AppServiceProvider extends ServiceProvider
 
             $identifier = is_string($identifier) ? trim($identifier) : '';
             $ip = (string) ($request->ip() ?: 'unknown');
-            $limits = [
-                Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|ip|'.$ip),
-            ];
+            // STAGING-ONLY allowance for the load-test fixture students (see
+            // LoadTestLoginAllowance): they get their own, larger per-IP bucket so
+            // a single load generator is not capped at 10 logins/minute. Every
+            // other identifier keeps the normal per-IP budget below, and the
+            // per-account limit further down applies to fixture students too.
+            $limits = app(\App\Services\LoadTest\LoadTestLoginAllowance::class)->applies($identifier)
+                ? [Limit::perMinute((int) config('loadtest.login_per_minute_per_ip'))->by('login|loadtest-ip|'.$ip)]
+                : [Limit::perMinute((int) config('api.rate_limit.auth', 10))->by('login|ip|'.$ip)];
 
             if ($identifier !== '') {
                 $email = mb_strtolower($identifier);
