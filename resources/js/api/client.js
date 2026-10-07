@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '@/i18n';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -29,29 +30,22 @@ export class ApiError extends Error {
     }
 
     /**
-     * Human-readable message appropriate to the status code.
+     * Human-readable, localized message appropriate to the status code. A
+     * status of 0 means no response arrived: `timedOut` separates our own
+     * request deadline from a connection that failed outright.
      */
-    static friendly(status) {
-        switch (status) {
-            case 401:
-                return 'Your session has expired. Please sign in again.';
-            case 403:
-                return 'You do not have permission to perform this action.';
-            case 404:
-                return 'The requested resource could not be found.';
-            case 409:
-                return 'That request conflicts with the current state.';
-            case 422:
-                return 'Please review the highlighted fields.';
-            case 429:
-                return 'You are making requests too quickly. Please wait a moment.';
-            case 0:
-                return 'The server did not respond in time. Check your connection and try again.';
-            case 500:
-                return 'An unexpected error occurred on the server.';
-            default:
-                return 'Something went wrong. Please try again.';
-        }
+    static friendly(status, { timedOut = false } = {}) {
+        const key = {
+            401: 'unauthenticated',
+            403: 'forbidden',
+            404: 'notFound',
+            409: 'conflict',
+            422: 'validation',
+            429: 'rateLimited',
+            500: 'server',
+        }[status] ?? (status === 0 ? (timedOut ? 'timeout' : 'network') : 'generic');
+
+        return i18n.global.t(`apiErrors.${key}`);
     }
 }
 
@@ -135,18 +129,18 @@ async function request(config) {
             errors = payload.errors || null;
         }
 
-        if (
+        const timedOut =
             error.code === 'ECONNABORTED'
             || error.code === 'ETIMEDOUT'
-            || /timeout/i.test(error.message || '')
-        ) {
+            || /timeout/i.test(error.message || '');
+        if (timedOut) {
             status = 0;
         }
 
         let message =
             errors && status === 422
                 ? ApiError.friendly(422)
-                : serverMessage || ApiError.friendly(status);
+                : serverMessage || ApiError.friendly(status, { timedOut });
 
         // Clean any leaking raw SQL/database error strings defensively
         if (typeof message === 'string' && (message.includes('SQLSTATE') || message.includes('Integrity constraint violation') || message.includes('PDOException'))) {

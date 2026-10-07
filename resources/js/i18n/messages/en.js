@@ -1432,6 +1432,18 @@ export default {
         fallback: 'Notification',
         loadError: 'Could not load notifications.',
     },
+    apiErrors: {
+        unauthenticated: 'Your session has expired. Please sign in again.',
+        forbidden: 'You do not have permission to perform this action.',
+        notFound: 'The requested resource could not be found.',
+        conflict: 'That request conflicts with the current state.',
+        validation: 'Please review the highlighted fields.',
+        rateLimited: 'You are making requests too quickly. Please wait a moment.',
+        timeout: 'The server took too long to respond. Please try again.',
+        network: 'Could not reach the server. Check your connection and try again.',
+        server: 'An unexpected error occurred on the server.',
+        generic: 'Something went wrong. Please try again.',
+    },
     time: {
         today: 'Today',
         yesterday: 'Yesterday',
