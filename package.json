@@ -2,7 +2,9 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "prebuild": "node scripts/publish-build.mjs clean",
         "build": "vite build",
+        "build:deploy": "npm run build && node scripts/publish-build.mjs copy",
         "dev": "vite"
     },
     "devDependencies": {

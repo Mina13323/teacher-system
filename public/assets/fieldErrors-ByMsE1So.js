@@ -1,1 +1,0 @@
-function l(){function t(r){return r&&r.errors||{}}function s(r,u=null){var o;const e=t(r);if(u)return((o=e[u])==null?void 0:o[0])||null;const n=Object.values(e)[0];return Array.isArray(n)?n[0]:n||null}return{fieldErrors:t,extractFieldError:s}}export{l as u};

@@ -110,19 +110,16 @@ CACHE_STORE=file
 
 ## 7. Vue PWA Frontend Deployment
 
-1. **Build Locally:** Run locally on your development machine:
-   ```bash
-   npm run build
-   ```
-   This generates compiled assets in `dist/` (`index.html`, `assets/`, `sw.js`, `manifest.webmanifest`, icons).
-2. **Upload Static Artifacts:**
-   Copy all files inside `dist/` directly into Laravel's `public/` folder on Hostinger:
-   - `dist/index.html` $\rightarrow$ `public/index.html`
-   - `dist/assets/*` $\rightarrow$ `public/assets/*`
-   - `dist/sw.js` $\rightarrow$ `public/sw.js`
-   - `dist/manifest.webmanifest` $\rightarrow$ `public/manifest.webmanifest`
-   - `dist/pwa-*.png` $\rightarrow$ `public/pwa-*.png`
-   - `dist/apple-touch-icon.png` $\rightarrow$ `public/apple-touch-icon.png`
+Compiled frontend files (`public/assets/`, `public/index.html`, `public/sw.js`, `public/workbox-*.js`, `public/manifest.webmanifest`) are build output and are **not committed to `main`**.
+
+**Option A: Hostinger Git deployment (recommended).** On every push to `main`, the `Deploy build` GitHub Actions workflow runs `npm run build:deploy` and force-pushes the full site, compiled assets included, to the `deploy` branch. In hPanel, point the Git deployment at the `deploy` branch instead of `main`.
+
+**Option B: Manual upload.** Run locally:
+```bash
+npm ci
+npm run build:deploy
+```
+This builds into `dist/` and copies the generated files into `public/`. Upload `public/` (or the whole project) to Hostinger.
 
 ---
 
@@ -334,7 +331,7 @@ $teacher->assignRole(\App\Enums\UserRole::Teacher);
 ## 22. Rollback Procedure
 
 If a critical issue occurs during deployment:
-1. Re-upload previous static `dist/` bundle to `public/`.
+1. Revert the bad commit on `main`; the `Deploy build` workflow republishes the `deploy` branch. For manual deploys, check out the last good commit, run `npm run build:deploy`, and re-upload `public/`.
 2. Revert `.env` modifications if any.
 3. Clear Laravel caches:
    ```bash

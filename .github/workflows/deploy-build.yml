@@ -1,0 +1,42 @@
+name: Deploy build
+
+# Builds the frontend on every push to main and publishes the full site
+# (source + compiled public/ assets) to the `deploy` branch. Point Hostinger's
+# Git deployment at `deploy` instead of `main`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build:deploy
+
+      - name: Push to deploy branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan deploy
+          git add -A
+          git add -f public/assets public/index.html public/sw.js public/workbox-*.js public/manifest.webmanifest
+          git commit -q -m "Deploy build of ${GITHUB_SHA::7}"
+          git push -f origin deploy
