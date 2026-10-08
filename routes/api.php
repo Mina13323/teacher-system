@@ -54,8 +54,8 @@ use Illuminate\Support\Facades\Route;
 */
 
 // ---- Server clock -----------------------------------------------------------
-// Database-free: no auth, no session, and no throttle (with the database cache
-// store the rate limiter itself would open a MySQL connection). It returns
+// Database-free: no auth, no session, and no throttle (were the limiter set back
+// to the database store, it would open a MySQL connection). It returns
 // only the current server time; see ServerTimeController.
 Route::get('time', \App\Http\Controllers\ServerTimeController::class)
     ->withoutMiddleware('throttle:api');
