@@ -57,7 +57,7 @@ class SubmitExamAttemptAction
             return $finalized;
         }
 
-        return DB::transaction(function () use ($fresh) {
+        $result = DB::transaction(function () use ($fresh) {
             // Re-check under lock to avoid concurrent double submission.
             $locked = ExamAttempt::query()
                 ->lockForUpdate()
@@ -72,13 +72,9 @@ class SubmitExamAttemptAction
             }
 
             if ($locked->isExpired()) {
-                $finalized = $this->finalizeExpired->execute($locked);
-
-                if ($finalized->status === ExamAttemptStatus::Expired) {
-                    throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
-                }
-
-                return $finalized;
+                // Finalized after this transaction (below), so a strict-policy
+                // refusal cannot roll the finalization back.
+                return null;
             }
 
             $locked->load(['attemptQuestions.attemptOptions', 'answers.selectedOptions', 'exam']);
@@ -89,6 +85,19 @@ class SubmitExamAttemptAction
 
             return $graded;
         });
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        // The deadline passed between the first check and the lock.
+        $finalized = $this->finalizeExpired->execute($fresh);
+
+        if ($finalized->status === ExamAttemptStatus::Expired) {
+            throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
+        }
+
+        return $finalized;
     }
 
     private function assertRequiredExplanations(ExamAttempt $attempt): void

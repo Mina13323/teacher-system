@@ -93,7 +93,7 @@ class SaveExamAnswerAction
             }
         }
 
-        DB::transaction(function () use ($attempt, $attemptQuestion, $questionId, $selection, $answerText, $optionIds, $explanation, $explanationProvided, $isEssay) {
+        $saved = DB::transaction(function () use ($attempt, $attemptQuestion, $questionId, $selection, $answerText, $optionIds, $explanation, $explanationProvided, $isEssay) {
             $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
 
             if (! $locked || ! $locked->status->isInProgress()) {
@@ -101,8 +101,9 @@ class SaveExamAnswerAction
             }
 
             if ($locked->isExpired()) {
-                app(FinalizeExpiredAttemptAction::class)->execute($locked);
-                throw new InvalidAttemptStateException('This attempt has expired.');
+                // Finalize AFTER this transaction: throwing in here would roll
+                // the finalization back with it (see below).
+                return false;
             }
 
             if ($isEssay) {
@@ -176,6 +177,15 @@ class SaveExamAnswerAction
                 }
             }
         });
+
+        if ($saved === false) {
+            // The deadline passed before this save took the lock. Finalizing
+            // inside the transaction and then throwing used to roll the
+            // finalization back, leaving the attempt in progress until the
+            // scheduled sweep. Finalize in its own transaction, then refuse.
+            app(FinalizeExpiredAttemptAction::class)->execute($attempt);
+            throw new InvalidAttemptStateException('This attempt has expired.');
+        }
 
         return $attempt;
     }
