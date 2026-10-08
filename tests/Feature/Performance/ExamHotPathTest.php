@@ -403,6 +403,9 @@ class ExamHotPathTest extends ApiTestCase
     {
         $exam = $this->exam(1);
         $attempt = $this->start($exam);
+        // MySQL reports changed rows only: a beat in the same second as the
+        // start changes nothing and takes the (also correct) full path.
+        $this->travel(2)->seconds();
 
         [$res, $count] = $this->counting(fn () => $this->actingAs($this->student, 'sanctum')
             ->postJson("/api/v1/student/attempts/{$attempt['id']}/heartbeat")->assertOk());

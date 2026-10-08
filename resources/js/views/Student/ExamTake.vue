@@ -11,6 +11,10 @@ import {
     createAutosaveScheduler,
     createHeartbeatScheduler,
     deadlineFlushLeadMs,
+    dueDraftPass,
+    EXPLANATION_SAVE_IDLE_MS,
+    essayDraftSaveDelayMs,
+    predeadlineDraftLeadMs,
     shouldCheckStatus,
     timeUpSubmitDelayMs,
     resultNoticeRefreshDelayMs,
@@ -60,8 +64,13 @@ const questionSaveSeq = new Map();
 const serverClock = createServerClock();
 /** When the last full attempt status check (a database request) was sent. */
 let lastStatusCheckAt = null;
-/** Unsaved drafts are sent once, 10–30 s (random) before the deadline. */
+/**
+ * Unsaved drafts are sent in two passes before the deadline: everything
+ * 35–95 s before, then only what changed since, 8–28 s before (both random).
+ */
+const draftFirstLead = predeadlineDraftLeadMs();
 const deadlineFlushLead = deadlineFlushLeadMs();
+let draftFirstDone = false;
 let deadlineFlushDone = false;
 /** Set when the countdown reaches zero: the server refuses changes from then on. */
 const timeUp = ref(false);
@@ -232,6 +241,7 @@ function acceptSubmission(res) {
     stopHeartbeat();
     stopFlushTimer();
     stopMonitoring();
+    cancelEssayDraftSave();
     clearRecovery();
     // The result is on screen already (submit response). The unread badge is
     // refreshed a little later, not in the same second as the class's submits.
@@ -242,9 +252,13 @@ function acceptSubmission(res) {
 /** True when the connection banner was raised by a failed server-time ping. */
 let lostByTimePing = false;
 
+/** Set when the connection comes back: the next beat is a status check. */
+let statusSyncWanted = false;
+
 function markConnection(ok) {
     if (connectionLost.value && ok) {
         toast.success(t('examTake.connectionRestored'));
+        statusSyncWanted = true;
     }
     connectionLost.value = !ok;
     if (ok) lostByTimePing = false;
@@ -338,10 +352,20 @@ function queueUnsavedDrafts() {
     return queued;
 }
 
-/** Sends unsaved drafts once, shortly before the deadline (see deadlineFlushLead). */
-function flushDraftsBeforeDeadline() {
-    if (deadlineFlushDone) return;
-    deadlineFlushDone = true;
+/**
+ * Sends unsaved drafts when a pre-deadline pass is due (see draftFirstLead and
+ * deadlineFlushLead). A pass sends nothing when everything is already saved.
+ */
+function flushDraftsBeforeDeadline(msLeft) {
+    const pass = dueDraftPass(msLeft, {
+        firstLeadMs: draftFirstLead,
+        finalLeadMs: deadlineFlushLead,
+        firstDone: draftFirstDone,
+        finalDone: deadlineFlushDone,
+    });
+    if (!pass) return;
+    draftFirstDone = true;
+    if (pass === 'final') deadlineFlushDone = true;
     if (queueUnsavedDrafts() || Object.keys(pendingAnswers.value).length) {
         flushPending();
     }
@@ -409,8 +433,9 @@ async function sendHeartbeat() {
         return;
     }
     // Most beats are a database-free time ping; a full status check (which
-    // reads and writes the attempt row) goes out about once a minute.
-    if (!shouldCheckStatus(Date.now(), lastStatusCheckAt)) {
+    // reads and writes the attempt row) goes out about every two minutes,
+    // and on the first beat after a lost connection comes back.
+    if (!statusSyncWanted && !shouldCheckStatus(Date.now(), lastStatusCheckAt)) {
         await syncServerClock();
         return;
     }
@@ -420,6 +445,7 @@ async function sendHeartbeat() {
         const res = await student.heartbeat(attempt.value.id);
         serverClock.observe(Number(res?.server_time_ms), sentAt, Date.now());
         markConnection(true);
+        statusSyncWanted = false;
         applyServerDeadline(res?.expires_at);
         if (res && res.status && res.status !== 'in_progress') {
             // The server finalized the attempt (deadline reached).
@@ -441,7 +467,7 @@ async function sendHeartbeat() {
  * Liveness beat: first one at a random point in the first 15 s, then every
  * 15 s ± 20%, so students who start together do not stay in step. Paused
  * while the tab is hidden, with one beat as soon as it is visible again.
- * About three beats in four are a database-free time ping; the rest are the
+ * About seven beats in eight are a database-free time ping; the rest are the
  * attempt status check (which also records last_heartbeat_at).
  */
 const heartbeat = createHeartbeatScheduler({ beat: sendHeartbeat });
@@ -489,6 +515,7 @@ const { loading, error, run: load } = useAsync(async () => {
         // Reading the attempt finalizes it on the server once its deadline has
         // passed, so "in progress" here means time is genuinely left.
         timeUp.value = false;
+        draftFirstDone = false;
         deadlineFlushDone = false;
         syncServerClock();
     }
@@ -682,8 +709,8 @@ function startTimer() {
     const tick = () => {
         const ms = new Date(expires).getTime() - serverClock.serverNow();
         timeLeft.value = ms <= 0 ? 0 : ms;
-        if (ms > 0 && ms <= deadlineFlushLead && !blocked.value) {
-            flushDraftsBeforeDeadline();
+        if (ms > 0 && !blocked.value) {
+            flushDraftsBeforeDeadline(ms);
         }
         if (ms <= 0) {
             clearInterval(timer);
@@ -781,7 +808,7 @@ function onMcqExplanationInput(questionId, value) {
     explanationSaveTimers.set(questionId, setTimeout(() => {
         explanationSaveTimers.delete(questionId);
         saveMcqExplanation(questionId);
-    }, 700));
+    }, EXPLANATION_SAVE_IDLE_MS));
 }
 
 async function saveMcqExplanation(questionId, { silent = false } = {}) {
@@ -1065,7 +1092,37 @@ let essayPersistTimer = null;
 watch(essayAnswers, () => {
     clearTimeout(essayPersistTimer);
     essayPersistTimer = setTimeout(persistRecovery, 500);
+    scheduleEssayDraftSave();
 }, { deep: true });
+
+// Background save of essay text: after a pause in typing, and at least every
+// ESSAY_DRAFT_MAX_AGE_MS while typing (see examRequestPacing). It sends only
+// text the server does not have yet, through the normal answer queue.
+let essayDraftTimer = null;
+let essayDirtySince = null;
+
+function scheduleEssayDraftSave() {
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
+    const now = Date.now();
+    if (essayDirtySince === null) essayDirtySince = now;
+    clearTimeout(essayDraftTimer);
+    essayDraftTimer = setTimeout(saveEssayDraftsQuietly, essayDraftSaveDelayMs(now, essayDirtySince));
+}
+
+function cancelEssayDraftSave() {
+    clearTimeout(essayDraftTimer);
+    essayDraftTimer = null;
+    essayDirtySince = null;
+}
+
+function saveEssayDraftsQuietly() {
+    essayDraftTimer = null;
+    essayDirtySince = null;
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
+    // Anything a flush already in flight does not send stays queued for the
+    // autosave chain.
+    if (queueUnsavedDrafts()) flushPending();
+}
 
 function finish() {
     router.push('/student/exams');
@@ -1173,6 +1230,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    cancelEssayDraftSave();
     clearInterval(timer);
     timer = null;
     stopMonitoring();

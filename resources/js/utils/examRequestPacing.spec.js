@@ -3,6 +3,12 @@ import {
     AUTOSAVE_BASE_DELAY_MS,
     AUTOSAVE_MAX_DELAY_MS,
     DEADLINE_FLUSH_WINDOW_MS,
+    EXPLANATION_SAVE_IDLE_MS,
+    ESSAY_DRAFT_IDLE_MS,
+    ESSAY_DRAFT_MAX_AGE_MS,
+    essayDraftSaveDelayMs,
+    FINAL_DRAFT_WINDOW_MS,
+    PREDEADLINE_DRAFT_WINDOW_MS,
     HEARTBEAT_INTERVAL_MS,
     STATUS_CHECK_MIN_GAP_MS,
     TIME_UP_SUBMIT_SPREAD_MS,
@@ -11,6 +17,8 @@ import {
     createAutosaveScheduler,
     createHeartbeatScheduler,
     deadlineFlushLeadMs,
+    dueDraftPass,
+    predeadlineDraftLeadMs,
     heartbeatInitialDelay,
     heartbeatNextDelay,
     shouldCheckStatus,
@@ -407,14 +415,14 @@ describe('createAutosaveScheduler', () => {
 });
 
 describe('exam deadline and status pacing', () => {
-    it('checks attempt status about once a minute and pings the clock otherwise', () => {
+    it('checks attempt status about every two minutes and pings the clock otherwise', () => {
         expect(shouldCheckStatus(1_000, null)).toBe(true);
         expect(shouldCheckStatus(0, 0)).toBe(false);
         expect(shouldCheckStatus(STATUS_CHECK_MIN_GAP_MS - 1, 0)).toBe(false);
         expect(shouldCheckStatus(STATUS_CHECK_MIN_GAP_MS, 0)).toBe(true);
     });
 
-    it('turns roughly one beat in four into a status check', () => {
+    it('turns roughly one beat in eight into a status check', () => {
         // Simulate 30 minutes of jittered beats and count database requests.
         let now = 0;
         let lastStatus = 0;
@@ -433,16 +441,76 @@ describe('exam deadline and status pacing', () => {
                 lastStatus = now;
             }
         }
-        // 15 s beats: ~120 beats, of which ~30 hit the database (was 120).
+        // 15 s beats: ~120 beats, of which ~14 hit the database (was ~30,
+        // and 120 before the time pings).
         expect(beats).toBeGreaterThan(100);
-        expect(status).toBeGreaterThanOrEqual(24);
-        expect(status).toBeLessThanOrEqual(34);
+        expect(status).toBeGreaterThanOrEqual(12);
+        expect(status).toBeLessThanOrEqual(16);
     });
 
-    it('sends drafts 10–30 s before the deadline', () => {
+    it('sends the final draft pass 8–28 s before the deadline', () => {
         expect(deadlineFlushLeadMs(() => 0)).toBe(DEADLINE_FLUSH_WINDOW_MS[0]);
         expect(deadlineFlushLeadMs(() => 0.999999)).toBeLessThanOrEqual(DEADLINE_FLUSH_WINDOW_MS[1]);
-        expect(DEADLINE_FLUSH_WINDOW_MS[0]).toBeGreaterThanOrEqual(10_000);
+        // A safety margin before the deadline: late answers are refused.
+        expect(DEADLINE_FLUSH_WINDOW_MS[0]).toBeGreaterThanOrEqual(8_000);
+    });
+
+    it('runs the first draft pass 35–95 s before the deadline, before the final one', () => {
+        expect(predeadlineDraftLeadMs(() => 0)).toBe(PREDEADLINE_DRAFT_WINDOW_MS[0]);
+        expect(predeadlineDraftLeadMs(() => 0.999999)).toBeLessThanOrEqual(PREDEADLINE_DRAFT_WINDOW_MS[1]);
+        expect(PREDEADLINE_DRAFT_WINDOW_MS[0]).toBeGreaterThan(FINAL_DRAFT_WINDOW_MS[1]);
+    });
+
+    it('fires each draft pass once, in order, as the countdown runs', () => {
+        const leads = { firstLeadMs: 60_000, finalLeadMs: 20_000 };
+        let firstDone = false;
+        let finalDone = false;
+        const fired = [];
+        for (let msLeft = 120_000; msLeft > 0; msLeft -= 1_000) {
+            const pass = dueDraftPass(msLeft, { ...leads, firstDone, finalDone });
+            if (!pass) continue;
+            fired.push([pass, msLeft]);
+            firstDone = true;
+            if (pass === 'final') finalDone = true;
+        }
+        expect(fired).toEqual([['first', 60_000], ['final', 20_000]]);
+    });
+
+    it('runs only the final pass when the exam is opened inside its window', () => {
+        expect(dueDraftPass(15_000, { firstLeadMs: 60_000, finalLeadMs: 20_000, firstDone: false, finalDone: false })).toBe('final');
+        expect(dueDraftPass(15_000, { firstLeadMs: 60_000, finalLeadMs: 20_000, firstDone: true, finalDone: true })).toBe(null);
+        expect(dueDraftPass(0, { firstLeadMs: 60_000, finalLeadMs: 20_000, firstDone: false, finalDone: false })).toBe(null);
+    });
+
+    it('saves essay text after a pause, and at least every 90 s while typing', () => {
+        // First change: wait for a pause.
+        expect(essayDraftSaveDelayMs(0, null)).toBe(ESSAY_DRAFT_IDLE_MS);
+        expect(essayDraftSaveDelayMs(1_000, 0)).toBe(ESSAY_DRAFT_IDLE_MS);
+        // Still typing 80 s after the first unsaved change: only 10 s left.
+        expect(essayDraftSaveDelayMs(80_000, 0)).toBe(ESSAY_DRAFT_MAX_AGE_MS - 80_000);
+        expect(essayDraftSaveDelayMs(120_000, 0)).toBe(0);
+        // Simulate ten minutes of continuous typing (a keystroke a second):
+        // about one save a minute and a half, never one per keystroke.
+        let dirtySince = null;
+        let dueAt = null;
+        let saves = 0;
+        for (let t = 0; t < 600_000; t += 1_000) {
+            if (dueAt !== null && t >= dueAt) {
+                saves++;
+                dirtySince = null;
+                dueAt = null;
+            }
+            if (dirtySince === null) dirtySince = t;
+            dueAt = t + essayDraftSaveDelayMs(t, dirtySince);
+        }
+        expect(saves).toBeGreaterThanOrEqual(6);
+        expect(saves).toBeLessThanOrEqual(7);
+    });
+
+    it('saves explanations after a pause in typing, not at every keystroke pause', () => {
+        expect(EXPLANATION_SAVE_IDLE_MS).toBeGreaterThanOrEqual(2_000);
+        // Well inside the final pass's margin, so a pause just before it is covered.
+        expect(EXPLANATION_SAVE_IDLE_MS).toBeLessThan(FINAL_DRAFT_WINDOW_MS[0]);
     });
 
     it('spreads the time-up submit over a bounded window', () => {

@@ -120,6 +120,8 @@ class AttemptController extends Controller
         // ExamAttempt::isExpired() would call expired. It cannot revive a
         // finalized attempt: the status is re-checked by the UPDATE itself.
         // Soft-deleted exams count too, as in the attempt's exam relation.
+        // MySQL counts changed rows only, so a second beat within the same
+        // second reports 0 and takes the full path, which is also correct.
         $now = now();
         $touched = ExamAttempt::query()
             ->whereKey($attempt->getKey())

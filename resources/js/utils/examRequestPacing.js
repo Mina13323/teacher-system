@@ -21,9 +21,24 @@ export const HEARTBEAT_JITTER_RATIO = 0.2;
 /**
  * Most beats are a database-free server-time ping. A full attempt status
  * check (which reads and writes MySQL) is sent only when this long has passed
- * since the last one, so about one beat in four (roughly once a minute).
+ * since the last one: with 12–18 s beats, about once every two minutes.
+ *
+ * Why two minutes is safe: the status check does not enforce anything. The
+ * server refuses every answer, event and submit after the deadline or after
+ * the attempt was closed (by the teacher, the integrity threshold or the
+ * expiry sweep), and the countdown runs on the server clock that the
+ * database-free pings keep in sync, so the screen locks at the real deadline
+ * without asking. The check only lets an idle student's screen notice an
+ * early closure or a teacher's extension sooner; any save in between notices
+ * it at once (422, then a reload). last_heartbeat_at is stored for display
+ * and is not read by any rule.
+ *
+ * It is not made more frequent near the deadline: the whole class reaches its
+ * deadline together, so that would add requests at the busiest moment while
+ * the client already locks itself at the deadline. After a lost connection
+ * comes back, the next beat (at most ~18 s later, jittered) is a status check.
  */
-export const STATUS_CHECK_MIN_GAP_MS = 55_000;
+export const STATUS_CHECK_MIN_GAP_MS = 115_000;
 
 /** Whether the next beat should be a full status check instead of a time ping. */
 export function shouldCheckStatus(nowMs, lastStatusCheckMs) {
@@ -32,16 +47,75 @@ export function shouldCheckStatus(nowMs, lastStatusCheckMs) {
 }
 
 /**
- * Before the deadline every unsaved draft (essay text, MCQ explanations) is
- * sent once, at a random point in this window before time runs out, so the
- * whole class does not send its drafts in the same second. Answers that reach
- * the server after the deadline are refused, so this must happen before it.
+ * Unsaved drafts (essay text, MCQ explanations the server does not have in
+ * their current form) are sent before the deadline in two passes, each at a
+ * random point of its window, so a class does not send its drafts in the same
+ * seconds. Answers that reach the server after the deadline are refused, so
+ * both passes end well before it.
+ *
+ * - The first pass, 35–95 s before the deadline, sends every unsaved draft.
+ * - The second pass, 8–28 s before, sends only what changed after the first
+ *   (a student still typing). Nothing is sent when nothing changed.
+ *
+ * A draft that is already saved is never sent again, and each question is one
+ * request carrying its selection and explanation together. The local recovery
+ * copy, the save on leaving the page and the submit's own save are unchanged.
  */
-export const DEADLINE_FLUSH_WINDOW_MS = [10_000, 30_000];
+export const PREDEADLINE_DRAFT_WINDOW_MS = [35_000, 95_000];
+export const FINAL_DRAFT_WINDOW_MS = [8_000, 28_000];
+/** Kept for callers of the single-pass name: the final pass's window. */
+export const DEADLINE_FLUSH_WINDOW_MS = FINAL_DRAFT_WINDOW_MS;
 
-export function deadlineFlushLeadMs(random = Math.random) {
-    const [min, max] = DEADLINE_FLUSH_WINDOW_MS;
+function inWindow([min, max], random) {
     return Math.round(min + (max - min) * random());
+}
+
+/** Lead time (ms before the deadline) of the first draft pass. */
+export function predeadlineDraftLeadMs(random = Math.random) {
+    return inWindow(PREDEADLINE_DRAFT_WINDOW_MS, random);
+}
+
+/** Lead time (ms before the deadline) of the final draft pass. */
+export function deadlineFlushLeadMs(random = Math.random) {
+    return inWindow(FINAL_DRAFT_WINDOW_MS, random);
+}
+
+/**
+ * Which draft pass is due with `msLeft` until the deadline, given which passes
+ * already ran: 'first', 'final' or null. A student who opens the exam inside
+ * the final window gets only the final pass.
+ */
+export function dueDraftPass(msLeft, { firstLeadMs, finalLeadMs, firstDone, finalDone }) {
+    if (!(msLeft > 0)) return null;
+    if (!finalDone && msLeft <= finalLeadMs) return 'final';
+    if (!firstDone && !finalDone && msLeft <= firstLeadMs) return 'first';
+    return null;
+}
+
+/**
+ * An MCQ explanation is saved after the student stops typing for this long
+ * (it was 0.7 s, which sent a request at every pause). Every keystroke is
+ * kept in the local recovery copy at once, and the draft passes, the save on
+ * leaving the page and the submit still send anything not yet saved.
+ */
+export const EXPLANATION_SAVE_IDLE_MS = 3_000;
+
+/**
+ * Essay text is saved in the background (it used to reach the server only on
+ * "Save essay", the pre-deadline flush or the submit): after the student
+ * pauses typing for ESSAY_DRAFT_IDLE_MS, and at least every
+ * ESSAY_DRAFT_MAX_AGE_MS while they keep typing. So most essay text is
+ * already on the server when the class reaches the deadline, and the
+ * pre-deadline passes have little left to send. At most about one request a
+ * minute per student while typing; nothing while not typing.
+ */
+export const ESSAY_DRAFT_IDLE_MS = 20_000;
+export const ESSAY_DRAFT_MAX_AGE_MS = 90_000;
+
+/** Delay until the background essay save, given when the text first changed. */
+export function essayDraftSaveDelayMs(nowMs, dirtySinceMs) {
+    const since = dirtySinceMs ?? nowMs;
+    return Math.max(0, Math.min(ESSAY_DRAFT_IDLE_MS, since + ESSAY_DRAFT_MAX_AGE_MS - nowMs));
 }
 
 /**
@@ -62,9 +136,10 @@ export function timeUpSubmitDelayMs(random = Math.random) {
 /**
  * After a submit the unread-notification badge is refreshed after a random
  * delay in this window, not in the same second as the whole class's submits.
+ * It starts after the 50 s time-up submit spread, so the two do not overlap.
  * The result itself is already on screen from the submit response.
  */
-export const RESULT_NOTICE_REFRESH_WINDOW_MS = [20_000, 90_000];
+export const RESULT_NOTICE_REFRESH_WINDOW_MS = [60_000, 180_000];
 
 export function resultNoticeRefreshDelayMs(random = Math.random) {
     const [min, max] = RESULT_NOTICE_REFRESH_WINDOW_MS;
