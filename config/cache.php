@@ -19,6 +19,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Rate Limiter Cache Store
+    |--------------------------------------------------------------------------
+    |
+    | The store behind RateLimiter and every "throttle" middleware. On the
+    | database store each throttled request adds a locked transaction (about
+    | 6 statements) to MySQL, so the counters live on the local file store.
+    | The file store's increment is not atomic: two exactly simultaneous hits
+    | on one key can count once, so limits can only be slightly lenient, never
+    | stricter. Set CACHE_LIMITER=database (or empty for the default store) to
+    | go back.
+    |
+    */
+
+    'limiter' => env('CACHE_LIMITER', 'file') ?: null,
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache Stores
     |--------------------------------------------------------------------------
     |
