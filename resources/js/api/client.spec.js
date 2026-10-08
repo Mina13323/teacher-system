@@ -23,4 +23,11 @@ describe('ApiError.friendly', () => {
         i18n.global.locale.value = 'en';
         expect(ApiError.friendly(502)).toBe('Something went wrong. Please try again.');
     });
+
+    it('has a localized message for a temporarily unavailable server', () => {
+        i18n.global.locale.value = 'en';
+        expect(ApiError.friendly(503)).toBe('The server is busy right now. Your work is safe. Please try again in a moment.');
+        i18n.global.locale.value = 'ar';
+        expect(ApiError.friendly(503)).toBe('الخادم مشغول الآن. عملك محفوظ. يرجى المحاولة مرة أخرى بعد قليل.');
+    });
 });

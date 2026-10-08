@@ -4,6 +4,31 @@ import { setAuthToken } from '@/api/client';
 
 const TOKEN_KEY = 'atlas.auth.token';
 
+/**
+ * Waits before re-asking /auth/me after a transient failure. Two short,
+ * jittered retries ride out a brief server or database hiccup without
+ * sending a burst of identical requests from every open tab.
+ */
+export const ME_RETRY_DELAYS_MS = [1000, 2500];
+const ME_RETRY_JITTER_RATIO = 0.3;
+
+/**
+ * Failures that say nothing about the token: no response, a timeout, rate
+ * limiting or a server-side error (500, 502, 503, 504).
+ */
+export function isTransientAuthFailure(error) {
+    if (!error) return false;
+    return Boolean(error.isNetwork || error.isTimeout || error.isRateLimited || error.isServer);
+}
+
+function defaultWait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function jittered(ms, random) {
+    return Math.round(ms * (1 - ME_RETRY_JITTER_RATIO + 2 * ME_RETRY_JITTER_RATIO * random()));
+}
+
 function readToken() {
     try {
         return localStorage.getItem(TOKEN_KEY);
@@ -19,6 +44,9 @@ export const useAuthStore = defineStore('auth', {
         profile: null,
         booted: false,
         loading: false,
+        // Set when /auth/me failed for a reason other than a rejected token.
+        // The token is kept; the router shows a retry screen instead of login.
+        bootError: null,
     }),
     getters: {
         isAuthenticated: (s) => Boolean(s.token),
@@ -72,19 +100,37 @@ export const useAuthStore = defineStore('auth', {
                 this.loading = false;
             }
         },
-        async fetchMe() {
+        /**
+         * Loads the signed-in user. Only a 401 signs the user out. A network
+         * error, timeout, 429 or 5xx is retried twice with jittered backoff;
+         * if it still fails the token is kept, `bootError` is set and
+         * `booted` stays false so the next navigation asks again.
+         */
+        async fetchMe({ wait = defaultWait, random = Math.random } = {}) {
             if (!this.token) return null;
-            try {
-                setAuthToken(this.token);
-                const res = await authApi.me();
-                this.user = res;
-                this.booted = true;
-                return res;
-            } catch (e) {
-                this.clear();
-                throw e;
-            } finally {
-                this.booted = true;
+            setAuthToken(this.token);
+            for (let attempt = 0; ; attempt++) {
+                try {
+                    const res = await authApi.me();
+                    this.user = res;
+                    this.bootError = null;
+                    this.booted = true;
+                    return res;
+                } catch (e) {
+                    if (isTransientAuthFailure(e)) {
+                        if (attempt < ME_RETRY_DELAYS_MS.length) {
+                            await wait(jittered(ME_RETRY_DELAYS_MS[attempt], random));
+                            continue;
+                        }
+                        this.bootError = e;
+                        throw e;
+                    }
+                    // A 401 means the token is no longer valid. Any other
+                    // definitive refusal keeps the previous behaviour.
+                    this.clear();
+                    this.booted = true;
+                    throw e;
+                }
             }
         },
         async loadProfile() {
@@ -117,6 +163,7 @@ export const useAuthStore = defineStore('auth', {
             this.user = null;
             this.profile = null;
             this.token = null;
+            this.bootError = null;
             setAuthToken(null);
             try {
                 localStorage.removeItem(TOKEN_KEY);

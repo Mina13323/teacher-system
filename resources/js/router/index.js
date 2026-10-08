@@ -6,6 +6,7 @@ const routes = [
     { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue'), meta: { public: true } },
     { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
     { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
+    { path: '/reconnect', name: 'reconnect', component: () => import('@/views/Auth/Reconnect.vue'), meta: { public: true } },
     { path: '/login', name: 'login', component: () => import('@/views/Auth/Login.vue'), meta: { guest: true } },
     { path: '/join/:token', name: 'student-registration', component: () => import('@/views/Public/StudentRegistration.vue'), meta: { public: true } },
 
@@ -159,6 +160,14 @@ router.beforeEach(async (to) => {
 
     if (to.meta.public) {
         return true;
+    }
+
+    // The token is still stored but /auth/me could not be reached (network,
+    // timeout or a 5xx). Without the user we cannot pick a role-specific page,
+    // and the failure does not mean the token is invalid, so wait on a retry
+    // screen instead of sending the user to the login page.
+    if (auth.isAuthenticated && !auth.user && auth.bootError) {
+        return { name: 'reconnect', query: { redirect: to.fullPath } };
     }
 
     if (to.meta.guest) {

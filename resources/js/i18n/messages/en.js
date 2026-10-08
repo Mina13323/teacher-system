@@ -183,6 +183,11 @@ export default {
         invalid: 'Invalid email or password.',
         logout: 'Signed out successfully.',
         noAccountNote: 'Accounts are created by your teacher or assistant. Ask them for your sign-in details.',
+        reconnectTitle: 'Reconnecting…',
+        reconnectMessage: 'We could not reach the server to check your sign-in. You are still signed in, and nothing was lost.',
+        reconnectStillFailing: 'The server is still not responding. Please try again in a moment.',
+        reconnectRetry: 'Try again',
+        reconnectSignOut: 'Sign out instead',
     },
     dashboard: {
         statCourses: 'Courses',
@@ -1442,6 +1447,7 @@ export default {
         timeout: 'The server took too long to respond. Please try again.',
         network: 'Could not reach the server. Check your connection and try again.',
         server: 'An unexpected error occurred on the server.',
+        unavailable: 'The server is busy right now. Your work is safe. Please try again in a moment.',
         generic: 'Something went wrong. Please try again.',
     },
     time: {

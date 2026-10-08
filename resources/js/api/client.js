@@ -43,6 +43,7 @@ export class ApiError extends Error {
             422: 'validation',
             429: 'rateLimited',
             500: 'server',
+            503: 'unavailable',
         }[status] ?? (status === 0 ? (timedOut ? 'timeout' : 'network') : 'generic');
 
         return i18n.global.t(`apiErrors.${key}`);
@@ -137,10 +138,12 @@ async function request(config) {
             status = 0;
         }
 
+        // A 503 is the server saying it is briefly overloaded (for example the
+        // database refused a new connection); show the localized message.
         let message =
             errors && status === 422
                 ? ApiError.friendly(422)
-                : serverMessage || ApiError.friendly(status, { timedOut });
+                : (status === 503 ? null : serverMessage) || ApiError.friendly(status, { timedOut });
 
         // Clean any leaking raw SQL/database error strings defensively
         if (typeof message === 'string' && (message.includes('SQLSTATE') || message.includes('Integrity constraint violation') || message.includes('PDOException'))) {
