@@ -22,6 +22,14 @@ use Symfony\Component\HttpFoundation\Response;
  * connection was opened at all), the response size, and safe structured
  * context (request_id, route, method, status, user_id, attempt_id).
  *
+ * For capacity work each line also says where the request belongs, without
+ * any extra query: `route_uri` (the route template, ids not filled in),
+ * `area` (student / teacher / admin / auth / clock / shared), `traffic`
+ * (exam / lms / auth / clock) and `role` when the user's roles were already
+ * loaded by the request. Counting `db_connected` lines per second, grouped by
+ * these, gives new MySQL connections per second and where they come from
+ * (`php artisan metrics:requests`).
+ *
  * CRITICAL SAFETY: Never logs passwords, tokens, cookies, auth headers, or request bodies.
  */
 class LogContextMiddleware
@@ -104,6 +112,10 @@ class LogContextMiddleware
                 // counting these per second is the number that matters.
                 'db_connected' => $this->openedDatabaseConnection(),
                 'response_bytes' => isset($response) ? $this->responseBytes($response) : null,
+                'route_uri' => $request->route()?->uri(),
+                'area' => self::area($request->path()),
+                'traffic' => self::traffic($request->path()),
+                'role' => $this->loadedRole($user),
                 'user_id' => $user?->getAuthIdentifier(),
                 'attempt_id' => $attemptId,
                 'error_category' => isset($response) ? ErrorCategory::forResponse($response) : null,
@@ -129,6 +141,45 @@ class LogContextMiddleware
         $response->headers->set('X-DB-Duration-Ms', (string) round($totalDbTime, 2));
 
         return $response;
+    }
+
+    /** The API section a path belongs to. */
+    public static function area(string $path): string
+    {
+        $section = explode('/', preg_replace('#^api/v\d+/#', '', trim($path, '/')))[0] ?? '';
+
+        return match ($section) {
+            'student', 'teacher', 'admin', 'auth' => $section,
+            'time' => 'clock',
+            default => 'shared',
+        };
+    }
+
+    /**
+     * Exam-taking requests (start, the attempt and everything under it)
+     * versus everything else.
+     */
+    public static function traffic(string $path): string
+    {
+        $path = preg_replace('#^api/v\d+/#', '', trim($path, '/'));
+
+        return match (true) {
+            preg_match('#^student/attempts(/|$)#', $path) === 1,
+            preg_match('#^student/exams/\d+/start$#', $path) === 1 => 'exam',
+            $path === 'time' => 'clock',
+            str_starts_with($path, 'auth/') => 'auth',
+            default => 'lms',
+        };
+    }
+
+    /** The user's first role, only when the request already loaded the roles. */
+    private function loadedRole(mixed $user): ?string
+    {
+        if (! $user instanceof \Illuminate\Database\Eloquent\Model || ! $user->relationLoaded('roles')) {
+            return null;
+        }
+
+        return $user->getRelation('roles')->pluck('name')->first();
     }
 
     private function openedDatabaseConnection(): bool
