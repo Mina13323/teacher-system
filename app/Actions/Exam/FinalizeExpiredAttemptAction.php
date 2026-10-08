@@ -42,6 +42,19 @@ class FinalizeExpiredAttemptAction
                 return $attempt->fresh() ?? $attempt;
             }
 
+            return $this->finalizeLocked($locked);
+        });
+    }
+
+    /**
+     * Finalizes an attempt the caller has ALREADY locked (SELECT ... FOR
+     * UPDATE) in the current transaction and found in progress. Lets a submit
+     * that discovers the deadline under its own lock finalize without taking
+     * and re-reading the lock a second time.
+     */
+    public function finalizeLocked(ExamAttempt $locked): ExamAttempt
+    {
+        return DB::transaction(function () use ($locked) {
             // Not yet due: leave it alone (a stale row race guard).
             if (! $locked->isExpired()) {
                 return $locked;
@@ -51,11 +64,12 @@ class FinalizeExpiredAttemptAction
 
             if ($exam === null || $exam->autoSubmitsAtDeadline()) {
                 // Auto-submit: grade the saved answers as a deadline submission.
+                // Grading saves these with its own attempt update, in this
+                // same locked transaction.
                 $locked->submitted_at = $locked->submitted_at ?? $locked->expires_at ?? now();
                 $locked->end_reason = 'auto_submit_at_deadline';
-                $locked->save();
 
-                $graded = $this->gradeAttempt->execute($locked->fresh());
+                $graded = $this->gradeAttempt->execute($locked);
 
                 $auditData = [
                     'student_id' => $graded->student_id,

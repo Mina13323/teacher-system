@@ -8,7 +8,6 @@ use App\Enums\ExamAttemptStatus;
 use App\Enums\UserRole;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAttempt;
-use Illuminate\Support\Facades\DB;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Exam\Concerns\InteractsWithExams;
 
@@ -68,22 +67,14 @@ class DeadlineRaceFinalizationTest extends ApiTestCase
 
     public function test_a_submit_that_crosses_the_deadline_while_locking_finalizes(): void
     {
+        // The copy the request holds still shows time left; the deadline has
+        // passed by the time the submit holds the row lock, so the check on
+        // the locked row finalizes the attempt as a deadline submission.
         [$stale, $row] = $this->attemptWhoseDeadlinePassedAfterTheCheck();
-        ExamAttempt::whereKey($row->id)->update(['expires_at' => now()->addMinute()]);
-
-        // The submit's first read sees time left; the deadline passes right
-        // after it, so the re-check under the lock finds the attempt expired.
-        $crossed = false;
-        DB::listen(function ($query) use (&$crossed, $row) {
-            if (! $crossed && str_contains($query->sql, 'from "exam_attempts"')) {
-                $crossed = true;
-                ExamAttempt::whereKey($row->id)->update(['expires_at' => now()->subSecond()]);
-            }
-        });
+        $this->assertFalse($stale->isExpired());
 
         $result = app(SubmitExamAttemptAction::class)->execute($stale);
 
-        $this->assertTrue($crossed);
         $this->assertSame('auto_submit_at_deadline', $result->end_reason);
         $this->assertNotSame(ExamAttemptStatus::InProgress, $row->fresh()->status);
     }
@@ -105,14 +96,7 @@ class DeadlineRaceFinalizationTest extends ApiTestCase
     public function test_a_strict_policy_submit_that_crosses_the_deadline_stays_expired(): void
     {
         [$stale, $row] = $this->attemptWhoseDeadlinePassedAfterTheCheck(['expiry_mode' => 'expire']);
-        ExamAttempt::whereKey($row->id)->update(['expires_at' => now()->addMinute()]);
-        $crossed = false;
-        DB::listen(function ($query) use (&$crossed, $row) {
-            if (! $crossed && str_contains($query->sql, 'from "exam_attempts"')) {
-                $crossed = true;
-                ExamAttempt::whereKey($row->id)->update(['expires_at' => now()->subSecond()]);
-            }
-        });
+        $this->assertFalse($stale->isExpired());
 
         $this->expectException(InvalidAttemptStateException::class);
         try {

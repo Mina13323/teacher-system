@@ -8,8 +8,9 @@ use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAnswer;
 use App\Models\ExamAnswerOption;
 use App\Models\ExamAttempt;
-use App\Models\ExamAttemptOption;
 use App\Models\ExamAttemptQuestion;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -41,6 +42,28 @@ class SaveExamAnswerAction
         ?string $explanation = null,
         bool $explanationProvided = false
     ): ExamAttempt {
+        $this->save($attempt, $questionId, $optionId, $answerText, $optionIds, $explanation, $explanationProvided);
+
+        return $attempt;
+    }
+
+    /**
+     * Same as execute(), returning what was stored for the question: the
+     * answer row with its selection loaded, or null when the selection was
+     * cleared. Lets the controller acknowledge a save without re-reading and
+     * re-serializing the whole attempt.
+     *
+     * @param  list<int>|null  $optionIds
+     */
+    public function save(
+        ExamAttempt $attempt,
+        int $questionId,
+        ?int $optionId = null,
+        ?string $answerText = null,
+        ?array $optionIds = null,
+        ?string $explanation = null,
+        bool $explanationProvided = false
+    ): ?ExamAnswer {
         if (! $attempt->status->isInProgress()) {
             throw new InvalidAttemptStateException('This attempt is already completed.');
         }
@@ -56,11 +79,16 @@ class SaveExamAnswerAction
             ? array_values(array_unique(array_map('intval', $optionIds)))
             : ($optionId !== null ? [(int) $optionId] : []);
 
+        // The frozen question and its frozen option ids in one read (the
+        // pair is unique per attempt, so every row is the same question).
+        $snapshotRows = ExamAttemptQuestion::query()
+            ->leftJoin('exam_attempt_options as snapshot_options', 'snapshot_options.attempt_question_id', '=', 'exam_attempt_questions.id')
+            ->where('exam_attempt_questions.attempt_id', $attempt->getKey())
+            ->where('exam_attempt_questions.question_id', $questionId)
+            ->get(['exam_attempt_questions.*', 'snapshot_options.option_id as snapshot_option_id']);
+
         /** @var ExamAttemptQuestion|null $attemptQuestion */
-        $attemptQuestion = ExamAttemptQuestion::query()
-            ->where('attempt_id', $attempt->getKey())
-            ->where('question_id', $questionId)
-            ->first();
+        $attemptQuestion = $snapshotRows->first();
 
         if (! $attemptQuestion) {
             throw new InvalidAttemptStateException('This question is not part of the attempt.');
@@ -74,10 +102,11 @@ class SaveExamAnswerAction
                     throw new InvalidAttemptStateException('An option must be selected for multiple-choice questions.');
                 }
             } else {
-                $snapshotOptionIds = ExamAttemptOption::query()
-                    ->where('attempt_question_id', $attemptQuestion->getKey())
-                    ->pluck('option_id')
+                $snapshotOptionIds = $snapshotRows
+                    ->pluck('snapshot_option_id')
+                    ->filter(fn ($id) => $id !== null)
                     ->map(fn ($id) => (int) $id)
+                    ->values()
                     ->all();
 
                 foreach ($selection as $selectedId) {
@@ -100,6 +129,12 @@ class SaveExamAnswerAction
                 throw new InvalidAttemptStateException('This attempt is already completed.');
             }
 
+            // The exam row was read by the isExpired() check above, in this
+            // request; only the attempt row needs the locked re-read.
+            if ($attempt->relationLoaded('exam')) {
+                $locked->setRelation('exam', $attempt->exam);
+            }
+
             if ($locked->isExpired()) {
                 // Finalize AFTER this transaction: throwing in here would roll
                 // the finalization back with it (see below).
@@ -107,7 +142,7 @@ class SaveExamAnswerAction
             }
 
             if ($isEssay) {
-                ExamAnswer::updateOrCreate(
+                return ExamAnswer::updateOrCreate(
                     [
                         'attempt_id' => $locked->getKey(),
                         'question_id' => $questionId,
@@ -117,9 +152,7 @@ class SaveExamAnswerAction
                         'answer_text' => $answerText,
                         'answered_at' => now(),
                     ]
-                );
-
-                return;
+                )->setRelation('selectedOptions', new EloquentCollection);
             }
 
             // Choice question: clear answer if empty selection sent
@@ -129,7 +162,7 @@ class SaveExamAnswerAction
                     ->where('question_id', $questionId)
                     ->delete();
 
-                return;
+                return null;
             }
 
             $answerValues = [
@@ -144,21 +177,36 @@ class SaveExamAnswerAction
                 $answerValues['explanation'] = null;
             }
 
-            $answer = ExamAnswer::updateOrCreate(
-                [
-                    'attempt_id' => $locked->getKey(),
-                    'question_id' => $questionId,
-                ],
-                $answerValues
-            );
+            // The existing answer row and its current selection in one read
+            // (the same row updateOrCreate() would find).
+            $existingRows = ExamAnswer::query()
+                ->leftJoin('exam_answer_options as current_options', 'current_options.answer_id', '=', 'exam_answers.id')
+                ->where('exam_answers.attempt_id', $locked->getKey())
+                ->where('exam_answers.question_id', $questionId)
+                ->get(['exam_answers.*', 'current_options.option_id as current_option_id']);
 
-            // Sync answer options efficiently: skip churn if already matching
-            $currentOptions = ExamAnswerOption::query()
-                ->where('answer_id', $answer->getKey())
-                ->pluck('option_id')
+            $currentOptions = $existingRows
+                ->pluck('current_option_id')
+                ->filter(fn ($id) => $id !== null)
                 ->map(fn ($id) => (int) $id)
+                ->values()
                 ->all();
 
+            $existing = $existingRows->first();
+
+            if ($existing) {
+                $answer = (new ExamAnswer)->newFromBuilder(
+                    Arr::except($existing->getAttributes(), ['current_option_id'])
+                );
+                $answer->fill($answerValues)->save();
+            } else {
+                $answer = ExamAnswer::create(array_merge([
+                    'attempt_id' => $locked->getKey(),
+                    'question_id' => $questionId,
+                ], $answerValues));
+            }
+
+            // Sync answer options efficiently: skip churn if already matching
             sort($currentOptions);
             $sortedSelection = $selection;
             sort($sortedSelection);
@@ -176,6 +224,12 @@ class SaveExamAnswerAction
                     ExamAnswerOption::insert($rows);
                 }
             }
+
+            // The stored selection, for the acknowledgement (no re-read).
+            return $answer->setRelation('selectedOptions', new EloquentCollection(array_map(
+                fn ($id) => (new ExamAnswerOption)->forceFill(['answer_id' => $answer->getKey(), 'option_id' => $id]),
+                $sortedSelection
+            )));
         });
 
         if ($saved === false) {
@@ -187,6 +241,6 @@ class SaveExamAnswerAction
             throw new InvalidAttemptStateException('This attempt has expired.');
         }
 
-        return $attempt;
+        return $saved;
     }
 }

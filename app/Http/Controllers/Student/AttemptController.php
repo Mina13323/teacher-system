@@ -6,11 +6,13 @@ use App\Actions\Exam\ExpireExamAttemptAction;
 use App\Actions\Exam\SaveExamAnswerAction;
 use App\Actions\Exam\SubmitExamAttemptAction;
 use App\Actions\Exam\TerminateExamAttemptAction;
+use App\Enums\ExamAttemptStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitExamAnswerRequest;
 use App\Http\Resources\ExamAttemptResource;
 use App\Http\Resources\ExamResultResource;
 use App\Models\ExamAttempt;
+use App\Services\Integrity\IntegrityRiskConfig;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,9 +30,20 @@ class AttemptController extends Controller
     {
         $this->authorize('view', $attempt);
 
-        $attempt = $this->expireAttempt->execute($attempt);
+        // Route binding read the attempt in this request: no second read.
+        $attempt = $this->expireAttempt->execute($attempt, justRetrieved: true);
 
-        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
+        $attempt->loadMissing('exam');
+
+        $relations = ['answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting'];
+
+        // The post-publication review shows each question's reference answer;
+        // load those in one query instead of one per question.
+        if ($attempt->grades_published_at !== null && ($attempt->exam === null || $attempt->exam->answerReviewEnabled())) {
+            $relations[] = 'attemptQuestions.question:id,reference_answer';
+        }
+
+        $attempt->load($relations);
 
         return $this->success(new ExamAttemptResource($attempt), 'Attempt retrieved.');
     }
@@ -42,7 +55,7 @@ class AttemptController extends Controller
         // depend on a FormRequest being present to stay safe.
         $this->authorize('update', $attempt);
 
-        $attempt = $this->saveAnswer->execute(
+        $answer = $this->saveAnswer->save(
             $attempt,
             $request->integer('question_id'),
             $request->filled('option_id') ? $request->integer('option_id') : null,
@@ -54,18 +67,44 @@ class AttemptController extends Controller
             $request->exists('explanation')
         );
 
-        $attempt->load(['exam', 'answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
+        if ($request->boolean('compact_response')) {
+            // Acknowledge only the saved question, from what was just stored
+            // under the attempt lock. Saves no re-read of the attempt and a
+            // 15-37 KB snapshot per answer; the client already holds the rest.
+            return $this->success([
+                'id' => $attempt->id,
+                'status' => ExamAttemptStatus::InProgress->value,
+                'expires_at' => $attempt->expires_at?->toISOString(),
+                'question' => [
+                    'id' => $request->integer('question_id'),
+                    'selected_option_id' => $answer?->option_id,
+                    'selected_option_ids' => $answer ? $answer->selectedOptionIds() : [],
+                    'answer_text' => $answer?->answer_text,
+                    'explanation' => $answer?->explanation,
+                ],
+            ], 'Answer saved.');
+        }
+
+        $attempt->loadMissing('exam');
+        $attempt->load(['answers.selectedOptions', 'attemptQuestions.attemptOptions', 'integritySetting']);
 
         return $this->success(new ExamAttemptResource($attempt), 'Answer saved.');
     }
 
-    public function submit(ExamAttempt $attempt): JsonResponse
+    public function submit(Request $request, ExamAttempt $attempt): JsonResponse
     {
         $this->authorize('update', $attempt);
 
+        // The owner is the signed-in user: hand the loaded model over so the
+        // result notification does not read the user row again. (Only for the
+        // owner; an admin acting on the attempt is not its student.)
+        if ((int) $attempt->student_id === (int) $request->user()->getKey()) {
+            $attempt->setRelation('student', $request->user());
+        }
+
         $attempt = $this->submitAttempt->execute($attempt);
 
-        $attempt->load('exam');
+        $attempt->loadMissing('exam');
 
         return $this->success(new ExamResultResource($attempt), 'Exam submitted.');
     }
@@ -74,14 +113,44 @@ class AttemptController extends Controller
     {
         $this->authorize('update', $attempt);
 
-        $attempt = $this->expireAttempt->execute($attempt);
+        // Fast path: one conditional UPDATE records the heartbeat only while
+        // the attempt is in progress and clearly before both deadlines (its
+        // own expires_at and the exam window end). Whole seconds are compared
+        // strictly, so the fast path never accepts an attempt that
+        // ExamAttempt::isExpired() would call expired. It cannot revive a
+        // finalized attempt: the status is re-checked by the UPDATE itself.
+        // Soft-deleted exams count too, as in the attempt's exam relation.
+        $now = now();
+        $touched = ExamAttempt::query()
+            ->whereKey($attempt->getKey())
+            ->where('status', ExamAttemptStatus::InProgress->value)
+            ->where('expires_at', '>', $now)
+            ->whereNotExists(function ($query) use ($now) {
+                $query->selectRaw('1')
+                    ->from('exams')
+                    ->whereColumn('exams.id', 'exam_attempts.exam_id')
+                    ->whereNotNull('exams.ends_at')
+                    ->where('exams.ends_at', '<=', $now);
+            })
+            ->update(['last_heartbeat_at' => $now, 'updated_at' => $now]);
 
-        if (! $attempt->status->isInProgress()) {
-            return $this->error('Attempt is no longer in progress.', 422);
+        if ($touched === 1) {
+            $attempt->setRawAttributes(array_merge($attempt->getAttributes(), [
+                'last_heartbeat_at' => $now,
+                'updated_at' => $now,
+            ]), true);
+        } else {
+            // Anything else (expired, finalized, at the deadline second):
+            // the full path, which finalizes an expired attempt.
+            $attempt = $this->expireAttempt->execute($attempt);
+
+            if (! $attempt->status->isInProgress()) {
+                return $this->error('Attempt is no longer in progress.', 422);
+            }
+
+            $attempt->last_heartbeat_at = now();
+            $attempt->save();
         }
-
-        $attempt->last_heartbeat_at = now();
-        $attempt->save();
 
         $now = now();
 
@@ -113,7 +182,7 @@ class AttemptController extends Controller
 
         $attempt->loadMissing('integritySetting');
 
-        $threshold = app(\App\Services\Integrity\IntegrityRiskConfig::class)
+        $threshold = app(IntegrityRiskConfig::class)
             ->resolveWarningThreshold($attempt->integritySetting?->violation_warning_threshold);
 
         $warningCount = (int) $attempt->violation_warnings;

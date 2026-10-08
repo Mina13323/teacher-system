@@ -54,7 +54,6 @@ class RecordIntegrityEventAction
 {
     public function __construct(
         private readonly IntegrityRiskConfig $riskConfig,
-        private readonly EvaluateAttemptRiskAction $evaluateRisk,
         private readonly UpdateAttemptIntegrityStatusAction $updateStatus,
         private readonly TerminateExamAttemptAction $terminateAttempt,
     ) {
@@ -81,9 +80,62 @@ class RecordIntegrityEventAction
         $settingKey = $this->riskConfig->gateSetting($type);
         $enabled = $settingKey === null || $this->settingEnabled($attempt, $settingKey);
 
-        $state = DB::transaction(function () use ($attempt, $type, $occurredAt, $metadata, $enabled) {
+        // A repeat inside the deduplication window is answered without taking
+        // the attempt lock (the common case for bursts of the same event). The
+        // check is repeated under the lock below, so two concurrent identical
+        // events still record at most one.
+        $state = $this->isDuplicate($attempt, $type)
+            ? ['event' => null, 'deduplicated' => true, 'counted' => false, 'attempt' => $attempt]
+            : $this->recordLocked($attempt, $type, $occurredAt, $metadata, $enabled);
+
+        $locked = $state['attempt'];
+        $threshold = $this->warningThresholdFor($locked);
+        $warningCount = (int) $locked->violation_warnings;
+
+        // Threshold policy: warnings 1..N warn; the next counted violation
+        // terminates — but only when the frozen settings say so.
+        $terminateOnViolation = (bool) ($locked->integritySetting?->terminate_on_violation ?? true);
+        $shouldTerminate = $terminateOnViolation && $warningCount > $threshold;
+
+        $terminated = false;
+
+        if ($shouldTerminate && $locked->status->isInProgress()) {
+            $this->terminateAttempt->execute($locked, 'THRESHOLD_TERMINATION', [
+                'warning_count' => $warningCount,
+                'warning_threshold' => $threshold,
+            ]);
+            $terminated = true;
+        }
+
+        return [
+            'event' => $state['event'],
+            'deduplicated' => $state['deduplicated'],
+            'counted' => $state['counted'],
+            'warning_count' => $warningCount,
+            'warning_threshold' => $threshold,
+            'should_terminate' => $shouldTerminate,
+            'terminated' => $terminated,
+            'attempt' => $terminated ? $locked->fresh() : $locked,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array{event: ?ExamIntegrityEvent, deduplicated: bool, counted: bool, attempt: ExamAttempt}
+     */
+    private function recordLocked(ExamAttempt $attempt, IntegrityEventType $type, Carbon $occurredAt, array $metadata, bool $enabled): array
+    {
+        return DB::transaction(function () use ($attempt, $type, $occurredAt, $metadata, $enabled) {
             // Lock the attempt so a concurrent submit cannot race a recording.
             $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
+
+            // The exam and the frozen settings were read for this attempt in
+            // this request; only the attempt row needs the locked re-read.
+            foreach (['exam', 'integritySetting'] as $relation) {
+                if ($attempt->relationLoaded($relation)) {
+                    $locked->setRelation($relation, $attempt->getRelation($relation));
+                }
+            }
 
             if (! $locked->status->isInProgress() || $locked->isExpired()) {
                 throw new InvalidAttemptStateException('Integrity events can only be recorded for an active attempt.');
@@ -124,48 +176,20 @@ class RecordIntegrityEventAction
 
             if ($counted) {
                 $locked->violation_warnings = (int) $locked->violation_warnings + 1;
-                $locked->save();
             }
 
+            // The warning count and the re-evaluated risk are written in one
+            // UPDATE (none when nothing changed); the locked model already
+            // holds the stored values, so it is not re-read.
             $this->refreshAttemptRisk($locked);
 
             return [
                 'event' => $event,
                 'deduplicated' => false,
                 'counted' => $counted,
-                'attempt' => $locked->fresh(),
+                'attempt' => $locked,
             ];
         });
-
-        $locked = $state['attempt'];
-        $threshold = $this->warningThresholdFor($locked);
-        $warningCount = (int) $locked->violation_warnings;
-
-        // Threshold policy: warnings 1..N warn; the next counted violation
-        // terminates — but only when the frozen settings say so.
-        $terminateOnViolation = (bool) ($locked->integritySetting?->terminate_on_violation ?? true);
-        $shouldTerminate = $terminateOnViolation && $warningCount > $threshold;
-
-        $terminated = false;
-
-        if ($shouldTerminate && $locked->status->isInProgress()) {
-            $this->terminateAttempt->execute($locked, 'THRESHOLD_TERMINATION', [
-                'warning_count' => $warningCount,
-                'warning_threshold' => $threshold,
-            ]);
-            $terminated = true;
-        }
-
-        return [
-            'event' => $state['event'],
-            'deduplicated' => $state['deduplicated'],
-            'counted' => $state['counted'],
-            'warning_count' => $warningCount,
-            'warning_threshold' => $threshold,
-            'should_terminate' => $shouldTerminate,
-            'terminated' => $terminated,
-            'attempt' => $terminated ? $locked->fresh() : $locked,
-        ];
     }
 
     /**
@@ -180,13 +204,19 @@ class RecordIntegrityEventAction
         );
     }
 
+    /**
+     * Same score and status as EvaluateAttemptRiskAction (the sum of every
+     * recorded event's risk points, mapped through the configured thresholds),
+     * computed by the database instead of loading every event.
+     */
     private function refreshAttemptRisk(ExamAttempt $attempt): void
     {
-        $result = $this->evaluateRisk->execute($attempt);
-        $this->updateStatus->execute(
+        $riskScore = (int) $attempt->integrityEvents()->sum('risk_points');
+
+        $this->updateStatus->apply(
             $attempt,
-            $result['risk_score'],
-            $result['integrity_status']
+            $riskScore,
+            $this->riskConfig->statusFor($riskScore)
         );
     }
 
