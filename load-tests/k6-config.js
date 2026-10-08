@@ -46,10 +46,10 @@ export function studentEmail(n) {
 // ---------------------------------------------------------------------------
 // Run sizing. STAGE (50|100|250|500|750|1000) or VUS; default is a tiny safe run.
 // ---------------------------------------------------------------------------
-const ALLOWED_STAGES = [50, 100, 250, 500, 750, 1000];
+const ALLOWED_STAGES = [50, 100, 250, 374, 500, 750, 1000];
 const DEFAULT_VUS = 5;
 // Seconds over which VU start times are spread (the controlled ramp).
-const DEFAULT_RAMP = { 5: 10, 50: 60, 100: 120, 250: 300, 500: 600, 750: 900, 1000: 1200 };
+const DEFAULT_RAMP = { 5: 10, 50: 60, 100: 120, 250: 300, 374: 450, 500: 600, 750: 900, 1000: 1200 };
 
 function intEnv(name, dflt) {
   const raw = __ENV[name];
@@ -173,7 +173,7 @@ export function buildThresholds(endpointsInUse) {
 // ---------------------------------------------------------------------------
 // HTTP helpers (same headers/auth/payloads as scripts/loadtest-smoke.mjs)
 // ---------------------------------------------------------------------------
-function request(method, path, body, token, endpoint, trend) {
+export function request(method, path, body, token, endpoint, trend) {
   // Defence in depth: re-check the target before every request.
   assertStagingUrl(BASE_URL);
   const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };

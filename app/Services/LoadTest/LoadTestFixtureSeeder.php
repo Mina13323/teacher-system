@@ -55,8 +55,12 @@ class LoadTestFixtureSeeder
     /**
      * @return array{students:int, created:int, teacher_id:int, course_id:int, exam_id:int, questions:int}
      */
-    public function seed(int $students, int $windowDays = 7, bool $resetAttempts = false): array
+    public function seed(int $students, int $windowDays = 7, bool $resetAttempts = false, int $durationMinutes = 60): array
     {
+        if ($durationMinutes < 1 || $durationMinutes > 240) {
+            throw new \InvalidArgumentException('--duration must be between 1 and 240 minutes.');
+        }
+
         $this->guard->assertStaging();
 
         $max = (int) config('loadtest.max_students');
@@ -69,7 +73,7 @@ class LoadTestFixtureSeeder
 
         $teacher = $this->ensureTeacher($hash);
         $course = $this->ensureCourse($teacher);
-        $exam = $this->ensureExam($course, $teacher, $windowDays);
+        $exam = $this->ensureExam($course, $teacher, $windowDays, $durationMinutes);
         $questions = $this->ensureQuestions($exam);
 
         if ($resetAttempts) {
@@ -143,7 +147,7 @@ class LoadTestFixtureSeeder
         return $course;
     }
 
-    private function ensureExam(Course $course, User $teacher, int $windowDays): Exam
+    private function ensureExam(Course $course, User $teacher, int $windowDays, int $durationMinutes = 60): Exam
     {
         $exam = Exam::withTrashed()->firstOrNew([
             'course_id' => $course->getKey(),
@@ -151,7 +155,9 @@ class LoadTestFixtureSeeder
         ]);
         $exam->fill([
             'description' => 'Staging-only load-test exam: 20 questions (16 single choice, 4 multiple choice).',
-            'duration_minutes' => 60,
+            // Shorter runs (--duration) let one load-test step include the
+            // deadline: every attempt reaches it and is finalized.
+            'duration_minutes' => $durationMinutes,
             // Window opens an hour ago so "now" is always inside it, and runs
             // for $windowDays; each re-seed re-centres it on the current time.
             'starts_at' => now()->subHour(),
