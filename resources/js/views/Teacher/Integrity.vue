@@ -9,19 +9,25 @@ import AppButton from '@/components/ui/AppButton.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 
-const { loading, error, data, run } = useAsync(() => teacher.analyticsOverview());
 const flagged = ref([]);
+const needsAttentionCount = ref(0);
 const collecting = ref(false);
+
+// One request for the page: the list and its headline count (the page used
+// to also load the whole analytics overview for that one number).
+const { loading, error, run } = useAsync(async () => {
+    const res = await teacher.integrityAttempts();
+    flagged.value = Array.isArray(res?.attempts) ? res.attempts : toList(res?.attempts).items;
+    needsAttentionCount.value = Number(res?.needs_attention_count) || 0;
+    return res;
+});
 
 async function collect() {
     collecting.value = true;
     try {
-        // One request; the server walks the courses and exams this teacher
-        // may review (previously up to ~150 requests in a row from here).
-        const rows = await teacher.integrityAttempts();
-        flagged.value = Array.isArray(rows) ? rows : toList(rows).items;
+        await run();
     } catch {
-        flagged.value = [];
+        // `useAsync` exposes the failure in `error`.
     } finally {
         collecting.value = false;
     }
@@ -31,10 +37,7 @@ function tone(status) {
     return { flagged: 'danger', monitoring: 'warning', reviewed: 'info', cleared: 'success' }[status] || 'neutral';
 }
 
-onMounted(async () => {
-    await run();
-    await collect();
-});
+onMounted(() => run().catch(() => {}));
 </script>
 
 <template>
@@ -45,7 +48,7 @@ onMounted(async () => {
         <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
         <template v-else>
-            <StatCard :label="$t('integrity.flaggedStat')" :value="data.flagged_integrity_count" icon="shield" tone="danger" />
+            <StatCard :label="$t('integrity.flaggedStat')" :value="needsAttentionCount" icon="shield" tone="danger" />
 
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-ink-900">{{ $t('integrity.needsAttention') }}</h2>

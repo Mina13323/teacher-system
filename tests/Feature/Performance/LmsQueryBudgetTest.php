@@ -117,7 +117,10 @@ class LmsQueryBudgetTest extends ApiTestCase
         ExamAttempt::whereKey($flagged)->update(['integrity_status' => IntegrityStatus::Flagged->value]);
         ExamAttempt::whereKey($cleared)->update(['integrity_status' => IntegrityStatus::Cleared->value]);
 
-        $rows = $this->actingAs($this->teacher, 'sanctum')->getJson('/api/v1/teacher/integrity/attempts')->assertOk()->json('data');
+        $res = $this->actingAs($this->teacher, 'sanctum')->getJson('/api/v1/teacher/integrity/attempts')->assertOk();
+        $rows = $res->json('data.attempts');
+        // The headline count: flagged or monitored (cleared is not counted).
+        $this->assertSame(1, $res->json('data.needs_attention_count'));
 
         $this->assertEqualsCanonicalizing([$flagged, $cleared], array_column($rows, 'id'));
         $this->assertNotContains($normal, array_column($rows, 'id'));
@@ -137,7 +140,8 @@ class LmsQueryBudgetTest extends ApiTestCase
         $otherTeacher = $this->createUserWithRole(UserRole::Teacher);
         $this->actingAs($otherTeacher, 'sanctum')->getJson('/api/v1/teacher/integrity/attempts')
             ->assertOk()
-            ->assertJsonCount(0, 'data');
+            ->assertJsonCount(0, 'data.attempts')
+            ->assertJsonPath('data.needs_attention_count', 0);
 
         // The per-exam endpoint refuses that teacher too: the list matches it.
         $this->app['auth']->forgetGuards();
@@ -150,7 +154,7 @@ class LmsQueryBudgetTest extends ApiTestCase
         $admin = $this->createUserWithRole(UserRole::Admin);
         $this->app['auth']->forgetGuards();
         $this->assertSame([$flagged], array_column(
-            $this->actingAs($admin, 'sanctum')->getJson('/api/v1/teacher/integrity/attempts')->assertOk()->json('data'),
+            $this->actingAs($admin, 'sanctum')->getJson('/api/v1/teacher/integrity/attempts')->assertOk()->json('data.attempts'),
             'id'
         ));
     }

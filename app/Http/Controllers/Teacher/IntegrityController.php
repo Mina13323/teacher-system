@@ -73,10 +73,20 @@ class IntegrityController extends Controller
             ->limit(200)
             ->get();
 
-        return $this->success($attempts->map(fn (ExamAttempt $attempt) => array_merge(
-            (new ExamAttemptDetailResource($attempt))->resolve($request),
-            ['course_title' => $courses->get($attempt->exam?->course_id)?->title]
-        ))->values(), 'Attempts needing attention retrieved.');
+        // The page's headline count (it used to need the whole analytics
+        // overview request): flagged or monitored attempts in the same scope.
+        $needsAttention = ExamAttempt::query()
+            ->whereIn('exam_id', $examIds)
+            ->whereIn('integrity_status', [IntegrityStatus::Flagged->value, IntegrityStatus::Monitoring->value])
+            ->count();
+
+        return $this->success([
+            'needs_attention_count' => $needsAttention,
+            'attempts' => $attempts->map(fn (ExamAttempt $attempt) => array_merge(
+                (new ExamAttemptDetailResource($attempt))->resolve($request),
+                ['course_title' => $courses->get($attempt->exam?->course_id)?->title]
+            ))->values(),
+        ], 'Attempts needing attention retrieved.');
     }
 
     public function showSettings(Exam $exam): JsonResponse
