@@ -83,9 +83,16 @@ class AttemptController extends Controller
         $attempt->last_heartbeat_at = now();
         $attempt->save();
 
+        $now = now();
+
         return $this->success([
             'last_heartbeat_at' => $attempt->last_heartbeat_at->toISOString(),
             'status' => $attempt->status->value,
+            // Lets the client keep its countdown on the server's clock and
+            // pick up a deadline the server changed (for example on resume).
+            'expires_at' => $attempt->expires_at?->toISOString(),
+            'server_time' => $now->toISOString(),
+            'server_time_ms' => (int) $now->getTimestampMs(),
         ], 'Heartbeat received.');
     }
 

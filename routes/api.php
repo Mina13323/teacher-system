@@ -53,6 +53,13 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// ---- Server clock -----------------------------------------------------------
+// Database-free: no auth, no session, and no throttle (with the database cache
+// store the rate limiter itself would open a MySQL connection). It returns
+// only the current server time; see ServerTimeController.
+Route::get('time', \App\Http\Controllers\ServerTimeController::class)
+    ->withoutMiddleware('throttle:api');
+
 // ---- Authentication -------------------------------------------------------
 // Self-registration is intentionally not exposed. Accounts are created only by
 // teachers/assistants (student ops) or admins through the management portals.
