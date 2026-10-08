@@ -17,6 +17,9 @@ import {
 import { createServerClock } from '@/utils/serverClock';
 import { createKeyedQueue } from '@/utils/keyedQueue';
 import { collectUnsavedDrafts } from '@/utils/examDrafts';
+import { createExplanationAcks, explanationsNeedingSave } from '@/utils/explanationAcks';
+import { singleFlight } from '@/utils/singleFlight';
+import { takeHandedOffAttempt } from '@/utils/attemptHandoff';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
@@ -35,6 +38,8 @@ const current = ref(0);
 const essayAnswers = ref({});
 const mcqExplanations = ref({});
 const explanationSaveTimers = new Map();
+/** Which explanations the server has confirmed, so submit re-sends only changed ones. */
+const explanationAcks = createExplanationAcks();
 const routeLeaveConfirmOpen = ref(false);
 const routeLeaveTarget = ref(null);
 let allowRouteLeave = false;
@@ -65,6 +70,13 @@ const timeUp = ref(false);
  */
 const saves = createKeyedQueue();
 const SUPERSEDED = Symbol('superseded');
+
+/** A save succeeded: the server now holds this payload's explanation, if it had one. */
+function noteAnswerSaved(payload) {
+    if (payload && Object.prototype.hasOwnProperty.call(payload, 'explanation')) {
+        explanationAcks.acknowledge(payload.question_id, payload.explanation, mcqExplanations.value[payload.question_id]);
+    }
+}
 
 function sendAnswerInOrder(questionId, payload) {
     return saves.run(Number(questionId), () => (
@@ -254,6 +266,7 @@ async function flushPending() {
             try {
                 const updated = await sendAnswerInOrder(qId, payload);
                 if (updated === SUPERSEDED) continue;
+                noteAnswerSaved(payload);
                 if (questionSaveSeq.get(numericQId) === thisSeq) {
                     applyUpdatedAttemptPreservingNewer(updated);
                 }
@@ -446,7 +459,10 @@ function beginMonitoring() {
 }
 
 const { loading, error, run: load } = useAsync(async () => {
-    const a = await student.attempt(route.params.id);
+    // Right after a start, the exam page already holds the full snapshot the
+    // server just returned; it is used once. Every other load (reload, deep
+    // link, refresh after a status change) reads the attempt from the server.
+    const a = takeHandedOffAttempt(route.params.id) ?? await student.attempt(route.params.id);
     attempt.value = normalizeAttempt(a);
     initEssayAnswers();
     restoreRecovery();
@@ -580,6 +596,7 @@ function initEssayAnswers() {
             essayAnswers.value[q.id] = q.answer_text || '';
         } else if (q.explanation_enabled) {
             mcqExplanations.value[q.id] = q.explanation || '';
+            explanationAcks.setServerValue(q.id, q.explanation || '');
         }
     });
 }
@@ -686,10 +703,17 @@ function fmt(ms) {
 let lastRejectionToastTime = 0;
 let lastRejectionToastMsg = '';
 
+/**
+ * Several saves can be refused at once (typically at the deadline). They all
+ * want the server's current attempt, so they share one in-flight read instead
+ * of each sending its own. Nothing is kept after it settles.
+ */
+const refreshAttemptAfterRejection = singleFlight((id) => student.attempt(id));
+
 async function handleRejection(e) {
     if (e?.status === 422) {
         try {
-            const fresh = normalizeAttempt(await student.attempt(attempt.value.id));
+            const fresh = normalizeAttempt(await refreshAttemptAfterRejection(attempt.value.id));
             attempt.value = fresh;
             if (fresh?.status === 'expired' || fresh?.status === 'submitted') {
                 expired.value = true;
@@ -737,6 +761,7 @@ function applySelection(q, ids) {
 
 function onMcqExplanationInput(questionId, value) {
     mcqExplanations.value[questionId] = value;
+    explanationAcks.markDirty(questionId);
     persistRecovery();
 
     const pendingTimer = explanationSaveTimers.get(questionId);
@@ -777,6 +802,7 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
     try {
         const updated = await sendAnswerInOrder(q.id, payload);
         if (updated === SUPERSEDED) return true;
+        noteAnswerSaved(payload);
         if (questionSaveSeq.get(q.id) === thisSeq) {
             applyUpdatedAttemptPreservingNewer(updated);
         }
@@ -806,23 +832,27 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
 }
 
 async function saveAllMcqExplanations() {
-    for (const q of questions.value) {
+    // Only explanations the server has not confirmed in their current form.
+    const unsaved = explanationsNeedingSave(questions.value, {
+        texts: mcqExplanations.value,
+        acks: explanationAcks,
+        selectionOf: currentSelection,
+    });
+    for (const q of unsaved) {
         if (attempt.value?.status !== 'in_progress' || blocked.value || expired.value) {
             break;
         }
-        if (q.explanation_enabled && q.question_type !== 'essay' && currentSelection(q).length) {
-            const res = await saveMcqExplanation(q.id, { silent: true });
-            if (res && res.error) {
-                const isAttemptLevel = res.error.status === 422 && (
-                    String(res.error.message || '').toLowerCase().includes('expired') ||
-                    String(res.error.message || '').toLowerCase().includes('completed') ||
-                    String(res.error.message || '').toLowerCase().includes('closed') ||
-                    res.error.code === 'INVALID_ATTEMPT_STATE'
-                );
-                if (isAttemptLevel || attempt.value?.status !== 'in_progress') {
-                    await handleRejection(res.error);
-                    return false;
-                }
+        const res = await saveMcqExplanation(q.id, { silent: true });
+        if (res && res.error) {
+            const isAttemptLevel = res.error.status === 422 && (
+                String(res.error.message || '').toLowerCase().includes('expired') ||
+                String(res.error.message || '').toLowerCase().includes('completed') ||
+                String(res.error.message || '').toLowerCase().includes('closed') ||
+                res.error.code === 'INVALID_ATTEMPT_STATE'
+            );
+            if (isAttemptLevel || attempt.value?.status !== 'in_progress') {
+                await handleRejection(res.error);
+                return false;
             }
         }
     }
@@ -860,6 +890,7 @@ async function answer(optionId) {
     try {
         const updated = await sendAnswerInOrder(q.id, payload);
         if (updated === SUPERSEDED) return;
+        noteAnswerSaved(payload);
         if (questionSaveSeq.get(q.id) === thisSeq) {
             applyUpdatedAttemptPreservingNewer(updated);
         }

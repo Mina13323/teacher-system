@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import { isAmbiguousStartFailure, recoverActiveAttempt } from '@/utils/examStartRecovery';
+import { clearAttemptHandoff, handOffAttempt } from '@/utils/attemptHandoff';
 import { useToast } from '@/composables/toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -109,12 +110,10 @@ async function confirmStart() {
     starting.value = true;
     startNotice.value = '';
     try {
-        // The app fetches the full snapshot on the attempt route. Ask the
-        // server for just the navigation metadata here to avoid transferring
-        // the same questions and answers twice.
+        // The full attempt snapshot comes back with the start response and is
+        // handed to the exam screen, so it does not read the attempt again.
         const attempt = await student.startExam(route.params.id, {
             rules_acknowledged: true,
-            compact_response: true,
         });
 
         if (!attempt?.id) {
@@ -126,11 +125,17 @@ async function confirmStart() {
 
         resumeAttemptId.value = attempt.id;
         if (attempt.already_open) {
+            // Another session has this attempt open and may be changing it:
+            // the exam screen reads it fresh from the server instead.
+            clearAttemptHandoff();
             toast.success(t('exams.alreadyOpen'));
+        } else {
+            handOffAttempt(attempt);
         }
 
         rulesOpen.value = false;
         if (!await navigateToAttempt(attempt.id)) {
+            clearAttemptHandoff();
             startNotice.value = t('exams.attemptNavigationFailed');
         }
     } catch (e) {
