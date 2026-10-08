@@ -128,6 +128,7 @@ export const m = {
   answer: new Trend('step_answer_save_ms', true),
   heartbeat: new Trend('step_heartbeat_ms', true),
   submit: new Trend('step_submit_ms', true),
+  dashboard: new Trend('step_dashboard_ms', true),
   flow: new Trend('flow_complete_ms', true),
   http5xx: new Rate('http_5xx'),
   flowFailed: new Rate('flow_failed'),
@@ -150,6 +151,8 @@ const LATENCY = {
   answer: { p95: 1000, p99: 2500 },
   heartbeat: { p95: 800, p99: 2000 },
   submit: { p95: 3000, p99: 6000 },
+  student_dashboard: { p95: 1500, p99: 3000 },
+  teacher_dashboard: { p95: 1500, p99: 3000 },
 };
 
 export function buildThresholds(endpointsInUse) {
@@ -214,6 +217,16 @@ export function login(email) {
     });
     return ok ? body.data.token : null;
   }
+}
+
+/** GET /{role}/dashboard. Returns true when it answered 200 with the standard envelope. */
+export function getDashboard(token, role) {
+  const res = request('GET', `/${role}/dashboard`, null, token, `${role}_dashboard`, m.dashboard);
+  const body = json(res);
+  return check(res, {
+    [`${role} dashboard: status 200`]: (r) => r.status === 200,
+    [`${role} dashboard: success envelope`]: () => !!body && body.success === true && !!body.data,
+  });
 }
 
 /** GET /student/exams -> the load-test exam summary, or null. */

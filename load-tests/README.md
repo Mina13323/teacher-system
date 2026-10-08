@@ -13,6 +13,7 @@ The scripts never create or modify accounts.
 | `student-flow.js` | **Primary.** Realistic journey: login → exam list → exam details → start → get attempt → answers (+ heartbeats) → submit |
 | `exam-start-storm.js` | All VUs fire `POST /exams/{id}/start` at the same moment; each student double-starts (double-click) to verify the one-active-attempt rule |
 | `answer-save-storm.js` | All VUs start, then save answers back-to-back at the same time; optional submit |
+| `dashboard-flow.js` | Read-only: each VU logs in and opens the student dashboard `DASHBOARD_VIEWS` times (default 5); VU 1 opens the teacher dashboard as the load-test teacher. Needs no reset between runs |
 | `k6-config.js` | Shared guard, sizing, metrics, thresholds, request helpers (not run directly) |
 
 Request payloads, auth (Bearer token from `POST /auth/login`), and response fields are the ones used by the real
