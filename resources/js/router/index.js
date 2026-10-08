@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import { profilePathFor } from '@/utils/authRoutes';
+import { authGuard } from './authGuard';
 
 const routes = [
     { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue'), meta: { public: true } },
@@ -134,59 +134,7 @@ const router = createRouter({
     },
 });
 
-function homeFor(roles = []) {
-    if (roles.includes('admin')) return '/admin';
-    if (roles.includes('teacher')) return '/teacher';
-    if (roles.includes('assistant')) return '/assistant';
-    if (roles.includes('student')) return '/student';
-    return '/';
-}
-
-router.beforeEach(async (to) => {
-    const auth = useAuthStore();
-
-    if (!auth.booted) {
-        try {
-            await auth.fetchMe();
-        } catch {
-            /* handled below */
-        }
-    }
-
-    if (auth.user?.must_change_password && !to.meta.public) {
-        const profilePath = profilePathFor(auth.roles);
-        if (to.path !== profilePath) return profilePath;
-    }
-
-    if (to.meta.public) {
-        return true;
-    }
-
-    // The token is still stored but /auth/me could not be reached (network,
-    // timeout or a 5xx). Without the user we cannot pick a role-specific page,
-    // and the failure does not mean the token is invalid, so wait on a retry
-    // screen instead of sending the user to the login page.
-    if (auth.isAuthenticated && !auth.user && auth.bootError) {
-        return { name: 'reconnect', query: { redirect: to.fullPath } };
-    }
-
-    if (to.meta.guest) {
-        if (auth.isAuthenticated) return homeFor(auth.roles);
-        return true;
-    }
-
-    if (!auth.isAuthenticated) {
-        return { name: 'login', query: { redirect: to.fullPath } };
-    }
-
-    const allowed = to.meta.roles || [];
-    if (allowed.length === 0) return true;
-
-    const ok = allowed.some((r) => auth.roles.includes(r));
-    if (!ok) return homeFor(auth.roles);
-
-    return true;
-});
+router.beforeEach((to) => authGuard(to, useAuthStore()));
 
 router.onError((error, to) => {
     const isChunkLoadFailed =
