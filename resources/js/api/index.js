@@ -109,8 +109,10 @@ export const student = {
     examAttempts: (examId, requestOptions = {}) => api.get(`/student/exams/${examId}/attempts`, undefined, requestOptions),
     startExam: (examId, payload) => api.post(`/student/exams/${examId}/start`, payload),
     attempt: (attemptId) => api.get(`/student/attempts/${attemptId}`),
-    answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, payload),
-    answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, payload),
+    // Answer saves ask for a short acknowledgement of the saved question
+    // instead of the whole attempt (see utils/answerAck.js).
+    answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, { ...payload, compact_response: true }),
+    answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, { ...payload, compact_response: true }),
     submit: (attemptId) => api.post(`/student/attempts/${attemptId}/submit`),
     heartbeat: (attemptId) => api.post(`/student/attempts/${attemptId}/heartbeat`),
     // Database-free server clock (no auth needed); see ServerTimeController.
@@ -197,6 +199,8 @@ export const teacher = {
     archiveExam: (id) => api.post(`/teacher/exams/${id}/archive`),
     deleteExam: (id) => api.delete(`/teacher/exams/${id}`),
     examAttempts: (examId, params) => api.get(`/teacher/exams/${examId}/attempts`, params),
+    // Attempts needing integrity attention across the teacher's courses, in one request.
+    integrityAttempts: () => api.get('/teacher/integrity/attempts'),
     bulkDeleteExamAttempts: (examId, attemptIds, reason = null) => api.post(`/teacher/exams/${examId}/attempts/bulk-delete`, { attempt_ids: attemptIds, confirmed: true, reason }),
     makeUpAssignments: (examId, params) => api.get(`/teacher/exams/${examId}/make-up-assignments`, params),
     assignExamMakeUps: (examId, studentIds, reason = null) => api.post(`/teacher/exams/${examId}/make-up-assignments`, { student_ids: studentIds, reason }),

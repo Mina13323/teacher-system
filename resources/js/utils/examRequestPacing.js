@@ -46,14 +46,68 @@ export function deadlineFlushLeadMs(random = Math.random) {
 
 /**
  * At the deadline the server finalizes the attempt with the deadline itself as
- * the submission time, however late the request arrives. The client's own
+ * the submission time, however late the request arrives, and the per-minute
+ * sweep finalizes it even if the request never comes. The client's own
  * "submit" call is therefore spread over this window instead of every student
- * sending it in the same second.
+ * sending it in the same second: 500 students over 50 s is about 10
+ * requests a second instead of 60. The screen is locked from the deadline on,
+ * so the wait only delays when the student sees the result.
  */
-export const TIME_UP_SUBMIT_SPREAD_MS = 8_000;
+export const TIME_UP_SUBMIT_SPREAD_MS = 50_000;
 
 export function timeUpSubmitDelayMs(random = Math.random) {
     return Math.round(TIME_UP_SUBMIT_SPREAD_MS * random());
+}
+
+/**
+ * After a submit the unread-notification badge is refreshed after a random
+ * delay in this window, not in the same second as the whole class's submits.
+ * The result itself is already on screen from the submit response.
+ */
+export const RESULT_NOTICE_REFRESH_WINDOW_MS = [20_000, 90_000];
+
+export function resultNoticeRefreshDelayMs(random = Math.random) {
+    const [min, max] = RESULT_NOTICE_REFRESH_WINDOW_MS;
+    return Math.round(min + (max - min) * random());
+}
+
+/**
+ * Start admission pacing. When a scheduled exam opens, a class presses
+ * "start" within seconds of each other, and each start writes the whole
+ * attempt snapshot. In the first minutes after the opening time the start
+ * request is sent after a random wait of up to START_PACING_MAX_MS ("preparing
+ * your exam"), so the starts spread over that window.
+ *
+ * The wait never costs exam time. The attempt's clock starts when the server
+ * creates it, so a wait only matters when the exam window would cut the
+ * attempt short: the wait is capped so that the full duration plus a safety
+ * margin still fits before the window closes, and it is 0 when it does not.
+ * There is no wait outside the opening burst or for exams without a start
+ * time.
+ */
+export const START_PACING_MAX_MS = 45_000;
+/** Pacing applies only this long after the exam's opening time. */
+export const START_PACING_BURST_WINDOW_MS = 180_000;
+/** Kept free before the window closes, beyond the exam's full duration. */
+export const START_PACING_SAFETY_MS = 15_000;
+
+export function startPacingDelayMs({ nowMs, startsAt, endsAt = null, durationMinutes = null, random = Math.random }) {
+    if (!startsAt || !Number.isFinite(nowMs)) return 0;
+    const opensAt = new Date(startsAt).getTime();
+    if (!Number.isFinite(opensAt)) return 0;
+    const sinceOpen = nowMs - opensAt;
+    if (sinceOpen < 0 || sinceOpen > START_PACING_BURST_WINDOW_MS) return 0;
+
+    let max = START_PACING_MAX_MS;
+    if (endsAt) {
+        const closesAt = new Date(endsAt).getTime();
+        const durationMs = Math.max(0, Number(durationMinutes) || 0) * 60_000;
+        if (!Number.isFinite(closesAt)) return 0;
+        max = Math.min(max, closesAt - nowMs - durationMs - START_PACING_SAFETY_MS);
+    }
+    if (!(max > 0)) return 0;
+
+    return Math.round(max * random());
 }
 
 /** Pending-answer check while saves are succeeding (the previous fixed interval). */

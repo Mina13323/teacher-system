@@ -13,6 +13,7 @@ import {
     deadlineFlushLeadMs,
     shouldCheckStatus,
     timeUpSubmitDelayMs,
+    resultNoticeRefreshDelayMs,
 } from '@/utils/examRequestPacing';
 import { createServerClock } from '@/utils/serverClock';
 import { createKeyedQueue } from '@/utils/keyedQueue';
@@ -20,6 +21,7 @@ import { collectUnsavedDrafts } from '@/utils/examDrafts';
 import { createExplanationAcks, explanationsNeedingSave } from '@/utils/explanationAcks';
 import { singleFlight } from '@/utils/singleFlight';
 import { takeHandedOffAttempt } from '@/utils/attemptHandoff';
+import { applyAnswerAck, isAnswerAck } from '@/utils/answerAck';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
@@ -208,6 +210,8 @@ function clearRecovery() {
     }
 }
 
+let resultNoticeTimer = null;
+
 function acceptSubmission(res) {
     result.value = res;
     if (attempt.value) {
@@ -229,7 +233,10 @@ function acceptSubmission(res) {
     stopFlushTimer();
     stopMonitoring();
     clearRecovery();
-    notifications.refreshUnread();
+    // The result is on screen already (submit response). The unread badge is
+    // refreshed a little later, not in the same second as the class's submits.
+    clearTimeout(resultNoticeTimer);
+    resultNoticeTimer = setTimeout(() => notifications.refreshUnread(), resultNoticeRefreshDelayMs());
 }
 
 /** True when the connection banner was raised by a failed server-time ping. */
@@ -545,6 +552,11 @@ function normalizeAttempt(a) {
 
 function applyUpdatedAttemptPreservingNewer(updated) {
     if (!updated) return;
+    if (isAnswerAck(updated)) {
+        // A save's short acknowledgement: only the saved question changes.
+        attempt.value = applyAnswerAck(attempt.value, updated, pendingAnswers.value);
+        return;
+    }
     const fresh = normalizeAttempt(updated);
     if (!attempt.value) {
         attempt.value = fresh;
@@ -1291,7 +1303,7 @@ onBeforeUnmount(() => {
 
             <!-- Server-authoritative expiration notice: blocks all mutation -->
             <div v-if="blocked" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700" role="alert">
-                ⏱ {{ $t('examTake.expiredBlocked') }}
+                ⏱ {{ timeUp && !result && !expired ? $t('examTake.timeUpSubmitting') : $t('examTake.expiredBlocked') }}
             </div>
 
             <!-- Connection state: recoverable, never fatal -->

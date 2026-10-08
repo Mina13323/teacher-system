@@ -351,6 +351,13 @@ function toggleSelectStudent(id) {
     }
 }
 
+// Search after a pause in typing, not once per keystroke.
+let searchDebounce = null;
+function onSearchInput() {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => load(1), 300);
+}
+
 async function load(p = 1) {
     page.value = p;
     loading.value = true;
@@ -642,7 +649,7 @@ onMounted(() => load(1));
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between no-print">
             <div class="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2.5 flex-1">
                 <div class="w-full sm:w-64">
-                    <AppInput v-model="search" :placeholder="$t('common.search') + '...'" id="student-search" @input="load(1)" />
+                    <AppInput v-model="search" :placeholder="$t('common.search') + '...'" id="student-search" @input="onSearchInput" />
                 </div>
                 <div class="w-full sm:w-44">
                     <AppSelect v-model="yearFilter" :options="yearOptions" id="filter-year" @change="load(1)" />

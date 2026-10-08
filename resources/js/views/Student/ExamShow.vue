@@ -7,6 +7,8 @@ import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import { isAmbiguousStartFailure, recoverActiveAttempt } from '@/utils/examStartRecovery';
 import { clearAttemptHandoff, handOffAttempt } from '@/utils/attemptHandoff';
+import { startPacingDelayMs } from '@/utils/examRequestPacing';
+import { createServerClock } from '@/utils/serverClock';
 import { useToast } from '@/composables/toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -24,6 +26,8 @@ const resumeAttemptId = ref(null);
 const startNotice = ref('');
 const rulesOpen = ref(false);
 const rulesAccepted = ref(false);
+/** True while a paced start waits before sending (see startPacingDelayMs). */
+const preparing = ref(false);
 
 const { loading, error, data, run } = useAsync(() => student.exam(route.params.id));
 const activeAttempt = computed(() => (
@@ -104,12 +108,43 @@ async function resumeAttempt() {
     }
 }
 
+/**
+ * Random wait before the start request while a scheduled exam is opening, on
+ * the server's clock (the time endpoint makes no database query). 0 outside
+ * the opening burst and whenever a wait could cost exam time.
+ */
+async function startPacingDelay() {
+    const d = data.value;
+    if (!d?.starts_at) return 0;
+    const clock = createServerClock();
+    try {
+        const sentAt = Date.now();
+        const res = await student.serverTime();
+        clock.observe(Number(res?.server_time_ms), sentAt, Date.now());
+    } catch {
+        /* the device clock is used when the server clock is unavailable */
+    }
+    return startPacingDelayMs({
+        nowMs: clock.serverNow(),
+        startsAt: d.starts_at,
+        endsAt: d.ends_at || d.effective_deadline || null,
+        durationMinutes: d.duration_minutes,
+    });
+}
+
 async function confirmStart() {
     if (!rulesAccepted.value || starting.value) return;
 
     starting.value = true;
     startNotice.value = '';
     try {
+        const wait = await startPacingDelay();
+        if (wait > 0) {
+            preparing.value = true;
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            preparing.value = false;
+        }
+
         // The full attempt snapshot comes back with the start response and is
         // handed to the exam screen, so it does not read the attempt again.
         const attempt = await student.startExam(route.params.id, {
@@ -158,6 +193,7 @@ async function confirmStart() {
             toast.error(e?.message || '');
         }
     } finally {
+        preparing.value = false;
         starting.value = false;
     }
 }
@@ -250,6 +286,9 @@ function statusLabel(status) {
                     <li v-else>{{ $t('examTake.rulesNoExtraControls') }}</li>
                     <li class="font-medium text-amber-800">{{ $t('examTake.screenshotLimit') }}</li>
                 </ul>
+                <p v-if="preparing" class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-sm font-medium text-sky-900" role="status">
+                    {{ $t('exams.preparingExam') }}
+                </p>
                 <p v-if="startNotice && rulesOpen" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-900" role="alert">
                     {{ startNotice }}
                 </p>

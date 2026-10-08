@@ -16,17 +16,10 @@ const collecting = ref(false);
 async function collect() {
     collecting.value = true;
     try {
-        const courses = toList(await teacher.courses({ per_page: 50 })).items;
-        const rows = [];
-        for (const c of courses.slice(0, 12)) {
-            const exams = toList(await teacher.exams(c.id, { per_page: 50 })).items;
-            for (const e of exams.slice(0, 12)) {
-                const attempts = toList(await teacher.examAttempts(e.id, { per_page: 20 })).items;
-                const flaggedHere = attempts.filter((a) => a.integrity_status && ['flagged', 'monitoring', 'reviewed', 'cleared'].includes(a.integrity_status));
-                flaggedHere.forEach((a) => rows.push({ ...a, exam_title: e.title, course_title: c.title }));
-            }
-        }
-        flagged.value = rows;
+        // One request; the server walks the courses and exams this teacher
+        // may review (previously up to ~150 requests in a row from here).
+        const rows = await teacher.integrityAttempts();
+        flagged.value = Array.isArray(rows) ? rows : toList(rows).items;
     } catch {
         flagged.value = [];
     } finally {
