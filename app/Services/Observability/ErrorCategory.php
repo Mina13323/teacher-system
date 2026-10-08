@@ -16,10 +16,15 @@ use Throwable;
 final class ErrorCategory
 {
     public const DB_CONNECT_FINAL = 'DB_CONNECT_FINAL';
+
     public const DB_QUERY_FAILURE = 'DB_QUERY_FAILURE';
+
     public const AUTH_FAILURE = 'AUTH_FAILURE';
+
     public const RATE_LIMITED = 'RATE_LIMITED';
+
     public const EXAM_STATE_REJECTED = 'EXAM_STATE_REJECTED';
+
     public const SERVER_ERROR = 'SERVER_ERROR';
 
     public static function forResponse(Response $response): ?string

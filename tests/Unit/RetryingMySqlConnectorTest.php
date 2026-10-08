@@ -146,9 +146,7 @@ class FakeConnector extends RetryingMySqlConnector
     /** @var list<int> */
     public array $pauses = [];
 
-    public function __construct(private array $outcomes)
-    {
-    }
+    public function __construct(private array $outcomes) {}
 
     protected function createPdoConnection($dsn, $username, #[\SensitiveParameter] $password, $options)
     {

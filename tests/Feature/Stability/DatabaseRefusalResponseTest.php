@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Stability;
 
+use App\Exceptions\InvalidAttemptStateException;
 use App\Services\Observability\ErrorCategory;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -82,6 +83,6 @@ class DatabaseRefusalResponseTest extends ApiTestCase
         $this->assertNull(ErrorCategory::classify(422));
         $this->assertSame(ErrorCategory::RATE_LIMITED, ErrorCategory::classify(429));
         $this->assertSame(ErrorCategory::SERVER_ERROR, ErrorCategory::classify(500));
-        $this->assertSame(ErrorCategory::EXAM_STATE_REJECTED, ErrorCategory::classify(422, new \App\Exceptions\InvalidAttemptStateException('closed')));
+        $this->assertSame(ErrorCategory::EXAM_STATE_REJECTED, ErrorCategory::classify(422, new InvalidAttemptStateException('closed')));
     }
 }
