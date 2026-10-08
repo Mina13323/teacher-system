@@ -7,6 +7,7 @@ import { useExamIntegrity } from '@/composables/useExamIntegrity';
 import { student } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useNotificationsStore } from '@/stores/notifications';
+import { createAutosaveScheduler, createHeartbeatScheduler } from '@/utils/examRequestPacing';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
@@ -106,7 +107,6 @@ async function reloadAfterTermination() {
 
 const connectionLost = ref(false);
 const pendingAnswers = ref({});
-let flushTimer = null;
 
 const RECOVERY_KEY = () => `exam.recovery.${route.params.id}`;
 
@@ -191,16 +191,21 @@ function markConnection(ok) {
     connectionLost.value = !ok;
 }
 
+/**
+ * Sends queued answers one at a time. Resolves to 'ok' when the queue was
+ * drained, 'failed' on a network/server failure (entries stay queued),
+ * 'rejected' when the server refused the attempt, or 'skipped'.
+ */
 async function flushPending() {
-    if (flushInFlight || blocked.value || attempt.value?.status !== 'in_progress') return;
+    if (flushInFlight || blocked.value || attempt.value?.status !== 'in_progress') return 'skipped';
     flushInFlight = true;
 
     try {
         const entries = Object.entries(pendingAnswers.value);
-        if (!entries.length) return;
+        if (!entries.length) return 'skipped';
 
         for (const [qId, payload] of entries) {
-            if (blocked.value || attempt.value?.status !== 'in_progress') break;
+            if (blocked.value || attempt.value?.status !== 'in_progress') return 'skipped';
 
             const numericQId = Number(qId);
             const thisSeq = ++globalAnswerSeq;
@@ -224,32 +229,35 @@ async function flushPending() {
                     }
                     persistRecovery();
                     await handleRejection(e);
-                    return;
+                    return 'rejected';
                 }
-                // Network/server hiccup: keep the entry, retry on the next tick.
+                // Network/server hiccup: keep the entry; the autosave chain
+                // retries it after its backoff delay.
                 markConnection(false);
-                return;
+                return 'failed';
             }
         }
+        return 'ok';
     } finally {
         flushInFlight = false;
     }
 }
 
+/**
+ * Retries queued answers: every ~5 s while saves succeed, backing off to
+ * ~10, 20, 40 and at most ~60 s (each ±20%) while they keep failing.
+ */
+const autosave = createAutosaveScheduler({
+    flush: flushPending,
+    hasPending: () => Object.keys(pendingAnswers.value).length > 0,
+});
+
 function startFlushTimer() {
-    stopFlushTimer();
-    flushTimer = setInterval(() => {
-        if (!flushInFlight && Object.keys(pendingAnswers.value).length) {
-            flushPending();
-        }
-    }, 5000);
+    autosave.start();
 }
 
 function stopFlushTimer() {
-    if (flushTimer) {
-        clearInterval(flushTimer);
-        flushTimer = null;
-    }
+    autosave.stop();
 }
 
 /** Queue selected MCQ answers with their rationale before route/page teardown. */
@@ -289,43 +297,55 @@ function onOffline() {
 
 function onOnline() {
     markConnection(true);
-    flushPending();
+    // No immediate resend: queued answers go out on the autosave backoff
+    // schedule, so many students reconnecting at once do not resend together.
+    autosave.nudge();
 }
 
-let heartbeatTimer = null;
+async function sendHeartbeat() {
+    if (!attempt.value || attempt.value.status !== 'in_progress') {
+        stopHeartbeat();
+        return;
+    }
+    try {
+        const res = await student.heartbeat(attempt.value.id);
+        markConnection(true);
+        if (res && res.status && res.status !== 'in_progress') {
+            // The server finalized the attempt (deadline reached).
+            await load();
+        }
+    } catch (e) {
+        if (e.status === 422 || e.isValidation) {
+            stopHeartbeat();
+            load();
+        } else {
+            // Network loss / server hiccup: NOT a violation. The attempt
+            // continues; the banner explains what is happening.
+            markConnection(false);
+        }
+    }
+}
+
+/**
+ * Liveness heartbeat: first beat at a random point in the first 15 s, then
+ * every 15 s ± 20%, so students who start together do not stay in step.
+ * Paused while the tab is hidden (the server only records last_heartbeat_at;
+ * nothing enforces it), with one beat as soon as the tab is visible again.
+ */
+const heartbeat = createHeartbeatScheduler({ beat: sendHeartbeat });
+
 function startHeartbeat() {
     stopHeartbeat();
     if (attempt.value?.status !== 'in_progress') return;
-    heartbeatTimer = setInterval(async () => {
-        if (!attempt.value || attempt.value.status !== 'in_progress') {
-            stopHeartbeat();
-            return;
-        }
-        try {
-            const res = await student.heartbeat(attempt.value.id);
-            markConnection(true);
-            if (res && res.status && res.status !== 'in_progress') {
-                // The server finalized the attempt (deadline reached).
-                await load();
-            }
-        } catch (e) {
-            if (e.status === 422 || e.isValidation) {
-                stopHeartbeat();
-                load();
-            } else {
-                // Network loss / server hiccup: NOT a violation. The attempt
-                // continues; the banner explains what is happening.
-                markConnection(false);
-            }
-        }
-    }, 15000);
+    heartbeat.start();
 }
 
 function stopHeartbeat() {
-    if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-    }
+    heartbeat.stop();
+}
+
+function onHeartbeatVisibilityChange() {
+    heartbeat.onVisibilityChange();
 }
 
 function beginMonitoring() {
@@ -659,6 +679,7 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
         return true;
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
@@ -672,6 +693,7 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
             return { error: e };
         } else {
             markConnection(false);
+            autosave.recordFailure();
             return false;
         }
     }
@@ -739,6 +761,7 @@ async function answer(optionId) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
             if (pendingAnswers.value[q.id] === payload) {
@@ -750,6 +773,7 @@ async function answer(optionId) {
             // Network/server hiccup: the selection is queued locally and will
             // sync automatically. The exam is NOT destroyed.
             markConnection(false);
+            autosave.recordFailure();
         }
     }
 }
@@ -774,6 +798,7 @@ async function saveEssay(qId) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
         toast.success(t('examTake.essaySaved'));
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
@@ -784,6 +809,7 @@ async function saveEssay(qId) {
             await handleRejection(e);
         } else {
             markConnection(false);
+            autosave.recordFailure();
             toast.info(t('examTake.savedLocally'));
         }
     } finally {
@@ -950,6 +976,7 @@ onMounted(() => {
     loadAttempt();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onHeartbeatVisibilityChange);
     window.addEventListener('copy', handleCopy);
     window.addEventListener('cut', handleCut);
     window.addEventListener('paste', handlePaste);
@@ -971,6 +998,7 @@ onBeforeUnmount(() => {
     persistRecovery();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
+    document.removeEventListener('visibilitychange', onHeartbeatVisibilityChange);
     window.removeEventListener('copy', handleCopy);
     window.removeEventListener('cut', handleCut);
     window.removeEventListener('paste', handlePaste);
