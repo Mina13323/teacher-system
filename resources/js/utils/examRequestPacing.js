@@ -18,6 +18,44 @@ export const HEARTBEAT_INTERVAL_MS = 15_000;
 /** Each beat lands within ±20% of the average (12–18 s), so the mean stays 15 s. */
 export const HEARTBEAT_JITTER_RATIO = 0.2;
 
+/**
+ * Most beats are a database-free server-time ping. A full attempt status
+ * check (which reads and writes MySQL) is sent only when this long has passed
+ * since the last one, so about one beat in four (roughly once a minute).
+ */
+export const STATUS_CHECK_MIN_GAP_MS = 55_000;
+
+/** Whether the next beat should be a full status check instead of a time ping. */
+export function shouldCheckStatus(nowMs, lastStatusCheckMs) {
+    if (lastStatusCheckMs === null || lastStatusCheckMs === undefined) return true;
+    return nowMs - lastStatusCheckMs >= STATUS_CHECK_MIN_GAP_MS;
+}
+
+/**
+ * Before the deadline every unsaved draft (essay text, MCQ explanations) is
+ * sent once, at a random point in this window before time runs out, so the
+ * whole class does not send its drafts in the same second. Answers that reach
+ * the server after the deadline are refused, so this must happen before it.
+ */
+export const DEADLINE_FLUSH_WINDOW_MS = [10_000, 30_000];
+
+export function deadlineFlushLeadMs(random = Math.random) {
+    const [min, max] = DEADLINE_FLUSH_WINDOW_MS;
+    return Math.round(min + (max - min) * random());
+}
+
+/**
+ * At the deadline the server finalizes the attempt with the deadline itself as
+ * the submission time, however late the request arrives. The client's own
+ * "submit" call is therefore spread over this window instead of every student
+ * sending it in the same second.
+ */
+export const TIME_UP_SUBMIT_SPREAD_MS = 8_000;
+
+export function timeUpSubmitDelayMs(random = Math.random) {
+    return Math.round(TIME_UP_SUBMIT_SPREAD_MS * random());
+}
+
 /** Pending-answer check while saves are succeeding (the previous fixed interval). */
 export const AUTOSAVE_BASE_DELAY_MS = 5_000;
 /** Longest wait between retries while saves keep failing. */

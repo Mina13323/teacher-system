@@ -113,6 +113,8 @@ export const student = {
     answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, payload),
     submit: (attemptId) => api.post(`/student/attempts/${attemptId}/submit`),
     heartbeat: (attemptId) => api.post(`/student/attempts/${attemptId}/heartbeat`),
+    // Database-free server clock (no auth needed); see ServerTimeController.
+    serverTime: () => api.get('/time', undefined, { timeout: 10_000 }),
     terminate: (attemptId, payload = {}) => api.post(`/student/attempts/${attemptId}/terminate`, payload),
     terminateKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/terminate`, payload),
     recordIntegrity: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/integrity-events`, payload),

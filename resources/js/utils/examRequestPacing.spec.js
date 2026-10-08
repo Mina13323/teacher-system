@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     AUTOSAVE_BASE_DELAY_MS,
     AUTOSAVE_MAX_DELAY_MS,
+    DEADLINE_FLUSH_WINDOW_MS,
     HEARTBEAT_INTERVAL_MS,
+    STATUS_CHECK_MIN_GAP_MS,
+    TIME_UP_SUBMIT_SPREAD_MS,
     autosaveDelay,
     autosaveNominalDelay,
     createAutosaveScheduler,
     createHeartbeatScheduler,
+    deadlineFlushLeadMs,
     heartbeatInitialDelay,
     heartbeatNextDelay,
+    shouldCheckStatus,
+    timeUpSubmitDelayMs,
 } from './examRequestPacing';
 
 const MID = () => 0.5; // no jitter: lands exactly on the nominal delay
@@ -397,5 +403,50 @@ describe('createAutosaveScheduler', () => {
         expect(flush).toHaveBeenCalledTimes(2);
         expect(scheduler.failures()).toBe(0);
         scheduler.stop();
+    });
+});
+
+describe('exam deadline and status pacing', () => {
+    it('checks attempt status about once a minute and pings the clock otherwise', () => {
+        expect(shouldCheckStatus(1_000, null)).toBe(true);
+        expect(shouldCheckStatus(0, 0)).toBe(false);
+        expect(shouldCheckStatus(STATUS_CHECK_MIN_GAP_MS - 1, 0)).toBe(false);
+        expect(shouldCheckStatus(STATUS_CHECK_MIN_GAP_MS, 0)).toBe(true);
+    });
+
+    it('turns roughly one beat in four into a status check', () => {
+        // Simulate 30 minutes of jittered beats and count database requests.
+        let now = 0;
+        let lastStatus = 0;
+        let status = 0;
+        let beats = 0;
+        let random = 0;
+        const rand = () => {
+            random = (random + 0.37) % 1;
+            return random;
+        };
+        while (now < 30 * 60_000) {
+            now += heartbeatNextDelay(rand);
+            beats++;
+            if (shouldCheckStatus(now, lastStatus)) {
+                status++;
+                lastStatus = now;
+            }
+        }
+        // 15 s beats: ~120 beats, of which ~30 hit the database (was 120).
+        expect(beats).toBeGreaterThan(100);
+        expect(status).toBeGreaterThanOrEqual(24);
+        expect(status).toBeLessThanOrEqual(34);
+    });
+
+    it('sends drafts 10–30 s before the deadline', () => {
+        expect(deadlineFlushLeadMs(() => 0)).toBe(DEADLINE_FLUSH_WINDOW_MS[0]);
+        expect(deadlineFlushLeadMs(() => 0.999999)).toBeLessThanOrEqual(DEADLINE_FLUSH_WINDOW_MS[1]);
+        expect(DEADLINE_FLUSH_WINDOW_MS[0]).toBeGreaterThanOrEqual(10_000);
+    });
+
+    it('spreads the time-up submit over a bounded window', () => {
+        expect(timeUpSubmitDelayMs(() => 0)).toBe(0);
+        expect(timeUpSubmitDelayMs(() => 0.999999)).toBeLessThanOrEqual(TIME_UP_SUBMIT_SPREAD_MS);
     });
 });
