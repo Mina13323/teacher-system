@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { student } from '@/api';
+import { createPlaybackEventGate, isBlurIntoPlayer } from '@/utils/playbackEventGate';
 
 const props = defineProps({
     videoId: { type: [String, Number], required: true },
@@ -23,21 +24,14 @@ const PLAYER_BASE = 'https://www.youtube-nocookie.com';
 // Deterrence state.
 const detected = ref([]);
 
-// Simple per-type throttle so we don't flood the rate-limited endpoint.
-const lastReport = ref({});
-const DETECT_THROTTLE_MS = 5000;
-
-function throttle(key) {
-    const now = Date.now();
-    if (lastReport.value[key] && now - lastReport.value[key] < DETECT_THROTTLE_MS) return false;
-    lastReport.value[key] = now;
-    return true;
-}
+// The events are an audit record: each type goes to the server at most once a
+// minute (see playbackEventGate). The on-screen notice is shown every time.
+const eventGate = createPlaybackEventGate();
 
 async function report(eventType) {
     if (!session.value?.playback?.token) return;
-    if (!throttle(eventType)) return;
     noteDetection(DETECT_LABELS[eventType] || eventType);
+    if (!eventGate.allow(eventType)) return;
     try {
         await student.playbackEvent(props.videoId, {
             session_token: session.value.playback.token,
@@ -139,7 +133,16 @@ function onVisibilityChange() {
 
 function onBlur() {
     isBlurred.value = true;
-    if (flag('detect_window_blur')) report('WINDOW_BLUR');
+    if (!flag('detect_window_blur')) return;
+    // Focus moves after the blur event: check where it went first.
+    setTimeout(() => {
+        // A click into the embedded player is not leaving the page, and a tab
+        // switch is already reported as TAB_SWITCH. (The shield itself
+        // behaves as before; only the server record is skipped.)
+        if (isBlurIntoPlayer(document.activeElement, playerWrap.value)) return;
+        if (document.visibilityState === 'hidden') return;
+        report('WINDOW_BLUR');
+    }, 0);
 }
 
 function onFocus() {
@@ -148,12 +151,11 @@ function onFocus() {
 
 // Simple DevTools detection heuristic (deterrence/audit only).
 function detectDevtools() {
-    if (!flag('detect_devtools')) return;
+    if (!flag('detect_devtools') || document.visibilityState === 'hidden') return;
     const threshold = 160;
-    const h = window.outerHeight - window.innerHeight;
-    if (h > threshold) {
-        if (throttle('devtools')) report('DEVTOOLS_DETECTION');
-    }
+    const open = window.outerHeight - window.innerHeight > threshold;
+    // Reported when it turns on, not on every poll while it stays on.
+    if (eventGate.devtoolsTurnedOn(open)) report('DEVTOOLS_DETECTION');
 }
 
 async function loadSession() {
