@@ -168,6 +168,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
 
     // Exam integrity configuration + attempt integrity review
+    Route::get('integrity/attempts', [TeacherIntegrityController::class, 'attentionAttempts']);
     Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
     Route::put('exams/{exam}/integrity', [TeacherIntegrityController::class, 'updateSettings']);
     Route::get('attempts/{attempt}/integrity', [TeacherIntegrityController::class, 'showAttemptIntegrity']);

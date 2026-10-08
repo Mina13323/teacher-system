@@ -279,7 +279,9 @@ class ExamController extends Controller
         $filters = $this->attemptFilterValues($request);
 
         $query = $exam->attempts()
-            ->with(['student', 'exam'])
+            // UserResource reads each student's roles and latest access
+            // period; loading them here avoids two queries per row.
+            ->with(['student.roles', 'student.latestAccessPeriod', 'exam'])
             ->orderByDesc('started_at')
             ->orderByDesc('id');
         $query = $this->applyAttemptFilters($query, $filters);
