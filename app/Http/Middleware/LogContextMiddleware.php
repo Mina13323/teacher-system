@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use App\Services\Observability\ErrorCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -67,10 +68,13 @@ class LogContextMiddleware
                 'slowest_query_ms' => round($slowestQueryTime, 2),
                 'user_id' => $user?->getAuthIdentifier(),
                 'attempt_id' => $attemptId,
+                'error_category' => isset($response) ? ErrorCategory::forResponse($response) : null,
             ];
 
+            $metrics = array_filter($metrics, fn ($v) => $v !== null);
+
             // Re-apply full context including user/metrics for any downstream error handlers
-            Log::withContext(array_filter($metrics, fn ($v) => $v !== null));
+            Log::withContext($metrics);
 
             // Structured request performance logging:
             // Log as warning if request duration or query time crosses threshold

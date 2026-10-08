@@ -39,7 +39,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Retry a refused MySQL connect (never a query); see the class docblock.
+        $this->app->bind('db.connector.mysql', \App\Database\RetryingMySqlConnector::class);
     }
 
     /**
