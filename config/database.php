@@ -60,6 +60,12 @@ return [
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (defined('Pdo\Mysql::ATTR_SSL_CA') ? \Pdo\Mysql::ATTR_SSL_CA : (defined('PDO::MYSQL_ATTR_SSL_CA') ? @PDO::MYSQL_ATTR_SSL_CA : 1012)) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
+            // Retries of a REFUSED new connection only (see
+            // App\Database\RetryingMySqlConnector). Queries are never retried.
+            // Set DB_CONNECT_RETRIES=0 to turn this off.
+            'connect_retries' => (int) env('DB_CONNECT_RETRIES', 2),
+            'connect_retry_base_ms' => 100,
+            'connect_retry_budget_ms' => 1000,
         ],
 
         'mariadb' => [

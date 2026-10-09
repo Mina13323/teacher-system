@@ -153,9 +153,8 @@ watch(
 onMounted(() => {
     document.addEventListener('click', handleClickOutside);
     document.addEventListener('keydown', onKeyDown);
-    if (!props.modelValue) {
-        fetchStudents('');
-    }
+    // The list is fetched when the picker is first opened (see the focus
+    // handler), not on every page that merely shows the picker.
 });
 
 onBeforeUnmount(() => {

@@ -28,10 +28,9 @@ const toast = useToast();
 const { fieldErrors, extractFieldError } = useFieldErrors();
 
 const tab = ref('questions');
+// The exam, its first attempts page and its integrity settings, in parallel.
 const { loading, error, data, run } = useAsync(async () => {
-    const e = await teacher.exam(examId);
-    await loadAttempts();
-    await loadIntegrity();
+    const [e] = await Promise.all([teacher.exam(examId), loadAttempts(), loadIntegrity()]);
     return e;
 });
 
@@ -690,7 +689,8 @@ async function saveIntegrity() {
     }
 }
 
-async function refresh() { await run(); loadAttempts(1); loadIntegrity(); }
+// run() already reloads the first attempts page and the integrity settings.
+async function refresh() { await run(); }
 onMounted(() => run());
 
 function attemptTone(statusOrAttempt) {

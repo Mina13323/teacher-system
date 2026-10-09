@@ -31,7 +31,10 @@ class ExamController extends Controller
             ->published()
             ->whereIn('course_id', $courseIds)
             ->with('course')
-            ->withCount(['questions', 'attempts'])
+            // `attempts_count` is this student's own attempts. It used to count
+            // every student's attempts on each listed exam, which cost a
+            // class-wide count per row and exposed the class total.
+            ->withCount(['questions', 'attempts' => fn ($query) => $query->where('student_id', $request->user()->getKey())])
             ->latest()
             ->paginate($this->perPage($request, 15));
 
@@ -42,7 +45,9 @@ class ExamController extends Controller
     {
         $this->assertAccessible($request, $exam);
 
-        $exam->load(['course', 'integritySetting'])->loadCount(['questions', 'attempts']);
+        // The detail payload has no attempts count (the student's own
+        // attempts are loaded just below), so none is computed.
+        $exam->load(['course', 'integritySetting'])->loadCount(['questions']);
 
         $exam->setRelation('attempts', $exam->attempts()
             ->where('student_id', $request->user()->getKey())

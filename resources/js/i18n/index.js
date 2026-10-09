@@ -17,7 +17,7 @@ export function resolveLang() {
     } catch {
         /* storage unavailable */
     }
-    const nav = (navigator.language || 'en').toLowerCase();
+    const nav = ((typeof navigator !== 'undefined' && navigator.language) || 'en').toLowerCase();
     return nav.startsWith('ar') ? 'ar' : 'en';
 }
 

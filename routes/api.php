@@ -53,6 +53,13 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// ---- Server clock -----------------------------------------------------------
+// Database-free: no auth, no session, and no throttle (were the limiter set back
+// to the database store, it would open a MySQL connection). It returns
+// only the current server time; see ServerTimeController.
+Route::get('time', \App\Http\Controllers\ServerTimeController::class)
+    ->withoutMiddleware('throttle:api');
+
 // ---- Authentication -------------------------------------------------------
 // Self-registration is intentionally not exposed. Accounts are created only by
 // teachers/assistants (student ops) or admins through the management portals.
@@ -161,6 +168,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
 
     // Exam integrity configuration + attempt integrity review
+    Route::get('integrity/attempts', [TeacherIntegrityController::class, 'attentionAttempts']);
     Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
     Route::put('exams/{exam}/integrity', [TeacherIntegrityController::class, 'updateSettings']);
     Route::get('attempts/{attempt}/integrity', [TeacherIntegrityController::class, 'showAttemptIntegrity']);

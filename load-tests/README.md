@@ -5,7 +5,9 @@ request) unless `BASE_URL` is **exactly** `https://staging.maherelmasry.com`; `m
 `www.maherelmasry.com` are rejected explicitly. The check also runs again before every request.
 
 Accounts come from the existing fixtures (`php artisan loadtest:seed`, see `../LOAD_TEST_FIXTURES.md`):
-`loadtest.student.NNNN@staging.maherelmasry.com`, password `LoadTest#Staging-2026` (override with `LOADTEST_PASSWORD`).
+`loadtest.student.NNNN@staging.maherelmasry.com`. The password is a secret you choose: set the same strong
+`LOADTEST_PASSWORD` (16+ chars, mixed case, digit, symbol) in the **staging** `.env` (read by `loadtest:seed`) and in
+your shell for k6. There is **no default**; the scripts refuse to start without it and never print it.
 The scripts never create or modify accounts.
 
 | Script | Purpose |
@@ -13,6 +15,8 @@ The scripts never create or modify accounts.
 | `student-flow.js` | **Primary.** Realistic journey: login → exam list → exam details → start → get attempt → answers (+ heartbeats) → submit |
 | `exam-start-storm.js` | All VUs fire `POST /exams/{id}/start` at the same moment; each student double-starts (double-click) to verify the one-active-attempt rule |
 | `answer-save-storm.js` | All VUs start, then save answers back-to-back at the same time; optional submit |
+| `exam-realistic.js` | **Capacity runs.** The real exam screen's schedule for a whole exam: arrive and sign in, start at a shared opening moment with the client's 0–45 s pacing, `/time` pings every 12–18 s, a status check every ~2 min, ~1 answer/min (compact), integrity events at 0.3/min, submit 0–50 s after the deadline, read the result and check every acknowledged answer is stored, unread badge 60–180 s later. Use with a short fixture exam (`--duration=15`) |
+| `dashboard-flow.js` | Read-only: each VU logs in and opens the student dashboard `DASHBOARD_VIEWS` times (default 5); VU 1 opens the teacher dashboard as the load-test teacher. Needs no reset between runs |
 | `k6-config.js` | Shared guard, sizing, metrics, thresholds, request helpers (not run directly) |
 
 Request payloads, auth (Bearer token from `POST /auth/login`), and response fields are the ones used by the real
@@ -55,7 +59,7 @@ With no sizing variables the default is **5 VUs** over a 10 s ramp — small and
 
 ### Selecting a stage (50 / 100 / 250 / 500 / 750 / 1000 VUs)
 
-Set `STAGE` (only those six values are accepted) or, for ad-hoc sizes up to 1000, `VUS`. Nothing runs automatically.
+Set `STAGE` (only the values in the table are accepted) or, for ad-hoc sizes up to 1000, `VUS`. Nothing runs automatically.
 
 ```powershell
 $env:BASE_URL="https://staging.maherelmasry.com"
@@ -72,6 +76,7 @@ BASE_URL=https://staging.maherelmasry.com STAGE=250 k6 run load-tests/student-fl
 | 50 | 1–50 | 60 s | 0.83/s |
 | 100 | 1–100 | 120 s | 0.83/s |
 | 250 | 1–250 | 300 s | 0.83/s |
+| 374 | 1–374 | 450 s | 0.83/s |
 | 500 | 1–500 | 600 s | 0.83/s |
 | 750 | 1–750 | 900 s | 0.83/s |
 | 1000 | 1–1000 | 1200 s | 0.83/s |
@@ -88,7 +93,7 @@ instant spike; concurrency then builds up to roughly arrival-rate × flow durati
 | `STAGE` / `VUS` | `VUS=5` | Concurrent users (1–1000) |
 | `START_INDEX` | `1` | First fixture student used by VU 1 |
 | `RAMP_SECONDS` | per table | Window over which VUs start |
-| `LOADTEST_PASSWORD` | documented default | Fixture password |
+| `LOADTEST_PASSWORD` | – (required, 16+ chars) | Fixture password; must match the staging `.env` value |
 | `THINK_SCALE` | `1` | Multiplier for think time; `0` = no pauses (stress), `2` = slower users |
 | `LOGIN_MAX_RETRIES` | `0` | Retries on HTTP 429 at login (see below) |
 | `ANSWERS_PER_ATTEMPT`, `HEARTBEAT_EVERY` | `8`, `2` | student-flow: saves per attempt; heartbeat after every Nth save (+1 before submit) |
@@ -161,3 +166,69 @@ without running iterations:
 $env:BASE_URL="https://staging.maherelmasry.com"
 k6 inspect .\load-tests\student-flow.js
 ```
+
+## Abort behavior (what stops a run, and its limits)
+
+A failed `check()` never stops a k6 run by itself. The suite stops the **whole run** through `exec.test.abort()`
+(k6's supported global abort: every VU is interrupted, in-flight requests are cancelled, no further iterations,
+retries or requests are started, exit code 108) when any of these is seen:
+
+- any HTTP 5xx, or no HTTP response at all (transport failure / connection refused);
+- a response body naming SQLSTATE `[2002]`, connection refused or `service_busy` (only detectable when the app
+  returns that text; a bare 503 is caught by the 5xx rule);
+- an unexpected HTTP 401 (including a failed login);
+- a dirty fixture (the student already has an attempt), an already-open or duplicate attempt, a new attempt that is
+  not `in_progress` for the right exam, an attempt reported closed more than 30 s before its deadline, or an
+  unexpected status code during the exam;
+- `answers_lost` (an acknowledged answer not stored as acknowledged), `submit_not_final`, or a missing fixture exam;
+- an exam whose real `duration_minutes` (read from the exam details) exceeds `EXAM_MINUTES`, or that the scenario
+  length cannot cover - checked by the first student before any attempt is started.
+
+Backstop: `critical_failures`, `fixture_not_clean`, `answers_lost`, `submit_not_final` and `service_busy_503` are
+count thresholds with `abortOnFail` (evaluated by k6 about every 2 s). The percentage thresholds stay as they were.
+
+Limitation: other VUs stop when k6 delivers the interrupt, which is prompt but not instantaneous; a few requests
+already on the wire can complete. Attempts left `in_progress` at an abort are finalized by the scheduler after
+their deadline - reset the fixture (`loadtest:seed --reset-attempts`, operator action) before the next run.
+
+## Capacity steps with `exam-realistic.js` (50 → 100 → 250 → 374 → 500)
+
+Run one step at a time, never during a real exam (staging and production share the
+hosting account and its MySQL connection budget), and never against production.
+
+1. Seed a short exam and a clean set of students for the step:
+   ```bash
+   php artisan loadtest:seed --students=500 --reset-attempts --duration=15
+   ```
+2. Note the time, then run the step:
+   ```bash
+   BASE_URL=https://staging.maherelmasry.com STAGE=50 k6 run \
+     --summary-export=load-tests/results/realistic-50.json load-tests/exam-realistic.js
+   ```
+3. Read the server's side of the same minutes (read-only, log files only):
+   ```bash
+   php artisan metrics:requests --since="YYYY-MM-DD HH:MM:SS" --until="YYYY-MM-DD HH:MM:SS"
+   ```
+   It reports DB connections per second (average, p95, peak, seconds at ≥16 and ≥20)
+   and which routes and traffic classes opened them.
+4. Check finalization in the database (read-only), for the fixture exam id:
+   ```sql
+   SELECT status, end_reason, COUNT(*) FROM exam_attempts WHERE exam_id = <id> GROUP BY status, end_reason;
+   SELECT student_id, COUNT(*) c FROM exam_attempts WHERE exam_id = <id> GROUP BY student_id HAVING c > 1;
+   ```
+   Every attempt must be finalized (none `in_progress`), and the second query must return no rows.
+5. Reset (`--reset-attempts`) before the next step.
+
+**Pass (all of):** zero SQLSTATE 2002 in `storage/logs/laravel.log`, zero `service_busy_503`, zero
+unexpected 5xx, `answers_lost` = 0, `submit_not_final` = 0, one attempt per student, p95 under 1 s for
+answer, heartbeat and submit, and `metrics:requests` showing DB connections under 16/s (p95) with no
+sustained climb toward `max_user_connections` = 50.
+
+**Stop at once** on a 2002 / connection refusal, a lost answer, a duplicate attempt or finalization, a
+grading change, an unexpected logout (401 during the run) or any inconsistent exam state. The script
+aborts by itself on any 503 `service_busy`.
+
+Knobs: `ANSWER_GAP_MIN`/`ANSWER_GAP_MAX` (seconds between answers, default 40/80), `INTEGRITY_PER_MIN`
+(default 0.3), `INTEGRITY_EVENT` (default `WINDOW_FOCUS`, zero risk), `OPEN_AT_S` (when the exam
+"opens", default ramp + 15 s), `START_PACING_MAX_S` (default 45, as the client), `EXAM_MINUTES`
+(must cover the seeded `--duration`, default 15).

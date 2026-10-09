@@ -30,6 +30,9 @@ class SubmitExamAnswerRequest extends FormRequest
             'option_ids.*' => ['integer'],
             'answer_text' => ['nullable', 'string', 'max:5000'],
             'explanation' => ['nullable', 'string', 'max:5000'],
+            // Opt-in short acknowledgement (only the saved question) instead
+            // of the full attempt snapshot.
+            'compact_response' => ['sometimes', 'boolean'],
         ];
     }
 }

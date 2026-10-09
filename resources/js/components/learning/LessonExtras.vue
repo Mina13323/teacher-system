@@ -25,6 +25,18 @@ const questionBody = ref('');
 const replyDrafts = ref({});
 const bookmarked = ref(false);
 const busy = ref(false);
+/** The id of this lesson's bookmark, when known (saves a lookup on removal). */
+const bookmarkId = ref(null);
+
+async function loadNotes() {
+    const n = await student.notes({ lesson_id: props.lessonId });
+    notes.value = (n.data || n || []);
+}
+
+async function loadQuestions() {
+    const q = await learning.questions(props.lessonId);
+    questions.value = (q.data || q || []);
+}
 
 async function loadAll() {
     try {
@@ -36,7 +48,9 @@ async function loadAll() {
         notes.value = (n.data || n || []);
         questions.value = (q.data || q || []);
         const list = (b.data || b || []);
-        bookmarked.value = list.some((x) => String(x.lesson_id) === String(props.lessonId) && !x.video_id);
+        const mine = list.find((x) => String(x.lesson_id) === String(props.lessonId) && !x.video_id);
+        bookmarked.value = Boolean(mine);
+        bookmarkId.value = mine?.id ?? null;
     } catch {
         // panel stays usable; individual actions surface errors
     }
@@ -49,7 +63,7 @@ async function addNote() {
         await student.saveNote({ lesson_id: props.lessonId, body: noteBody.value });
         noteBody.value = '';
         toast.success(t('lessonExtras.noteSaved'));
-        await loadAll();
+        await loadNotes();
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -60,7 +74,7 @@ async function addNote() {
 async function removeNote(id) {
     try {
         await student.deleteNote(id);
-        await loadAll();
+        await loadNotes();
     } catch (e) {
         toast.error(e.message);
     }
@@ -73,7 +87,7 @@ async function ask() {
         await learning.ask(props.lessonId, { body: questionBody.value });
         questionBody.value = '';
         toast.success(t('lessonExtras.asked'));
-        await loadAll();
+        await loadQuestions();
     } catch (e) {
         toast.error(e.message);
     } finally {
@@ -87,7 +101,7 @@ async function reply(questionId) {
     try {
         await learning.reply(questionId, { body });
         replyDrafts.value[questionId] = '';
-        await loadAll();
+        await loadQuestions();
     } catch (e) {
         toast.error(e.message);
     }
@@ -96,14 +110,19 @@ async function reply(questionId) {
 async function toggleBookmark() {
     try {
         if (bookmarked.value) {
-            const list = await student.bookmarks();
-            const mine = (list.data || list || []).find((x) => String(x.lesson_id) === String(props.lessonId) && !x.video_id);
-            if (mine) await student.deleteBookmark(mine.id);
+            let id = bookmarkId.value;
+            if (!id) {
+                const list = await student.bookmarks();
+                id = (list.data || list || []).find((x) => String(x.lesson_id) === String(props.lessonId) && !x.video_id)?.id ?? null;
+            }
+            if (id) await student.deleteBookmark(id);
             bookmarked.value = false;
+            bookmarkId.value = null;
             toast.success(t('lessonExtras.bookmarkRemoved'));
         } else {
-            await student.addBookmark({ lesson_id: props.lessonId });
+            const added = await student.addBookmark({ lesson_id: props.lessonId });
             bookmarked.value = true;
+            bookmarkId.value = (added?.data || added)?.id ?? null;
             toast.success(t('lessonExtras.bookmarked'));
         }
     } catch (e) {

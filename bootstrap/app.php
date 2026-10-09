@@ -326,6 +326,23 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
+        // MySQL refused a NEW connection (after the connector's short retries).
+        // Nothing ran, so the client may safely try again: answer with 503 and
+        // Retry-After rather than a generic 500. QueryException wraps most of
+        // these; a refusal while opening a transaction can surface as a bare
+        // PDOException.
+        $databaseBusy = function (\Throwable $e, Request $request) {
+            if (($request->is('api/*') || $request->expectsJson()) && \App\Database\ConnectionRefusal::matches($e)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The service is temporarily busy. Please try again shortly.',
+                    'code' => 'service_busy',
+                ], 503, ['Retry-After' => '5']);
+            }
+        };
+        $exceptions->render(fn (\Illuminate\Database\QueryException $e, Request $request) => $databaseBusy($e, $request));
+        $exceptions->render(fn (\PDOException $e, Request $request) => $databaseBusy($e, $request));
+
         $exceptions->render(function (\Illuminate\Database\QueryException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
                 $raw = $e->getMessage();

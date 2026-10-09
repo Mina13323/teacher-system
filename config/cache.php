@@ -15,7 +15,29 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    // File by default: the app runs on one host, so the file store is shared
+    // by every PHP process there, and no cache entry needs database semantics
+    // (see diagnostics/optimization-500 cache audit). The scheduler's
+    // withoutOverlapping() mutex and ShouldBeUnique job locks use this store
+    // too; on the file store they are flock()-based files.
+    'default' => env('CACHE_STORE', 'file'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiter Cache Store
+    |--------------------------------------------------------------------------
+    |
+    | The store behind RateLimiter and every "throttle" middleware. On the
+    | database store each throttled request adds a locked transaction (about
+    | 6 statements) to MySQL, so the counters live on the local file store.
+    | The file store's increment is not atomic: two exactly simultaneous hits
+    | on one key can count once, so limits can only be slightly lenient, never
+    | stricter. Set CACHE_LIMITER=database (or empty for the default store) to
+    | go back.
+    |
+    */
+
+    'limiter' => env('CACHE_LIMITER', 'file') ?: null,
 
     /*
     |--------------------------------------------------------------------------

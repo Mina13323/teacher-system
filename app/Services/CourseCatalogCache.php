@@ -13,8 +13,11 @@ use Illuminate\Support\Facades\Cache;
  * attempt status, timers, scores, integrity state — the database stays
  * authoritative for all academic state (locked rule).
  *
- * Invalidation: Course saved/deleted events flush the key (see the model's
- * boot hooks), and the TTL (60s) bounds staleness for direct DB edits.
+ * Invalidation: Course saved/deleted events flush the catalog (see the
+ * model's boot hooks), and the TTL (60s) bounds staleness for direct DB
+ * edits. Pages are stored under a version number, and a flush moves to the
+ * next version, so every cached page is dropped at once on any cache store
+ * (the file store has no prefix delete).
  */
 final class CourseCatalogCache
 {
@@ -22,12 +25,16 @@ final class CourseCatalogCache
 
     private const TTL_SECONDS = 60;
 
+    private const VERSION_KEY = 'catalog:published_courses:version';
+
     /**
      * Cached page of the published catalog (identical for every role).
      */
     public function page(int $page, int $perPage): mixed
     {
-        return Cache::remember(self::KEY.":p{$page}:n{$perPage}", self::TTL_SECONDS, function () use ($page, $perPage) {
+        $version = (int) Cache::get(self::VERSION_KEY, 0);
+
+        return Cache::remember(self::KEY.":g{$version}:p{$page}:n{$perPage}", self::TTL_SECONDS, function () use ($page, $perPage) {
             return Course::query()
                 ->published()
                 ->with('creator')
@@ -39,6 +46,9 @@ final class CourseCatalogCache
 
     public static function flush(): void
     {
-        Cache::forget(self::KEY);
+        // A new version makes every cached page unreachable; the old entries
+        // expire on their TTL. Not atomic, but two flushes racing still both
+        // leave a version no cached page was written under before the edit.
+        Cache::forever(self::VERSION_KEY, (int) Cache::get(self::VERSION_KEY, 0) + 1);
     }
 }

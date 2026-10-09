@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
@@ -7,6 +7,25 @@ import { useExamIntegrity } from '@/composables/useExamIntegrity';
 import { student } from '@/api';
 import { useToast } from '@/composables/toast';
 import { useNotificationsStore } from '@/stores/notifications';
+import {
+    createAutosaveScheduler,
+    createHeartbeatScheduler,
+    deadlineFlushLeadMs,
+    dueDraftPass,
+    EXPLANATION_SAVE_IDLE_MS,
+    essayDraftSaveDelayMs,
+    predeadlineDraftLeadMs,
+    shouldCheckStatus,
+    timeUpSubmitDelayMs,
+    resultNoticeRefreshDelayMs,
+} from '@/utils/examRequestPacing';
+import { createServerClock } from '@/utils/serverClock';
+import { createKeyedQueue } from '@/utils/keyedQueue';
+import { collectUnsavedDrafts } from '@/utils/examDrafts';
+import { createExplanationAcks, explanationsNeedingSave } from '@/utils/explanationAcks';
+import { singleFlight } from '@/utils/singleFlight';
+import { takeHandedOffAttempt } from '@/utils/attemptHandoff';
+import { applyAnswerAck, isAnswerAck } from '@/utils/answerAck';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
@@ -25,6 +44,8 @@ const current = ref(0);
 const essayAnswers = ref({});
 const mcqExplanations = ref({});
 const explanationSaveTimers = new Map();
+/** Which explanations the server has confirmed, so submit re-sends only changed ones. */
+const explanationAcks = createExplanationAcks();
 const routeLeaveConfirmOpen = ref(false);
 const routeLeaveTarget = ref(null);
 let allowRouteLeave = false;
@@ -39,12 +60,49 @@ let flushInFlight = false;
 let globalAnswerSeq = 0;
 const questionSaveSeq = new Map();
 
+/** Device-to-server clock offset; the countdown runs on server time. */
+const serverClock = createServerClock();
+/** When the last full attempt status check (a database request) was sent. */
+let lastStatusCheckAt = null;
+/**
+ * Unsaved drafts are sent in two passes before the deadline: everything
+ * 35–95 s before, then only what changed since, 8–28 s before (both random).
+ */
+const draftFirstLead = predeadlineDraftLeadMs();
+const deadlineFlushLead = deadlineFlushLeadMs();
+let draftFirstDone = false;
+let deadlineFlushDone = false;
+/** Set when the countdown reaches zero: the server refuses changes from then on. */
+const timeUp = ref(false);
+/**
+ * One save at a time per question, in click order, so an older selection can
+ * never reach the server after a newer one. A queued save whose payload has
+ * been replaced in the meantime is skipped (the newer one is sent instead).
+ */
+const saves = createKeyedQueue();
+const SUPERSEDED = Symbol('superseded');
+
+/** A save succeeded: the server now holds this payload's explanation, if it had one. */
+function noteAnswerSaved(payload) {
+    if (payload && Object.prototype.hasOwnProperty.call(payload, 'explanation')) {
+        explanationAcks.acknowledge(payload.question_id, payload.explanation, mcqExplanations.value[payload.question_id]);
+    }
+}
+
+function sendAnswerInOrder(questionId, payload) {
+    return saves.run(Number(questionId), () => (
+        pendingAnswers.value[questionId] === payload
+            ? student.answer(attempt.value.id, payload)
+            : SUPERSEDED
+    ));
+}
+
 /**
  * True once the attempt can no longer be mutated. Driven by the server's own
  * view of the attempt (never by the local clock alone), so a skewed device
  * clock cannot keep the UI editable after the server has closed the attempt.
  */
-const blocked = computed(() => expired.value || attempt.value?.status === 'expired' || attempt.value?.status === 'submitted');
+const blocked = computed(() => expired.value || timeUp.value || attempt.value?.status === 'expired' || attempt.value?.status === 'submitted');
 
 /**
  * Proctoring. The rules come from the server's frozen per-attempt settings, so
@@ -106,7 +164,6 @@ async function reloadAfterTermination() {
 
 const connectionLost = ref(false);
 const pendingAnswers = ref({});
-let flushTimer = null;
 
 const RECOVERY_KEY = () => `exam.recovery.${route.params.id}`;
 
@@ -139,7 +196,9 @@ function restoreRecovery() {
             pendingAnswers.value = state.pending;
         }
         if (state.essayAnswers && typeof state.essayAnswers === 'object') {
-            essayAnswers.value = { ...state.essayAnswers, ...essayAnswers.value };
+            // The recovery copy is written as the student types, so on this
+            // device it is at least as new as the server's copy.
+            essayAnswers.value = { ...essayAnswers.value, ...state.essayAnswers };
         }
         if (state.mcqExplanations && typeof state.mcqExplanations === 'object') {
             mcqExplanations.value = { ...mcqExplanations.value, ...state.mcqExplanations };
@@ -159,6 +218,8 @@ function clearRecovery() {
         /* ignore */
     }
 }
+
+let resultNoticeTimer = null;
 
 function acceptSubmission(res) {
     result.value = res;
@@ -180,34 +241,53 @@ function acceptSubmission(res) {
     stopHeartbeat();
     stopFlushTimer();
     stopMonitoring();
+    cancelEssayDraftSave();
     clearRecovery();
-    notifications.refreshUnread();
+    // The result is on screen already (submit response). The unread badge is
+    // refreshed a little later, not in the same second as the class's submits.
+    clearTimeout(resultNoticeTimer);
+    resultNoticeTimer = setTimeout(() => notifications.refreshUnread(), resultNoticeRefreshDelayMs());
 }
+
+/** True when the connection banner was raised by a failed server-time ping. */
+let lostByTimePing = false;
+
+/** Set when the connection comes back: the next beat is a status check. */
+let statusSyncWanted = false;
 
 function markConnection(ok) {
     if (connectionLost.value && ok) {
         toast.success(t('examTake.connectionRestored'));
+        statusSyncWanted = true;
     }
     connectionLost.value = !ok;
+    if (ok) lostByTimePing = false;
 }
 
+/**
+ * Sends queued answers one at a time. Resolves to 'ok' when the queue was
+ * drained, 'failed' on a network/server failure (entries stay queued),
+ * 'rejected' when the server refused the attempt, or 'skipped'.
+ */
 async function flushPending() {
-    if (flushInFlight || blocked.value || attempt.value?.status !== 'in_progress') return;
+    if (flushInFlight || blocked.value || attempt.value?.status !== 'in_progress') return 'skipped';
     flushInFlight = true;
 
     try {
         const entries = Object.entries(pendingAnswers.value);
-        if (!entries.length) return;
+        if (!entries.length) return 'skipped';
 
         for (const [qId, payload] of entries) {
-            if (blocked.value || attempt.value?.status !== 'in_progress') break;
+            if (blocked.value || attempt.value?.status !== 'in_progress') return 'skipped';
 
             const numericQId = Number(qId);
             const thisSeq = ++globalAnswerSeq;
             questionSaveSeq.set(numericQId, thisSeq);
 
             try {
-                const updated = await student.answer(attempt.value.id, payload);
+                const updated = await sendAnswerInOrder(qId, payload);
+                if (updated === SUPERSEDED) continue;
+                noteAnswerSaved(payload);
                 if (questionSaveSeq.get(numericQId) === thisSeq) {
                     applyUpdatedAttemptPreservingNewer(updated);
                 }
@@ -224,45 +304,70 @@ async function flushPending() {
                     }
                     persistRecovery();
                     await handleRejection(e);
-                    return;
+                    return 'rejected';
                 }
-                // Network/server hiccup: keep the entry, retry on the next tick.
+                // Network/server hiccup: keep the entry; the autosave chain
+                // retries it after its backoff delay.
                 markConnection(false);
-                return;
+                return 'failed';
             }
         }
+        return 'ok';
     } finally {
         flushInFlight = false;
     }
 }
 
+/**
+ * Retries queued answers: every ~5 s while saves succeed, backing off to
+ * ~10, 20, 40 and at most ~60 s (each ±20%) while they keep failing.
+ */
+const autosave = createAutosaveScheduler({
+    flush: flushPending,
+    hasPending: () => Object.keys(pendingAnswers.value).length > 0,
+});
+
 function startFlushTimer() {
-    stopFlushTimer();
-    flushTimer = setInterval(() => {
-        if (!flushInFlight && Object.keys(pendingAnswers.value).length) {
-            flushPending();
-        }
-    }, 5000);
+    autosave.start();
 }
 
 function stopFlushTimer() {
-    if (flushTimer) {
-        clearInterval(flushTimer);
-        flushTimer = null;
-    }
+    autosave.stop();
 }
 
-/** Queue selected MCQ answers with their rationale before route/page teardown. */
-function queueMcqExplanationDrafts() {
-    for (const q of questions.value) {
-        if (!q.explanation_enabled || q.question_type === 'essay') continue;
-        const optionIds = currentSelection(q);
-        if (!optionIds.length) continue;
-        pendingAnswers.value[q.id] = {
-            question_id: q.id,
-            option_ids: optionIds,
-            explanation: mcqExplanations.value[q.id] ?? '',
-        };
+/**
+ * Queue essay text and MCQ explanations the server does not have yet (typed
+ * after the last save). Returns how many were queued.
+ */
+function queueUnsavedDrafts() {
+    const drafts = collectUnsavedDrafts(questions.value, {
+        essayAnswers: essayAnswers.value,
+        mcqExplanations: mcqExplanations.value,
+        pending: pendingAnswers.value,
+        selectionOf: currentSelection,
+    });
+    Object.assign(pendingAnswers.value, drafts);
+    const queued = Object.keys(drafts).length;
+    if (queued) persistRecovery();
+    return queued;
+}
+
+/**
+ * Sends unsaved drafts when a pre-deadline pass is due (see draftFirstLead and
+ * deadlineFlushLead). A pass sends nothing when everything is already saved.
+ */
+function flushDraftsBeforeDeadline(msLeft) {
+    const pass = dueDraftPass(msLeft, {
+        firstLeadMs: draftFirstLead,
+        finalLeadMs: deadlineFlushLead,
+        firstDone: draftFirstDone,
+        finalDone: deadlineFlushDone,
+    });
+    if (!pass) return;
+    draftFirstDone = true;
+    if (pass === 'final') deadlineFlushDone = true;
+    if (queueUnsavedDrafts() || Object.keys(pendingAnswers.value).length) {
+        flushPending();
     }
 }
 
@@ -272,7 +377,7 @@ function queueMcqExplanationDrafts() {
  * is reported for the hide itself.
  */
 function flushPendingOnExit() {
-    queueMcqExplanationDrafts();
+    queueUnsavedDrafts();
     persistRecovery();
     const entries = Object.entries(pendingAnswers.value);
     if (!entries.length) return;
@@ -289,43 +394,96 @@ function onOffline() {
 
 function onOnline() {
     markConnection(true);
-    flushPending();
+    // No immediate resend: queued answers go out on the autosave backoff
+    // schedule, so many students reconnecting at once do not resend together.
+    autosave.nudge();
 }
 
-let heartbeatTimer = null;
+/**
+ * Asks the database-free /time endpoint for the server clock. It keeps the
+ * device-to-server clock offset fresh and shows whether the server is
+ * reachable, without opening a MySQL connection.
+ */
+async function syncServerClock() {
+    const sentAt = Date.now();
+    try {
+        const res = await student.serverTime();
+        serverClock.observe(Number(res?.server_time_ms), sentAt, Date.now());
+        if (lostByTimePing) markConnection(true);
+        return true;
+    } catch (e) {
+        if (e?.isNetwork) {
+            if (!connectionLost.value) lostByTimePing = true;
+            markConnection(false);
+        }
+        return false;
+    }
+}
+
+/** Adopt a deadline the server reports (it is authoritative). */
+function applyServerDeadline(expiresAt) {
+    if (!expiresAt || !attempt.value || attempt.value.expires_at === expiresAt) return;
+    attempt.value = { ...attempt.value, expires_at: expiresAt };
+    startTimer();
+}
+
+async function sendHeartbeat() {
+    if (!attempt.value || attempt.value.status !== 'in_progress') {
+        stopHeartbeat();
+        return;
+    }
+    // Most beats are a database-free time ping; a full status check (which
+    // reads and writes the attempt row) goes out about every two minutes,
+    // and on the first beat after a lost connection comes back.
+    if (!statusSyncWanted && !shouldCheckStatus(Date.now(), lastStatusCheckAt)) {
+        await syncServerClock();
+        return;
+    }
+    const sentAt = Date.now();
+    lastStatusCheckAt = sentAt;
+    try {
+        const res = await student.heartbeat(attempt.value.id);
+        serverClock.observe(Number(res?.server_time_ms), sentAt, Date.now());
+        markConnection(true);
+        statusSyncWanted = false;
+        applyServerDeadline(res?.expires_at);
+        if (res && res.status && res.status !== 'in_progress') {
+            // The server finalized the attempt (deadline reached).
+            await load();
+        }
+    } catch (e) {
+        if (e.status === 422 || e.isValidation) {
+            stopHeartbeat();
+            load();
+        } else {
+            // Network loss / server hiccup: NOT a violation. The attempt
+            // continues; the banner explains what is happening.
+            markConnection(false);
+        }
+    }
+}
+
+/**
+ * Liveness beat: first one at a random point in the first 15 s, then every
+ * 15 s ± 20%, so students who start together do not stay in step. Paused
+ * while the tab is hidden, with one beat as soon as it is visible again.
+ * About seven beats in eight are a database-free time ping; the rest are the
+ * attempt status check (which also records last_heartbeat_at).
+ */
+const heartbeat = createHeartbeatScheduler({ beat: sendHeartbeat });
+
 function startHeartbeat() {
     stopHeartbeat();
     if (attempt.value?.status !== 'in_progress') return;
-    heartbeatTimer = setInterval(async () => {
-        if (!attempt.value || attempt.value.status !== 'in_progress') {
-            stopHeartbeat();
-            return;
-        }
-        try {
-            const res = await student.heartbeat(attempt.value.id);
-            markConnection(true);
-            if (res && res.status && res.status !== 'in_progress') {
-                // The server finalized the attempt (deadline reached).
-                await load();
-            }
-        } catch (e) {
-            if (e.status === 422 || e.isValidation) {
-                stopHeartbeat();
-                load();
-            } else {
-                // Network loss / server hiccup: NOT a violation. The attempt
-                // continues; the banner explains what is happening.
-                markConnection(false);
-            }
-        }
-    }, 15000);
+    heartbeat.start();
 }
 
 function stopHeartbeat() {
-    if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-    }
+    heartbeat.stop();
+}
+
+function onHeartbeatVisibilityChange() {
+    heartbeat.onVisibilityChange();
 }
 
 function beginMonitoring() {
@@ -334,7 +492,10 @@ function beginMonitoring() {
 }
 
 const { loading, error, run: load } = useAsync(async () => {
-    const a = await student.attempt(route.params.id);
+    // Right after a start, the exam page already holds the full snapshot the
+    // server just returned; it is used once. Every other load (reload, deep
+    // link, refresh after a status change) reads the attempt from the server.
+    const a = takeHandedOffAttempt(route.params.id) ?? await student.attempt(route.params.id);
     attempt.value = normalizeAttempt(a);
     initEssayAnswers();
     restoreRecovery();
@@ -347,6 +508,17 @@ const { loading, error, run: load } = useAsync(async () => {
         if (a.status !== 'in_progress') clearRecovery();
     }
     if (a?.violation_warnings) warningCount.value = a.violation_warnings;
+    // The attempt was just read from the server, so the next status check can
+    // wait; measure the clock offset now (database-free) for the countdown.
+    lastStatusCheckAt = Date.now();
+    if (a?.status === 'in_progress') {
+        // Reading the attempt finalizes it on the server once its deadline has
+        // passed, so "in progress" here means time is genuinely left.
+        timeUp.value = false;
+        draftFirstDone = false;
+        deadlineFlushDone = false;
+        syncServerClock();
+    }
     startTimer();
     startHeartbeat();
     beginMonitoring();
@@ -407,6 +579,11 @@ function normalizeAttempt(a) {
 
 function applyUpdatedAttemptPreservingNewer(updated) {
     if (!updated) return;
+    if (isAnswerAck(updated)) {
+        // A save's short acknowledgement: only the saved question changes.
+        attempt.value = applyAnswerAck(attempt.value, updated, pendingAnswers.value);
+        return;
+    }
     const fresh = normalizeAttempt(updated);
     if (!attempt.value) {
         attempt.value = fresh;
@@ -458,6 +635,7 @@ function initEssayAnswers() {
             essayAnswers.value[q.id] = q.answer_text || '';
         } else if (q.explanation_enabled) {
             mcqExplanations.value[q.id] = q.explanation || '';
+            explanationAcks.setServerValue(q.id, q.explanation || '');
         }
     });
 }
@@ -529,8 +707,11 @@ function startTimer() {
     if (!expires) return;
 
     const tick = () => {
-        const ms = new Date(expires).getTime() - Date.now();
+        const ms = new Date(expires).getTime() - serverClock.serverNow();
         timeLeft.value = ms <= 0 ? 0 : ms;
+        if (ms > 0 && !blocked.value) {
+            flushDraftsBeforeDeadline(ms);
+        }
         if (ms <= 0) {
             clearInterval(timer);
             timer = null;
@@ -561,10 +742,17 @@ function fmt(ms) {
 let lastRejectionToastTime = 0;
 let lastRejectionToastMsg = '';
 
+/**
+ * Several saves can be refused at once (typically at the deadline). They all
+ * want the server's current attempt, so they share one in-flight read instead
+ * of each sending its own. Nothing is kept after it settles.
+ */
+const refreshAttemptAfterRejection = singleFlight((id) => student.attempt(id));
+
 async function handleRejection(e) {
     if (e?.status === 422) {
         try {
-            const fresh = normalizeAttempt(await student.attempt(attempt.value.id));
+            const fresh = normalizeAttempt(await refreshAttemptAfterRejection(attempt.value.id));
             attempt.value = fresh;
             if (fresh?.status === 'expired' || fresh?.status === 'submitted') {
                 expired.value = true;
@@ -612,6 +800,7 @@ function applySelection(q, ids) {
 
 function onMcqExplanationInput(questionId, value) {
     mcqExplanations.value[questionId] = value;
+    explanationAcks.markDirty(questionId);
     persistRecovery();
 
     const pendingTimer = explanationSaveTimers.get(questionId);
@@ -619,7 +808,7 @@ function onMcqExplanationInput(questionId, value) {
     explanationSaveTimers.set(questionId, setTimeout(() => {
         explanationSaveTimers.delete(questionId);
         saveMcqExplanation(questionId);
-    }, 700));
+    }, EXPLANATION_SAVE_IDLE_MS));
 }
 
 async function saveMcqExplanation(questionId, { silent = false } = {}) {
@@ -650,7 +839,9 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
     questionSaveSeq.set(q.id, thisSeq);
 
     try {
-        const updated = await student.answer(attempt.value.id, payload);
+        const updated = await sendAnswerInOrder(q.id, payload);
+        if (updated === SUPERSEDED) return true;
+        noteAnswerSaved(payload);
         if (questionSaveSeq.get(q.id) === thisSeq) {
             applyUpdatedAttemptPreservingNewer(updated);
         }
@@ -659,6 +850,7 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
         return true;
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
@@ -672,29 +864,34 @@ async function saveMcqExplanation(questionId, { silent = false } = {}) {
             return { error: e };
         } else {
             markConnection(false);
+            autosave.recordFailure();
             return false;
         }
     }
 }
 
 async function saveAllMcqExplanations() {
-    for (const q of questions.value) {
+    // Only explanations the server has not confirmed in their current form.
+    const unsaved = explanationsNeedingSave(questions.value, {
+        texts: mcqExplanations.value,
+        acks: explanationAcks,
+        selectionOf: currentSelection,
+    });
+    for (const q of unsaved) {
         if (attempt.value?.status !== 'in_progress' || blocked.value || expired.value) {
             break;
         }
-        if (q.explanation_enabled && q.question_type !== 'essay' && currentSelection(q).length) {
-            const res = await saveMcqExplanation(q.id, { silent: true });
-            if (res && res.error) {
-                const isAttemptLevel = res.error.status === 422 && (
-                    String(res.error.message || '').toLowerCase().includes('expired') ||
-                    String(res.error.message || '').toLowerCase().includes('completed') ||
-                    String(res.error.message || '').toLowerCase().includes('closed') ||
-                    res.error.code === 'INVALID_ATTEMPT_STATE'
-                );
-                if (isAttemptLevel || attempt.value?.status !== 'in_progress') {
-                    await handleRejection(res.error);
-                    return false;
-                }
+        const res = await saveMcqExplanation(q.id, { silent: true });
+        if (res && res.error) {
+            const isAttemptLevel = res.error.status === 422 && (
+                String(res.error.message || '').toLowerCase().includes('expired') ||
+                String(res.error.message || '').toLowerCase().includes('completed') ||
+                String(res.error.message || '').toLowerCase().includes('closed') ||
+                res.error.code === 'INVALID_ATTEMPT_STATE'
+            );
+            if (isAttemptLevel || attempt.value?.status !== 'in_progress') {
+                await handleRejection(res.error);
+                return false;
             }
         }
     }
@@ -730,7 +927,9 @@ async function answer(optionId) {
     questionSaveSeq.set(q.id, thisSeq);
 
     try {
-        const updated = await student.answer(attempt.value.id, payload);
+        const updated = await sendAnswerInOrder(q.id, payload);
+        if (updated === SUPERSEDED) return;
+        noteAnswerSaved(payload);
         if (questionSaveSeq.get(q.id) === thisSeq) {
             applyUpdatedAttemptPreservingNewer(updated);
         }
@@ -739,6 +938,7 @@ async function answer(optionId) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
             if (pendingAnswers.value[q.id] === payload) {
@@ -750,6 +950,7 @@ async function answer(optionId) {
             // Network/server hiccup: the selection is queued locally and will
             // sync automatically. The exam is NOT destroyed.
             markConnection(false);
+            autosave.recordFailure();
         }
     }
 }
@@ -765,7 +966,8 @@ async function saveEssay(qId) {
     questionSaveSeq.set(qId, thisSeq);
 
     try {
-        const updated = await student.answer(attempt.value.id, payload);
+        const updated = await sendAnswerInOrder(qId, payload);
+        if (updated === SUPERSEDED) return;
         if (questionSaveSeq.get(qId) === thisSeq) {
             applyUpdatedAttemptPreservingNewer(updated);
         }
@@ -774,6 +976,7 @@ async function saveEssay(qId) {
         }
         persistRecovery();
         markConnection(true);
+        autosave.recordSuccess();
         toast.success(t('examTake.essaySaved'));
     } catch (e) {
         if (e.status === 422 || e.isValidation) {
@@ -784,6 +987,7 @@ async function saveEssay(qId) {
             await handleRejection(e);
         } else {
             markConnection(false);
+            autosave.recordFailure();
             toast.info(t('examTake.savedLocally'));
         }
     } finally {
@@ -805,6 +1009,8 @@ async function submit() {
         if (!ok || attempt.value?.status !== 'in_progress' || blocked.value) {
             return;
         }
+        // Essay text typed since the last "Save essay" goes out with the rest.
+        queueUnsavedDrafts();
         await flushPending();
         if (attempt.value?.status !== 'in_progress' || blocked.value) {
             return;
@@ -826,16 +1032,39 @@ async function submit() {
     }
 }
 
+function remainingServerMs() {
+    const expires = attempt.value?.expires_at;
+    return expires ? new Date(expires).getTime() - serverClock.serverNow() : 0;
+}
+
+/**
+ * The countdown reached zero. The server refuses changes after its deadline
+ * and finalizes the attempt with the deadline itself as the submission time
+ * (auto-submit exams), however late the request arrives. So the screen locks
+ * now, unsaved drafts were already sent before the deadline, and the submit
+ * call is spread over a few seconds instead of the whole class sending it in
+ * the same second.
+ */
 async function onTimeUp() {
-    if (submitting.value || submittingBusy.value || blocked.value || attempt.value?.status !== 'in_progress') return;
+    if (submitting.value || submittingBusy.value || expired.value || attempt.value?.status !== 'in_progress') return;
 
     submittingBusy.value = true;
-    stopMonitoring();
-    stopHeartbeat();
-    stopFlushTimer();
     try {
-        await saveAllMcqExplanations();
-        await flushPending();
+        // A device clock that runs fast must not end the exam early: check
+        // the server clock once more (database-free) before locking.
+        await syncServerClock();
+        if (remainingServerMs() > 1000) {
+            startTimer();
+            return;
+        }
+
+        timeUp.value = true;
+        stopMonitoring();
+        stopHeartbeat();
+        stopFlushTimer();
+        persistRecovery();
+        await new Promise((resolve) => setTimeout(resolve, timeUpSubmitDelayMs()));
+
         const res = await student.submit(attempt.value.id);
         acceptSubmission(res);
         toast.info(t('examTake.timeUp'));
@@ -847,13 +1076,52 @@ async function onTimeUp() {
         } else {
             // Network trouble at the deadline: the SERVER auto-submits at the
             // deadline with the saved answers — nothing is lost. Keep a
-            // heartbeat so the screen refreshes once the connection returns.
+            // status check going so the screen refreshes once it is back.
             toast.info(t('examTake.timeUpOffline'));
+            lastStatusCheckAt = null;
             startHeartbeat();
         }
     } finally {
         submittingBusy.value = false;
     }
+}
+
+// Keep typed essay text in the local recovery copy (debounced), so a reload
+// or a closed tab does not lose text that was never saved to the server.
+let essayPersistTimer = null;
+watch(essayAnswers, () => {
+    clearTimeout(essayPersistTimer);
+    essayPersistTimer = setTimeout(persistRecovery, 500);
+    scheduleEssayDraftSave();
+}, { deep: true });
+
+// Background save of essay text: after a pause in typing, and at least every
+// ESSAY_DRAFT_MAX_AGE_MS while typing (see examRequestPacing). It sends only
+// text the server does not have yet, through the normal answer queue.
+let essayDraftTimer = null;
+let essayDirtySince = null;
+
+function scheduleEssayDraftSave() {
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
+    const now = Date.now();
+    if (essayDirtySince === null) essayDirtySince = now;
+    clearTimeout(essayDraftTimer);
+    essayDraftTimer = setTimeout(saveEssayDraftsQuietly, essayDraftSaveDelayMs(now, essayDirtySince));
+}
+
+function cancelEssayDraftSave() {
+    clearTimeout(essayDraftTimer);
+    essayDraftTimer = null;
+    essayDirtySince = null;
+}
+
+function saveEssayDraftsQuietly() {
+    essayDraftTimer = null;
+    essayDirtySince = null;
+    if (blocked.value || attempt.value?.status !== 'in_progress') return;
+    // Anything a flush already in flight does not send stays queued for the
+    // autosave chain.
+    if (queueUnsavedDrafts()) flushPending();
 }
 
 function finish() {
@@ -950,6 +1218,7 @@ onMounted(() => {
     loadAttempt();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onHeartbeatVisibilityChange);
     window.addEventListener('copy', handleCopy);
     window.addEventListener('cut', handleCut);
     window.addEventListener('paste', handlePaste);
@@ -961,6 +1230,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    cancelEssayDraftSave();
     clearInterval(timer);
     timer = null;
     stopMonitoring();
@@ -968,9 +1238,11 @@ onBeforeUnmount(() => {
     stopFlushTimer();
     explanationSaveTimers.forEach((timerId) => clearTimeout(timerId));
     explanationSaveTimers.clear();
+    clearTimeout(essayPersistTimer);
     persistRecovery();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
+    document.removeEventListener('visibilitychange', onHeartbeatVisibilityChange);
     window.removeEventListener('copy', handleCopy);
     window.removeEventListener('cut', handleCut);
     window.removeEventListener('paste', handlePaste);
@@ -1089,7 +1361,7 @@ onBeforeUnmount(() => {
 
             <!-- Server-authoritative expiration notice: blocks all mutation -->
             <div v-if="blocked" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700" role="alert">
-                ⏱ {{ $t('examTake.expiredBlocked') }}
+                ⏱ {{ timeUp && !result && !expired ? $t('examTake.timeUpSubmitting') : $t('examTake.expiredBlocked') }}
             </div>
 
             <!-- Connection state: recoverable, never fatal -->

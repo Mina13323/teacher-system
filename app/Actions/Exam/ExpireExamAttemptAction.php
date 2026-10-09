@@ -23,9 +23,13 @@ class ExpireExamAttemptAction
     ) {
     }
 
-    public function execute(ExamAttempt $attempt): ExamAttempt
+    /**
+     * @param  bool  $justRetrieved  The model was read from the database in this
+     *                               request (route binding), so it is not re-read.
+     */
+    public function execute(ExamAttempt $attempt, bool $justRetrieved = false): ExamAttempt
     {
-        $fresh = $attempt->fresh();
+        $fresh = $justRetrieved ? $attempt : $attempt->fresh();
 
         if ($fresh !== null && $fresh->status->isInProgress() && $fresh->isExpired()) {
             return $this->finalizeExpired->execute($fresh);

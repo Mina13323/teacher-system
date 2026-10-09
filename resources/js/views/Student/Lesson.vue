@@ -23,22 +23,20 @@ const progress = ref(null);
 const lesson = ref(null);
 const attachments = ref([]);
 const videos = ref([]);
-const course = ref(null);
 const activeVideo = ref(null);
 
 const { loading, error, run } = useAsync(async () => {
-    const [lRes, p, vRes, courseRes] = await Promise.all([
+    // (The page only needs the course id for its back link, from the URL.)
+    const [lRes, p, vRes] = await Promise.all([
         student.lesson(lessonId).catch(() => null),
         student.lessonProgress(lessonId).catch(() => null),
         student.lessonVideos(lessonId).catch(() => toList(null)),
-        route.query.course ? student.course(route.query.course).catch(() => null) : Promise.resolve(null),
     ]);
     // The endpoint returns { lesson, attachments }; tolerate a bare lesson too.
     lesson.value = lRes && lRes.id ? lRes : (lRes?.lesson || null);
     attachments.value = (lRes?.attachments || []).map((a) => ({ id: a.id, title: a.title, size: a.size, type: a.type }));
     progress.value = p;
     videos.value = toList(vRes).items;
-    course.value = courseRes;
 });
 
 async function markComplete() {

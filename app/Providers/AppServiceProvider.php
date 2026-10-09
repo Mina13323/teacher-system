@@ -39,7 +39,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Retry a refused MySQL connect (never a query); see the class docblock.
+        $this->app->bind('db.connector.mysql', \App\Database\RetryingMySqlConnector::class);
     }
 
     /**
@@ -47,6 +48,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Same Sanctum tokens; `last_used_at` is written at most every 5 min.
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+
         // API rate limiter used by the "throttle:api" middleware, which is
         // attached to the api group in bootstrap/app.php via throttleApi().
         RateLimiter::for('api', function (Request $request) {

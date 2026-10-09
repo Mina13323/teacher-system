@@ -17,6 +17,17 @@ class UpdateAttemptIntegrityStatusAction
 {
     public function execute(ExamAttempt $attempt, int $riskScore, IntegrityStatus $status): ExamAttempt
     {
+        $this->apply($attempt, $riskScore, $status);
+
+        return $attempt->fresh();
+    }
+
+    /**
+     * Same update as execute(), without re-reading the attempt afterwards. A
+     * save with nothing changed writes nothing.
+     */
+    public function apply(ExamAttempt $attempt, int $riskScore, IntegrityStatus $status): void
+    {
         $attempt->risk_score = $riskScore;
 
         // Preserve the teacher's human decision once a review has occurred.
@@ -28,7 +39,5 @@ class UpdateAttemptIntegrityStatusAction
         }
 
         $attempt->save();
-
-        return $attempt->fresh();
     }
 }
