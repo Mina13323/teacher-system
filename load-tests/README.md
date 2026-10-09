@@ -5,7 +5,9 @@ request) unless `BASE_URL` is **exactly** `https://staging.maherelmasry.com`; `m
 `www.maherelmasry.com` are rejected explicitly. The check also runs again before every request.
 
 Accounts come from the existing fixtures (`php artisan loadtest:seed`, see `../LOAD_TEST_FIXTURES.md`):
-`loadtest.student.NNNN@staging.maherelmasry.com`, password `LoadTest#Staging-2026` (override with `LOADTEST_PASSWORD`).
+`loadtest.student.NNNN@staging.maherelmasry.com`. The password is a secret you choose: set the same strong
+`LOADTEST_PASSWORD` (16+ chars, mixed case, digit, symbol) in the **staging** `.env` (read by `loadtest:seed`) and in
+your shell for k6. There is **no default**; the scripts refuse to start without it and never print it.
 The scripts never create or modify accounts.
 
 | Script | Purpose |
@@ -91,7 +93,7 @@ instant spike; concurrency then builds up to roughly arrival-rate × flow durati
 | `STAGE` / `VUS` | `VUS=5` | Concurrent users (1–1000) |
 | `START_INDEX` | `1` | First fixture student used by VU 1 |
 | `RAMP_SECONDS` | per table | Window over which VUs start |
-| `LOADTEST_PASSWORD` | documented default | Fixture password |
+| `LOADTEST_PASSWORD` | – (required, 16+ chars) | Fixture password; must match the staging `.env` value |
 | `THINK_SCALE` | `1` | Multiplier for think time; `0` = no pauses (stress), `2` = slower users |
 | `LOGIN_MAX_RETRIES` | `0` | Retries on HTTP 429 at login (see below) |
 | `ANSWERS_PER_ATTEMPT`, `HEARTBEAT_EVERY` | `8`, `2` | student-flow: saves per attempt; heartbeat after every Nth save (+1 before submit) |
@@ -164,6 +166,30 @@ without running iterations:
 $env:BASE_URL="https://staging.maherelmasry.com"
 k6 inspect .\load-tests\student-flow.js
 ```
+
+## Abort behavior (what stops a run, and its limits)
+
+A failed `check()` never stops a k6 run by itself. The suite stops the **whole run** through `exec.test.abort()`
+(k6's supported global abort: every VU is interrupted, in-flight requests are cancelled, no further iterations,
+retries or requests are started, exit code 108) when any of these is seen:
+
+- any HTTP 5xx, or no HTTP response at all (transport failure / connection refused);
+- a response body naming SQLSTATE `[2002]`, connection refused or `service_busy` (only detectable when the app
+  returns that text; a bare 503 is caught by the 5xx rule);
+- an unexpected HTTP 401 (including a failed login);
+- a dirty fixture (the student already has an attempt), an already-open or duplicate attempt, a new attempt that is
+  not `in_progress` for the right exam, an attempt reported closed more than 30 s before its deadline, or an
+  unexpected status code during the exam;
+- `answers_lost` (an acknowledged answer not stored as acknowledged), `submit_not_final`, or a missing fixture exam;
+- an exam whose real `duration_minutes` (read from the exam details) exceeds `EXAM_MINUTES`, or that the scenario
+  length cannot cover - checked by the first student before any attempt is started.
+
+Backstop: `critical_failures`, `fixture_not_clean`, `answers_lost`, `submit_not_final` and `service_busy_503` are
+count thresholds with `abortOnFail` (evaluated by k6 about every 2 s). The percentage thresholds stay as they were.
+
+Limitation: other VUs stop when k6 delivers the interrupt, which is prompt but not instantaneous; a few requests
+already on the wire can complete. Attempts left `in_progress` at an abort are finalized by the scheduler after
+their deadline - reset the fixture (`loadtest:seed --reset-attempts`, operator action) before the next run.
 
 ## Capacity steps with `exam-realistic.js` (50 → 100 → 250 → 374 → 500)
 

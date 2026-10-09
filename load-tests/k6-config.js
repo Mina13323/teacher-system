@@ -3,6 +3,8 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
+import exec from 'k6/execution';
+import { ABORT_ON_ANY, criticalSignal } from './lib/guards.js';
 
 // ---------------------------------------------------------------------------
 // HARD STAGING GUARD. Runs in the k6 init context, i.e. before any VU or HTTP
@@ -34,7 +36,12 @@ const API = `${BASE_URL}/api/v1`;
 // ---------------------------------------------------------------------------
 // Fixture identity (config/loadtest.php): loadtest.student.NNNN@staging...
 // ---------------------------------------------------------------------------
-export const FIXTURE_PASSWORD = __ENV.LOADTEST_PASSWORD || 'LoadTest#Staging-2026';
+// No default password: the staging fixture password must be supplied (the same
+// value as LOADTEST_PASSWORD in the staging .env). Never printed or logged.
+export const FIXTURE_PASSWORD = __ENV.LOADTEST_PASSWORD || '';
+if (FIXTURE_PASSWORD.length < 16) {
+  throw new Error('LOADTEST_PASSWORD is required (the staging fixture password, at least 16 characters). It is never printed.');
+}
 export const FIXTURE_DOMAIN = 'staging.maherelmasry.com';
 export const EXAM_TITLE_PATTERN = /load-test-exam/;
 const MAX_FIXTURE_STUDENT = 5000;
@@ -136,7 +143,22 @@ export const m = {
   loginThrottled: new Counter('login_throttled_429'),
   answersSaved: new Counter('answers_saved'),
   fixtureNotClean: new Counter('fixture_not_clean'),
+  criticalFailures: new Counter('critical_failures'),
 };
+
+/**
+ * Stop the WHOLE run now. exec.test.abort() is k6's supported global abort: it
+ * interrupts every VU (in-flight requests included) and ends the run with exit
+ * code 108, so no further requests, retries or iterations are started. The
+ * reason is logged once per VU that reaches it; it never contains a token,
+ * password or response body. A failed check() does NOT stop a run - only this
+ * and abortOnFail thresholds do.
+ */
+export function abortRun(reason) {
+  m.criticalFailures.add(1);
+  console.error(`[ABORT] ${reason}`);
+  exec.test.abort(`ABORT: ${reason}`);
+}
 
 // ---------------------------------------------------------------------------
 // Thresholds (rationale for each value: load-tests/README.md "Thresholds").
@@ -161,7 +183,9 @@ export function buildThresholds(endpointsInUse) {
     http_5xx: [{ threshold: 'rate<0.005', abortOnFail: true, delayAbortEval: '30s' }],
     flow_failed: ['rate<0.05'],
     checks: ['rate>0.97'],
-    fixture_not_clean: ['count==0'],
+    fixture_not_clean: [ABORT_ON_ANY],
+    // Backstop for abortRun(): any critical signal also trips this count threshold.
+    critical_failures: [ABORT_ON_ANY],
   };
   endpointsInUse.forEach((ep) => {
     const l = LATENCY[ep];
@@ -186,6 +210,10 @@ export function request(method, path, body, token, endpoint, trend) {
   });
   m.http5xx.add(res.status >= 500);
   if (trend) trend.add(res.timings.duration);
+  // Critical signals end the run immediately (5xx, transport failure, SQLSTATE
+  // 2002 / connection refused, unexpected 401). See lib/guards.js.
+  const critical = criticalSignal({ status: res.status, body: res.body, endpoint });
+  if (critical) abortRun(critical);
   return res;
 }
 
@@ -362,4 +390,7 @@ export function warnFixture(email, prior) {
     `[fixture] ${email} already has ${prior} attempt(s); the exam allows 1. ` +
       'Reset on staging: php artisan loadtest:seed --students=<N> --reset-attempts (see load-tests/README.md).'
   );
+  // A prior attempt means a dirty fixture or a duplicate attempt: continuing would
+  // test the wrong thing, so stop the whole run.
+  abortRun('fixture student already has an attempt (reset required); refusing to continue');
 }

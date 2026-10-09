@@ -22,8 +22,11 @@ import { Counter, Trend } from 'k6/metrics';
 import {
   VUS, START_INDEX, RAMP_SECONDS,
   studentForThisVu, rampDelay, think, buildThresholds, m, json, request,
-  login, getDashboard, findExam, getExamDetails, warnFixture,
+  login, getDashboard, findExam, getExamDetails, warnFixture, abortRun,
 } from './k6-config.js';
+import {
+  ABORT_ON_ANY, startedAttemptProblem, mismatchedAnswers, examDurationProblem, closedTooEarly, submitProblem,
+} from './lib/guards.js';
 
 const num = (name, dflt) => (__ENV[name] === undefined || __ENV[name] === '' ? dflt : parseFloat(__ENV[name]));
 
@@ -47,6 +50,9 @@ const INTEGRITY_EVENT = __ENV.INTEGRITY_EVENT || 'WINDOW_FOCUS';
 const OPEN_AT_S = num('OPEN_AT_S', RAMP_SECONDS + 15);
 // Upper bound for one student's whole run (arrival + exam + deadline + result).
 const EXAM_MINUTES = num('EXAM_MINUTES', 15);
+const SLACK_S = 120;
+// A closed attempt this far before the deadline is an inconsistent state, not a timeout.
+const EARLY_CLOSE_TOLERANCE_MS = 30 * 1000;
 
 const t = {
   time: new Trend('step_time_ping_ms', true),
@@ -58,13 +64,23 @@ const answersLost = new Counter('answers_lost');
 const submitNotFinal = new Counter('submit_not_final');
 const serviceBusy = new Counter('service_busy_503');
 
+// The scenario length is derived from EXAM_MINUTES; the real exam duration is
+// read from the server and checked against it before any attempt is started.
+const MAX_DURATION_S = Math.ceil(OPEN_AT_S + START_PACING_MAX_S + EXAM_MINUTES * 60 + SUBMIT_SPREAD_S + UNREAD_MAX_S + SLACK_S);
+
+// Any status outside `allowed` during the exam is an inconsistent state: stop the run.
+function expectStatus(res, allowed, label) {
+  if (allowed.indexOf(res.status) === -1) abortRun(`${label}: unexpected HTTP ${res.status}`);
+  return res;
+}
+
 export const options = {
   scenarios: {
     exam_realistic: {
       executor: 'per-vu-iterations',
       vus: VUS,
       iterations: 1,
-      maxDuration: `${Math.ceil(OPEN_AT_S + START_PACING_MAX_S + EXAM_MINUTES * 60 + SUBMIT_SPREAD_S + UNREAD_MAX_S + 120)}s`,
+      maxDuration: `${MAX_DURATION_S}s`,
       gracefulStop: '60s',
     },
   },
@@ -75,8 +91,9 @@ export const options = {
       'http_req_duration{endpoint:answer}': ['p(95)<1000'],
       'http_req_duration{endpoint:heartbeat}': ['p(95)<1000'],
       'http_req_duration{endpoint:submit}': ['p(95)<1000'],
-      answers_lost: ['count==0'],
-      submit_not_final: ['count==0'],
+      // Critical: the first lost answer or non-final submit stops the whole run.
+      answers_lost: [ABORT_ON_ANY],
+      submit_not_final: [ABORT_ON_ANY],
       service_busy_503: [{ threshold: 'count==0', abortOnFail: true, delayAbortEval: '10s' }],
     }
   ),
@@ -94,6 +111,12 @@ export function setup() {
 const between = (a, b) => a + Math.random() * (b - a);
 const expo = (perMin) => (perMin > 0 ? (-Math.log(1 - Math.random()) * 60) / perMin : Infinity);
 
+function failIfClosedEarly(deadlineMs, nowMs, what) {
+  if (closedTooEarly(deadlineMs - nowMs, EARLY_CLOSE_TOLERANCE_MS)) {
+    abortRun(`inconsistent attempt state: ${what} reported the attempt closed ${Math.round((deadlineMs - nowMs) / 1000)}s before its deadline`);
+  }
+}
+
 function track(res) {
   if (res.status === 503) serviceBusy.add(1);
   return res;
@@ -109,7 +132,11 @@ function timePing(offset) {
 }
 
 function statusCheck(token, attemptId) {
-  const res = track(request('POST', `/student/attempts/${attemptId}/heartbeat`, null, token, 'heartbeat', m.heartbeat));
+  const res = expectStatus(
+    track(request('POST', `/student/attempts/${attemptId}/heartbeat`, null, token, 'heartbeat', m.heartbeat)),
+    [200, 422],
+    'heartbeat'
+  );
   const body = json(res);
   check(res, { 'heartbeat: 200 or closed (422)': (r) => r.status === 200 || r.status === 422 });
   return body && body.data ? body.data : null;
@@ -144,6 +171,7 @@ function saveAnswer(token, attemptId, question, saved) {
     saved[question.id] = chosen.slice().sort((a, b) => a - b);
     m.answersSaved.add(1);
   }
+  expectStatus(res, [200, 422], 'answer save');
   return res.status;
 }
 
@@ -157,6 +185,7 @@ function integrityEvent(token, attemptId) {
     t.integrity
   ));
   check(res, { 'integrity: recorded (201) or closed (422)': (r) => r.status === 201 || r.status === 422 });
+  expectStatus(res, [201, 422], 'integrity event');
   return res.status;
 }
 
@@ -174,12 +203,32 @@ export default function (data) {
     getDashboard(token, 'student');
     think(2, 6);
     const exam = findExam(token);
-    if (!exam) return;
+    if (!exam) {
+      abortRun('the load-test fixture exam is not listed for the fixture student');
+      return;
+    }
     think(1, 3);
     const details = getExamDetails(token, exam.id);
-    if (!details.ok) return;
+    if (!details.ok) {
+      abortRun('exam details are missing or invalid (not the expected fixture exam)');
+      return;
+    }
     if (!details.clean) {
-      warnFixture(student.email, details.prior);
+      warnFixture(student.email, details.prior); // aborts the run
+      return;
+    }
+    const durationProblem = examDurationProblem({
+      durationMinutes: details.detail.duration_minutes,
+      examMinutes: EXAM_MINUTES,
+      openAtSeconds: OPEN_AT_S,
+      startPacingMaxSeconds: START_PACING_MAX_S,
+      submitSpreadSeconds: SUBMIT_SPREAD_S,
+      unreadMaxSeconds: UNREAD_MAX_S,
+      slackSeconds: SLACK_S,
+      maxDurationSeconds: MAX_DURATION_S,
+    });
+    if (durationProblem) {
+      abortRun(`exam duration mismatch: ${durationProblem}`);
       return;
     }
 
@@ -195,9 +244,17 @@ export default function (data) {
     if (!check(startRes, {
       'start: 201': (r) => r.status === 201,
       'start: in progress with questions': () => !!attempt && attempt.status === 'in_progress' && Array.isArray(attempt.questions),
-    })) return;
-    if (attempt.already_open) {
-      warnFixture(student.email, 1);
+    })) {
+      abortRun(`start did not create an attempt (HTTP ${startRes.status})`);
+      return;
+    }
+    const startProblem = startedAttemptProblem(attempt, {
+      examId: exam.id,
+      expectedQuestions: details.detail.questions_count,
+      nowMs: Date.now(),
+    });
+    if (startProblem) {
+      abortRun(`inconsistent attempt state: ${startProblem}`);
       return;
     }
 
@@ -223,15 +280,18 @@ export default function (data) {
           ? questions[qIndex++]
           : questions[Math.floor(Math.random() * Math.max(1, Math.min(qIndex, questions.length)))];
         closed = saveAnswer(token, attempt.id, q, saved) === 422;
+        if (closed) failIfClosedEarly(deadline, serverNow(), 'answer save');
         nextAnswer = now + between(ANSWER_GAP_MIN, ANSWER_GAP_MAX) * 1000;
       } else if (now >= nextIntegrity) {
         closed = integrityEvent(token, attempt.id) === 422;
+        if (closed) failIfClosedEarly(deadline, serverNow(), 'integrity event');
         nextIntegrity = now + expo(INTEGRITY_PER_MIN) * 1000;
       } else if (now >= nextPing) {
         if (now - lastStatus >= STATUS_GAP_S * 1000) {
           const s = statusCheck(token, attempt.id);
           lastStatus = now;
           closed = !!s && s.status !== undefined && s.status !== 'in_progress';
+          if (closed) failIfClosedEarly(deadline, serverNow(), 'status check');
         } else {
           timePing(offset);
         }
@@ -247,11 +307,15 @@ export default function (data) {
     sleep(between(0, SUBMIT_SPREAD_S));
     const submitRes = track(request('POST', `/student/attempts/${attempt.id}/submit`, null, token, 'submit', m.submit));
     const sub = json(submitRes);
-    const finalStatus = sub && sub.data && sub.data.status;
     const finalized = check(submitRes, {
       'submit: 200 (or 422 when already finalized)': (r) => r.status === 200 || r.status === 422,
     });
-    if (submitRes.status === 200 && finalStatus === 'in_progress') submitNotFinal.add(1);
+    const submitIssue = submitProblem(submitRes.status, sub && sub.data, attempt.id);
+    if (submitIssue) {
+      submitNotFinal.add(1);
+      abortRun(`submit not final: ${submitIssue}`);
+      return;
+    }
 
     // Result: read the attempt once and compare every acknowledged answer.
     const resultRes = track(request('GET', `/student/attempts/${attempt.id}`, null, token, 'result', t.result));
@@ -263,10 +327,17 @@ export default function (data) {
     const finalOk = check(resultRes, {
       'result: 200 and no longer in progress': (r) => r.status === 200 && !!result && result.data.status !== 'in_progress',
     });
-    if (!finalOk) submitNotFinal.add(1);
-    Object.keys(saved).forEach((qid) => {
-      if (JSON.stringify(saved[qid]) !== JSON.stringify(stored[qid] || [])) answersLost.add(1);
-    });
+    if (!finalOk) {
+      submitNotFinal.add(1);
+      abortRun('result read-back failed or the attempt is still in progress after submit');
+      return;
+    }
+    const lost = mismatchedAnswers(saved, stored);
+    if (lost.length > 0) {
+      answersLost.add(lost.length);
+      abortRun(`${lost.length} acknowledged answer(s) were not stored as acknowledged`);
+      return;
+    }
 
     sleep(between(UNREAD_MIN_S, UNREAD_MAX_S));
     track(request('GET', '/notifications/unread-count', null, token, 'unread', t.unread));

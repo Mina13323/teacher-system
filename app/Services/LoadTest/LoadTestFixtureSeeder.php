@@ -68,6 +68,12 @@ class LoadTestFixtureSeeder
             throw new \InvalidArgumentException("--students must be between 1 and {$max}.");
         }
 
+        // No default password exists: refuse before any write when it is
+        // missing or weak, and refuse when a non-fixture record already uses a
+        // fixture identity (it would otherwise be reset or taken over).
+        LoadTestPassword::assertValid(config('loadtest.password'));
+        $this->assertNoForeignIdentity($students);
+
         $this->ensureRolesAndPermissions();
         $hash = Hash::make((string) config('loadtest.password'));
 
@@ -96,6 +102,56 @@ class LoadTestFixtureSeeder
             'exam_id' => $exam->getKey(),
             'questions' => $questions,
         ];
+    }
+
+    /**
+     * Read-only pre-flight. The seeder resets/reuses records by email or slug,
+     * so any pre-existing record that is not recognisably a fixture is refused
+     * instead of being overwritten.
+     *
+     * @throws LoadTestSafetyException
+     */
+    private function assertNoForeignIdentity(int $students): void
+    {
+        $foreign = [];
+
+        $teacher = User::where('email', config('loadtest.teacher_email'))->first();
+        if ($teacher !== null) {
+            $otherRoles = $teacher->roles->pluck('name')->diff([UserRole::Teacher->value]);
+            if ($otherRoles->isNotEmpty()) {
+                $foreign[] = 'the fixture teacher email belongs to an account with other roles ('.$otherRoles->implode(', ').')';
+            }
+        }
+
+        $course = Course::withTrashed()->where('slug', config('loadtest.course_slug'))->first();
+        if ($course !== null && ($teacher === null || (int) $course->created_by !== (int) $teacher->getKey())) {
+            $foreign[] = 'the course slug "'.config('loadtest.course_slug').'" is used by a course the fixture teacher does not own';
+        }
+
+        $mismatched = 0;
+        foreach (array_chunk(range(1, $students), 500) as $numbers) {
+            $expected = [];
+            foreach ($numbers as $n) {
+                $expected[self::studentEmail($n)] = self::studentCode($n);
+            }
+            foreach (User::whereIn('email', array_keys($expected))->get(['id', 'email', 'student_code']) as $user) {
+                if (($user->student_code ?? null) !== $expected[$user->email]) {
+                    $mismatched++;
+                }
+            }
+        }
+        if ($mismatched > 0) {
+            $foreign[] = $mismatched.' account(s) use a fixture student email without the matching fixture student code';
+        }
+
+        if ($foreign !== []) {
+            throw new LoadTestSafetyException(
+                "Refusing to run: non-fixture records use fixture identities and would be overwritten.
+ - "
+                .implode("
+ - ", $foreign)
+            );
+        }
     }
 
     private function ensureRolesAndPermissions(): void
