@@ -930,6 +930,9 @@ function attemptStatusLabel(statusOrAttempt) {
                         <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
                             {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
                         </AppButton>
+                        <router-link v-if="essayCount > 0" :to="`/teacher/exams/${examId}/grading`" class="col-span-2 sm:col-span-1">
+                            <AppButton variant="primary" size="sm" class="w-full justify-center text-center">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                        </router-link>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
@@ -982,7 +985,10 @@ function attemptStatusLabel(statusOrAttempt) {
                                     <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
                                         <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
                                         <div class="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
-                                            <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                            <router-link v-if="essayCount > 0 && isGradable(a)" :to="`/teacher/exams/${examId}/grading?attempt_id=${a.id}`" class="flex-1 sm:flex-initial">
+                                                <AppButton variant="primary" size="sm" class="w-full text-center justify-center font-medium">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                                            </router-link>
+                                            <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">{{ $t('grading.viewAttempt') }}</AppButton>
                                             <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
                                                 <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">🔍 {{ $t('exams.integrityAction') }}</AppButton>
                                             </router-link>
@@ -1048,8 +1054,11 @@ function attemptStatusLabel(statusOrAttempt) {
                                     </AppBadge>
                                 </div>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
+                                    <router-link v-if="essayCount > 0 && isGradable(a)" :to="`/teacher/exams/${examId}/grading?attempt_id=${a.id}`" class="flex-1 sm:flex-initial">
+                                        <AppButton variant="primary" size="sm" class="w-full text-center justify-center font-medium">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                                    </router-link>
                                     <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
-                                        📝 {{ $t('exams.gradeAction') }}
+                                        {{ $t('grading.viewAttempt') }}
                                     </AppButton>
                                     <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
                                         <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">

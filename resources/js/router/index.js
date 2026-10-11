@@ -65,6 +65,8 @@ const routes = [
             { path: 'exams/:id', name: 'teacher.exam', component: () => import('@/views/Teacher/ExamDetail.vue') },
             { path: 'exams/:id/edit', name: 'teacher.exams.edit', component: () => import('@/views/Teacher/ExamForm.vue') },
             { path: 'exams/:id/questions', name: 'teacher.exam.questions', component: () => import('@/views/Teacher/ExamQuestions.vue') },
+            // Essay-grading workspace (teacher, assistant, admin via this shell).
+            { path: 'exams/:id/grading', name: 'teacher.exam.grading', component: () => import('@/views/Teacher/ExamGrading.vue') },
             { path: 'competitions', name: 'teacher.competitions', component: () => import('@/views/Teacher/Competitions.vue') },
             { path: 'competitions/new', name: 'teacher.competitions.new', component: () => import('@/views/Teacher/CompetitionForm.vue') },
             { path: 'competitions/:id', name: 'teacher.competition', component: () => import('@/views/Teacher/CompetitionDetail.vue') },

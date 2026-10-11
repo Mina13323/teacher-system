@@ -211,6 +211,11 @@ export const teacher = {
     attempt: (id) => api.get(`/teacher/attempts/${id}`),
     gradeEssay: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, payload),
     publishGrades: (attemptId) => api.post(`/teacher/attempts/${attemptId}/publish-grades`),
+    // Essay-grading workspace: the queue (handed-in attempts only), a compact
+    // conflict-aware grade save, and exam-level publication in bounded batches.
+    essayAnswers: (examId, params) => api.get(`/teacher/exams/${examId}/essay-answers`, params),
+    saveEssayGrade: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, { ...payload, compact_response: true }),
+    publishAllGrades: (examId, payload = {}) => api.post(`/teacher/exams/${examId}/publish-grades`, { ...payload, confirmed: true }),
 
     questions: (examId) => api.get(`/teacher/exams/${examId}/questions`),
     question: (id) => api.get(`/teacher/questions/${id}`),
