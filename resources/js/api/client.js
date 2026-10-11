@@ -169,6 +169,30 @@ async function request(config) {
  * triggers a browser save. Used for exports and private attachment files,
  * which are never linked directly (no token on <a href> navigations).
  */
+/**
+ * Fetches a file endpoint without assuming the body is the file: returns the
+ * HTTP status, content type and body blob, so a JSON status answer (for
+ * example a queued export, 202) is never saved as if it were the file.
+ */
+export async function requestFile(url) {
+    const response = await client.request({ method: 'get', url, responseType: 'blob', timeout: 0 });
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+    const contentType = String(response.headers?.['content-type'] || blob.type || '');
+    return { status: response.status, contentType, blob };
+}
+
+export function saveBlob(blob, filename) {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    return filename;
+}
+
 export async function downloadFile(url, filename) {
     // File exports/attachments retain their existing unbounded download time;
     // the 30-second JSON API deadline below is for interactive requests.

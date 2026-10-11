@@ -44,11 +44,15 @@ class ExportController extends Controller
 
         $format = $request->string('format', 'csv')->toString();
 
-        $rows = $this->builder->rows($exam);
+        // Count before building: a large sheet must never be materialized in
+        // this request just to find out it is too large.
+        $rowCount = $exam->attempts()->count();
 
         // Large sheets are generated on the queue: the HTTP request returns
-        // immediately with an export record to poll (never a long request).
-        if ($format !== 'print' && $rows->count() > self::SYNC_ROW_LIMIT) {
+        // immediately (202) with an export record to poll (never a long
+        // request). The client polls GET /teacher/exports/{id}; it is only
+        // completed if a queue worker processes GenerateResultExportJob.
+        if ($format !== 'print' && $rowCount > self::SYNC_ROW_LIMIT) {
             $export = Export::create([
                 'requested_by' => $request->user()->getKey(),
                 'kind' => 'results',
@@ -66,10 +70,12 @@ class ExportController extends Controller
                 'data' => [
                     'export_id' => $export->getKey(),
                     'status' => 'queued',
-                    'rows' => $rows->count(),
+                    'rows' => $rowCount,
                 ],
             ], 202);
         }
+
+        $rows = $this->builder->rows($exam);
 
         $this->auditLog->execute('results.export', $exam, [
             'format' => $format,

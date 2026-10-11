@@ -1,4 +1,5 @@
-import api, { sendKeepalive, downloadFile } from './client';
+import api, { sendKeepalive, downloadFile, requestFile, saveBlob } from './client';
+import { readExportResponse } from '@/utils/exportFlow';
 import { LESSON_PAGE_INCLUDE } from '@/utils/lessonPage';
 
 /**
@@ -268,10 +269,20 @@ export const teacher = {
 
     // Attempts grouped by student (P1 attempt-management UX)
     attemptsGrouped: (examId, params) => api.get(`/teacher/exams/${examId}/attempts/grouped`, params),
-    exportResults: (examId, format = 'csv') => {
+    /**
+     * Resolves to { type: 'file' } once the file was saved, { type: 'queued',
+     * exportId, rows } for a large export the server queued (202), or
+     * { type: 'error', message }. A JSON answer is never saved as the file.
+     */
+    exportResults: async (examId, format = 'csv') => {
         const ext = { csv: 'csv', xlsx: 'xlsx', pdf: 'pdf', print: 'html' }[format] || 'csv';
-        return downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${ext}`);
+        const res = await requestFile(`/teacher/exams/${examId}/results/export?format=${format}`);
+        const kind = await readExportResponse(res);
+        if (kind.type === 'file') saveBlob(res.blob, `exam-${examId}-results.${ext}`);
+        return kind;
     },
+    exportStatus: (exportId) => api.get(`/teacher/exports/${exportId}`),
+    downloadExport: (exportId, filename) => downloadFile(`/teacher/exports/${exportId}/download`, filename),
 
     // Bulk student import (CSV or XLSX -> validate -> preview -> confirm -> report)
     importStudentsPreview: (input) => api.post('/teacher/students/import/preview', typeof input === 'string' ? { csv: input } : input),

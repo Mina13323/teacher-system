@@ -1,10 +1,11 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { teacher, toList } from '@/api';
 import { toggleBoundedSelection } from '@/utils/boundedSelection';
+import { pollExport } from '@/utils/exportFlow';
 import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints, ungradedEssayCount, ungradedEssaysFromError } from '@/utils/gradingRules';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
@@ -269,17 +270,47 @@ function toggleStudent(studentId) {
 }
 
 const exportBusy = ref(false);
+/** A large export the server queued: { status, rows, error } while it is followed. */
+const exportJob = ref(null);
+let exportLeft = false;
+
 async function exportResults(format) {
     exportBusy.value = true;
     try {
-        await teacher.exportResults(examId, format);
-        toast.success(t('exams.exportStarted'));
+        const res = await teacher.exportResults(examId, format);
+        if (res.type === 'file') {
+            toast.success(t('exams.exportStarted'));
+        } else if (res.type === 'queued') {
+            exportJob.value = { status: 'queued', rows: res.rows };
+            await followExport(res.exportId, format);
+        } else {
+            toast.error(res.message || t('exams.exportFailed'));
+        }
     } catch (e) {
         toast.error(e.message);
     } finally {
         exportBusy.value = false;
     }
 }
+
+async function followExport(exportId, format) {
+    const outcome = await pollExport({
+        exportId,
+        fetchStatus: (id) => teacher.exportStatus(id),
+        isCancelled: () => exportLeft,
+        onUpdate: (status) => { exportJob.value = { ...exportJob.value, status }; },
+    });
+    if (outcome.state === 'cancelled') return;
+    if (outcome.state === 'done') {
+        await teacher.downloadExport(exportId, `exam-${examId}-results.${format}`);
+        exportJob.value = { ...exportJob.value, status: 'done' };
+        toast.success(t('exams.exportReady'));
+        return;
+    }
+    exportJob.value = { ...exportJob.value, status: outcome.state, error: outcome.error || '' };
+}
+
+onBeforeUnmount(() => { exportLeft = true; });
 
 async function loadAttempts(p = 1) {
     attemptsBusy.value = true;
@@ -938,6 +969,20 @@ function attemptStatusLabel(statusOrAttempt) {
                         <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
                         <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
                     </div>
+                    <p
+                        v-if="exportJob"
+                        class="w-full rounded-lg border px-3 py-2 text-sm"
+                        :class="['failed', 'timeout', 'error'].includes(exportJob.status) ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-sky-200 bg-sky-50 text-sky-900'"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <template v-if="exportJob.status === 'queued'">{{ $t('exams.exportQueued', { rows: exportJob.rows ?? '—' }) }}</template>
+                        <template v-else-if="exportJob.status === 'running'">{{ $t('exams.exportRunning') }}</template>
+                        <template v-else-if="exportJob.status === 'done'">{{ $t('exams.exportReady') }}</template>
+                        <template v-else-if="exportJob.status === 'failed'">{{ $t('exams.exportFailed') }} {{ exportJob.error }}</template>
+                        <template v-else-if="exportJob.status === 'timeout'">{{ $t('exams.exportTimeout') }}</template>
+                        <template v-else>{{ $t('exams.exportFailed') }} {{ exportJob.error }}</template>
+                    </p>
                 </div>
 
                 <!-- Grouped by student: best/latest, integrity, grading state, expandable attempts -->
