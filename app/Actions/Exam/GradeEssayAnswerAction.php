@@ -11,11 +11,22 @@ use App\Models\ExamAttempt;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Records a teacher's grade for one essay answer and recomputes the attempt.
+ *
+ * Only handed-in attempts (submitted, grading, published) are graded. A
+ * running attempt is refused (422): the student may still change the text. An
+ * attempt past its deadline that the sweep has not reached yet is finalized
+ * first by FinalizeExpiredAttemptAction, exactly as the sweep would; a strictly
+ * expired attempt is never graded. The state is checked, and the score and
+ * status recomputed, on the attempt row locked inside the grading transaction.
+ */
 class GradeEssayAnswerAction
 {
     public function __construct(
         private readonly CalculateExamResultAction $calculateResult,
         private readonly RecordAuditLogAction $auditLog,
+        private readonly FinalizeExpiredAttemptAction $finalizeExpired,
     ) {
     }
 
@@ -26,6 +37,12 @@ class GradeEssayAnswerAction
         int $awardedPoints,
         ?string $feedback = null
     ): ExamAttempt {
+        $current = ExamAttempt::query()->findOrFail($attempt->getKey());
+        if ($current->status->isInProgress() && $current->isExpired()) {
+            // Overdue: the lifecycle step the sweep owns (it re-checks under its own lock).
+            $this->finalizeExpired->execute($current);
+        }
+
         $attemptQuestion = $attempt->attemptQuestions()
             ->where('question_id', $questionId)
             ->first();
@@ -57,14 +74,21 @@ class GradeEssayAnswerAction
             throw new \InvalidArgumentException("Awarded points must be between 0 and {$attemptQuestion->points}.");
         }
 
-        DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
+        $graded = DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
             // Lock the attempt so two concurrent grading requests cannot both
-            // recompute the total from a stale set of answers.
-            ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
+            // recompute the total from a stale set of answers, and decide from
+            // this locked row rather than the route-bound model.
+            $locked = ExamAttempt::query()->lockForUpdate()->findOrFail($attempt->getKey());
+
+            if (! in_array($locked->status->value, ExamAttemptStatus::submittedValues(), true)) {
+                throw new InvalidAttemptStateException($locked->status->isInProgress()
+                    ? 'This attempt is still in progress. Essays can be graded only after the student submits or the time is up.'
+                    : 'This attempt expired without being submitted, so it is not graded.');
+            }
 
             $answer = ExamAnswer::firstOrCreate(
                 [
-                    'attempt_id' => $attempt->getKey(),
+                    'attempt_id' => $locked->getKey(),
                     'question_id' => $questionId,
                 ],
                 [
@@ -80,28 +104,29 @@ class GradeEssayAnswerAction
             $answer->save();
 
             // Recompute from the freshly persisted answers.
-            $attempt->unsetRelation('answers');
-            $result = $this->calculateResult->execute($attempt);
+            $result = $this->calculateResult->execute($locked);
 
-            $attempt->score = $result['earned_points'];
-            $attempt->percentage = $result['percentage'];
+            $locked->score = $result['earned_points'];
+            $locked->percentage = $result['percentage'];
             // Keep the full-precision pass/fail input in lockstep with the
             // display percentage (outcome() reads raw_percentage first).
-            $attempt->raw_percentage = $result['raw_percentage'];
-            $attempt->graded_by = $staffUser->getKey();
+            $locked->raw_percentage = $result['raw_percentage'];
+            $locked->graded_by = $staffUser->getKey();
 
-            if ($attempt->status->isSubmitted() && $result['requires_manual_grading']) {
-                $attempt->status = ExamAttemptStatus::Grading->value;
-            } elseif ($attempt->status === ExamAttemptStatus::Grading && ! $result['requires_manual_grading']) {
-                $attempt->status = $attempt->grades_published_at !== null
+            if ($locked->status->isSubmitted() && $result['requires_manual_grading']) {
+                $locked->status = ExamAttemptStatus::Grading->value;
+            } elseif ($locked->status === ExamAttemptStatus::Grading && ! $result['requires_manual_grading']) {
+                $locked->status = $locked->grades_published_at !== null
                     ? ExamAttemptStatus::Published->value
                     : ExamAttemptStatus::Submitted->value;
             }
 
-            $attempt->save();
+            $locked->save();
+
+            return $locked;
         });
 
-        $this->auditLog->execute('grade.essay', $attempt, [
+        $this->auditLog->execute('grade.essay', $graded, [
             'question_id' => $questionId,
             'awarded_points' => $awardedPoints,
             'max_points' => $attemptQuestion->points,
@@ -109,6 +134,6 @@ class GradeEssayAnswerAction
             'graded_by' => $staffUser->getKey(),
         ], $staffUser);
 
-        return $attempt->fresh(['answers.selectedOptions', 'attemptQuestions']);
+        return $graded->fresh(['answers.selectedOptions', 'attemptQuestions']);
     }
 }

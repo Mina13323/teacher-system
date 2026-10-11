@@ -151,6 +151,13 @@ class SaveExamAnswerAction
                         'option_id' => null,
                         'answer_text' => $answerText,
                         'answered_at' => now(),
+                        // The attempt is in progress, so no grade may stand
+                        // for text the student is still changing (grading is
+                        // refused until hand-in; this clears any older one).
+                        'points_earned' => null,
+                        'is_correct' => null,
+                        'graded_by' => null,
+                        'graded_at' => null,
                     ]
                 )->setRelation('selectedOptions', new EloquentCollection);
             }

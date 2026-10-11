@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Exam;
 
+use App\Actions\Exam\GradeEssayAnswerAction;
+use App\Enums\ExamAttemptStatus;
 use App\Enums\UserRole;
 use App\Models\Course;
 use App\Models\Exam;
@@ -200,5 +202,101 @@ class GradingSafetyTest extends ApiTestCase
         $this->assertEquals($first, ExamAttempt::findOrFail($attempt['id'])->grades_published_at);
         $this->assertSame('submitted_by_student', ExamAttempt::findOrFail($attempt['id'])->end_reason);
         Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 1);
+    }
+
+    // ------------------------------------------------------------------
+    // P0-2: essays are graded only on handed-in attempts
+    // ------------------------------------------------------------------
+
+    public function test_grading_an_in_progress_attempt_is_refused_and_creates_no_grade(): void
+    {
+        $exam = $this->exam();
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $before = $this->snapshotOf($attempt['id']);
+
+        $this->grade($attempt, $essay, 7)->assertStatus(422)->assertJsonPath('success', false);
+
+        $this->assertSame($before, $this->snapshotOf($attempt['id']));
+        $this->assertFalse(ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $essay)->exists());
+    }
+
+    public function test_an_earlier_grade_never_survives_the_student_changing_the_essay(): void
+    {
+        $exam = $this->exam();
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $this->writeEssay($attempt, $essay, 'First draft.');
+
+        // Refused while running...
+        $this->grade($attempt, $essay, 9)->assertStatus(422);
+        // ...and a grade left on the row by older code is cleared by the next edit.
+        ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $essay)
+            ->update(['points_earned' => 9, 'graded_by' => $this->teacher->id, 'graded_at' => now()]);
+        $this->writeEssay($attempt, $essay, 'Rewritten answer.');
+
+        $row = ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $essay)->firstOrFail();
+        $this->assertSame('Rewritten answer.', $row->answer_text);
+        $this->assertNull($row->points_earned);
+        $this->assertNull($row->graded_by);
+        $this->assertNull($row->graded_at);
+
+        $this->submit($attempt);
+        $this->assertSame(ExamAttemptStatus::Grading, ExamAttempt::findOrFail($attempt['id'])->status, 'Still needs grading after hand-in.');
+    }
+
+    public function test_handed_in_attempts_can_be_graded_in_every_eligible_status(): void
+    {
+        $exam = $this->exam(2);
+        $attempt = $this->start($exam);
+        [$e1, $e2] = $this->essayIds($attempt);
+        $this->writeEssay($attempt, $e1, 'One.');
+        $this->writeEssay($attempt, $e2, 'Two.');
+        $this->submit($attempt);
+        $this->assertSame(ExamAttemptStatus::Grading, ExamAttempt::findOrFail($attempt['id'])->status);
+
+        // grading -> still grading (one essay left)
+        $this->grade($attempt, $e1, 6)->assertOk();
+        $this->assertSame(ExamAttemptStatus::Grading, ExamAttempt::findOrFail($attempt['id'])->status);
+        // grading -> submitted (all essays graded, not yet published)
+        $this->grade($attempt, $e2, 4)->assertOk();
+        $this->assertSame(ExamAttemptStatus::Submitted, ExamAttempt::findOrFail($attempt['id'])->status);
+        // submitted: re-grade
+        $this->grade($attempt, $e2, 5)->assertOk();
+        // published: re-grade
+        $this->publish($attempt)->assertOk();
+        $this->grade($attempt, $e2, 3)->assertOk();
+        $row = ExamAttempt::findOrFail($attempt['id']);
+        $this->assertSame(ExamAttemptStatus::Published, $row->status);
+        $this->assertSame(9, (int) $row->score, 'MCQ unanswered (0) + 6 + 3.');
+    }
+
+    public function test_a_strictly_expired_attempt_is_not_graded(): void
+    {
+        $exam = $this->exam(1, ['expiry_mode' => 'expire']);
+        $attempt = $this->start($exam);
+        $this->writeEssay($attempt, $this->essayIds($attempt)[0], 'Text.');
+        $this->travelTo(ExamAttempt::findOrFail($attempt['id'])->expires_at->copy()->addSeconds(5));
+
+        $this->grade($attempt, $this->essayIds($attempt)[0], 5)->assertStatus(422);
+        $this->assertTrue(ExamAttempt::findOrFail($attempt['id'])->status->isExpired());
+    }
+
+    public function test_grading_decides_the_status_from_the_locked_row_not_a_stale_model(): void
+    {
+        $exam = $this->exam(1);
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $this->writeEssay($attempt, $essay, 'Text.');
+        $this->submit($attempt);
+
+        // The request bound this model while it read `grading`, unpublished...
+        $stale = ExamAttempt::findOrFail($attempt['id']);
+        // ...then a concurrent request recorded a publication.
+        ExamAttempt::whereKey($attempt['id'])->update(['grades_published_at' => now()]);
+
+        app(GradeEssayAnswerAction::class)->execute($this->teacher, $stale, $essay, 8);
+
+        $this->assertSame(ExamAttemptStatus::Published, ExamAttempt::findOrFail($attempt['id'])->status);
     }
 }
