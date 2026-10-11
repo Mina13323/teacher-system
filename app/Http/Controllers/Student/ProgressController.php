@@ -33,6 +33,11 @@ class ProgressController extends Controller
 
     public function show(Request $request, Lesson $lesson): JsonResponse
     {
+        // The canonical lesson-access rules (published lesson and course,
+        // lesson capability and active access, enrollment, roadmap) first:
+        // this response carries the lesson's content. The older checks below
+        // stay, so nothing that was refused before is allowed now.
+        $this->authorize('access', $lesson);
         $this->assertAccess($request);
         $this->assertLessonPublished($lesson);
 

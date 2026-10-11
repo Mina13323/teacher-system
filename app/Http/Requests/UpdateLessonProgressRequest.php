@@ -22,11 +22,16 @@ class UpdateLessonProgressRequest extends FormRequest
             return false;
         }
 
-        return Enrollment::query()
+        $enrolled = Enrollment::query()
             ->where('student_id', $user->getKey())
             ->where('course_id', $lesson->unit->course_id)
             ->where('status', EnrollmentStatus::Active->value)
             ->exists();
+
+        // And the canonical lesson-access rules: the response carries the
+        // lesson's content, and completing a roadmap-locked lesson would
+        // unlock the next one.
+        return $enrolled && $user->can('access', $lesson);
     }
 
     /**
