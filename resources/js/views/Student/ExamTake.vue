@@ -710,6 +710,8 @@ const endReasonText = computed(() => {
         auto_submit_at_deadline: t('examTake.endReasonAutoSubmit'),
         expired: t('examTake.endReasonExpired'),
         integrity_threshold: t('examTake.endReasonIntegrity'),
+        // Historical attempts only: publishing no longer ends a running attempt.
+        submitted_by_staff: t('examTake.endReasonStaff'),
     };
     return map[reason] || '';
 });

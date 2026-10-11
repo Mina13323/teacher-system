@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { teacher, toList } from '@/api';
 import { toggleBoundedSelection } from '@/utils/boundedSelection';
+import { canOpenGrading, isGradable } from '@/utils/gradingRules';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -46,6 +47,7 @@ const gradeForm = reactive({});
 const gradeFeedback = reactive({});
 const gradingBusy = ref(false);
 const publishBusy = ref(false);
+const publishConfirmOpen = ref(false);
 
 // ---- Attempt management: grouped by student (P1) and search ----
 const attemptsView = ref('flat'); // 'flat' | 'student'
@@ -569,6 +571,8 @@ async function deleteOption(q, option) {
 
 // ---- ESSAY GRADING MODAL ----
 async function openGrading(attempt) {
+    // A running attempt is never graded (the server refuses it too).
+    if (!canOpenGrading(attempt)) return;
     gradingAttempt.value = attempt;
     gradingLoading.value = true;
     try {
@@ -618,12 +622,13 @@ async function submitEssayGrade(questionId) {
 }
 
 async function submitPublishGrades() {
-    if (!gradingAttempt.value) return;
+    if (!gradingAttempt.value || !isGradable(gradingData.value)) return;
     publishBusy.value = true;
     try {
         const res = await teacher.publishGrades(gradingAttempt.value.id);
         const updated = res.data || res;
         gradingData.value = updated;
+        publishConfirmOpen.value = false;
         toast.success(t('exams.gradesPublishedToast'));
         loadAttempts(attemptsMeta.value?.current_page || 1);
         if (attemptsView.value === 'student') loadGrouped();
@@ -960,7 +965,7 @@ function attemptStatusLabel(statusOrAttempt) {
                                     <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
                                         <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
                                         <div class="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
-                                            <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                            <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
                                             <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
                                                 <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">🔍 {{ $t('exams.integrityAction') }}</AppButton>
                                             </router-link>
@@ -1026,7 +1031,7 @@ function attemptStatusLabel(statusOrAttempt) {
                                     </AppBadge>
                                 </div>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
-                                    <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
+                                    <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
                                         📝 {{ $t('exams.gradeAction') }}
                                     </AppButton>
                                     <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
@@ -1181,7 +1186,7 @@ function attemptStatusLabel(statusOrAttempt) {
                         </div>
 
                         <!-- Grading Controls for Essay -->
-                        <div v-if="(q.question_type || q.type) === 'essay'" class="border-t pt-3 space-y-3">
+                        <div v-if="(q.question_type || q.type) === 'essay' && isGradable(gradingData)" class="border-t pt-3 space-y-3">
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <AppInput v-model="gradeForm[q.id]" type="number" min="0" :max="q.points" :label="$t('exams.awardedPoints')" id="essay-pts" />
                                 <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" id="essay-fb" />
@@ -1195,7 +1200,7 @@ function attemptStatusLabel(statusOrAttempt) {
 
                 <div class="flex justify-between items-center border-t pt-4">
                     <AppButton variant="outline" @click="gradingAttempt = null">{{ $t('common.close') }}</AppButton>
-                    <AppButton variant="success" :loading="publishBusy" @click="submitPublishGrades">
+                    <AppButton v-if="isGradable(gradingData)" variant="success" :loading="publishBusy" @click="publishConfirmOpen = true">
                         🚀 {{ $t('exams.publishGradesAction') }}
                     </AppButton>
                 </div>
@@ -1287,6 +1292,16 @@ function attemptStatusLabel(statusOrAttempt) {
             :loading="revokeMakeUpBusy"
             @close="revokeMakeUpTarget = null"
             @confirm="revokeMakeUp"
+        />
+        <ConfirmDialog
+            :open="publishConfirmOpen"
+            :title="$t('exams.publishConfirmTitle')"
+            :message="$t('exams.publishConfirmMessage', { name: gradingData?.student?.name || '' })"
+            :confirm-text="$t('exams.publishGradesAction')"
+            tone="success"
+            :loading="publishBusy"
+            @close="publishConfirmOpen = false"
+            @confirm="submitPublishGrades"
         />
         <ConfirmDialog
             :open="Boolean(regradeTarget)"
