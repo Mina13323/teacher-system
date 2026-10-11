@@ -65,6 +65,9 @@ Route::get('time', \App\Http\Controllers\ServerTimeController::class)
 // teachers/assistants (student ops) or admins through the management portals.
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+    // Confirms a sign-in on this device for a one-device account (the login
+    // response's transfer token) and signs the other device out.
+    Route::post('session/transfer', [AuthController::class, 'transfer'])->middleware('throttle:session-transfer');
 
     Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);

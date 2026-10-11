@@ -91,6 +91,9 @@ class StudentCapabilitiesAndRenewalTest extends ApiTestCase
         $email = $createResponse->json('credentials.login');
         $tempPassword = $createResponse->json('credentials.temporary_password');
 
+        // Requests below carry their own bearer tokens, not the teacher above.
+        $this->app['auth']->forgetGuards();
+
         // 1. Authenticate with student code
         $loginByCode = $this->postJson('/api/v1/auth/login', [
             'login' => $studentCode,
@@ -98,6 +101,14 @@ class StudentCapabilitiesAndRenewalTest extends ApiTestCase
         ])->assertStatus(200);
 
         $this->assertEquals($studentCode, $loginByCode->json('data.user.student_code'));
+
+        // A student is signed in on one device at a time: sign out first, or
+        // the next sign-in asks to move the account (DeviceSessionTest).
+        $this->withToken($loginByCode->json('data.token'))
+            ->postJson('/api/v1/auth/logout')
+            ->assertOk();
+        $this->app['auth']->forgetGuards();
+        $this->withHeaders(['Authorization' => '']);
 
         // 2. Authenticate with email
         $loginByEmail = $this->postJson('/api/v1/auth/login', [

@@ -90,10 +90,42 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                // A sign-in revoked by a confirmed move to another device says
+                // so, so that device can explain why it was signed out.
+                $ended = app(\App\Services\Auth\DeviceSessionService::class)->endedReason($request->bearerToken());
+
+                return response()->json(array_filter([
+                    'success' => false,
+                    'message' => $ended !== null
+                        ? 'This account was signed in on another device.'
+                        : 'Unauthenticated.',
+                    'code' => $ended,
+                ], fn ($value) => $value !== null), 401);
+            }
+        });
+
+        $exceptions->render(function (\App\Exceptions\SessionTransferRequiredException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated.',
-                ], 401);
+                    'message' => $e->getMessage(),
+                    'code' => 'session_transfer_required',
+                    'data' => [
+                        'transfer_token' => $e->transferToken,
+                        'expires_in' => $e->expiresIn,
+                        'other_session' => $e->otherSession,
+                    ],
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (\App\Exceptions\SessionTransferExpiredException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'session_transfer_expired',
+                ], 422);
             }
         });
 

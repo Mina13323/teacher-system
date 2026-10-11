@@ -141,6 +141,8 @@ export const m = {
   flowFailed: new Rate('flow_failed'),
   flowCompleted: new Counter('flow_completed'),
   loginThrottled: new Counter('login_throttled_429'),
+  // Fixture student still signed in from an earlier run (one device per student): confirmed like the login page does.
+  sessionTransfers: new Counter('login_session_transfers'),
   answersSaved: new Counter('answers_saved'),
   fixtureNotClean: new Counter('fixture_not_clean'),
   criticalFailures: new Counter('critical_failures'),
@@ -228,7 +230,7 @@ export function json(res) {
 /** POST /auth/login -> token, or null. Retries 429 up to LOGIN_MAX_RETRIES. */
 export function login(email) {
   for (let attempt = 0; ; attempt++) {
-    const res = request('POST', '/auth/login', { email, password: FIXTURE_PASSWORD }, null, 'login', m.login);
+    let res = request('POST', '/auth/login', { email, password: FIXTURE_PASSWORD }, null, 'login', m.login);
     if (res.status === 429) {
       m.loginThrottled.add(1);
       if (attempt < LOGIN_MAX_RETRIES) {
@@ -237,7 +239,12 @@ export function login(email) {
         continue;
       }
     }
-    const body = json(res);
+    let body = json(res);
+    if (res.status === 409 && body && body.code === 'session_transfer_required' && body.data && body.data.transfer_token) {
+      m.sessionTransfers.add(1);
+      res = request('POST', '/auth/session/transfer', { transfer_token: body.data.transfer_token }, null, 'login', m.login);
+      body = json(res);
+    }
     const ok = check(res, {
       'login: status 200': (r) => r.status === 200,
       'login: token present': () => !!(body && body.data && typeof body.data.token === 'string'),

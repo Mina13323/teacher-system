@@ -28,6 +28,14 @@ class LoginUserAction
             throw new InvalidCredentialsException();
         }
 
+        $this->assertCanSignIn($user);
+
+        return $user;
+    }
+
+    /** The account checks every sign-in passes (also a confirmed move to another device). */
+    public function assertCanSignIn(User $user): void
+    {
         if (! $user->isActive()) {
             throw new AccountDisabledException();
         }
@@ -35,7 +43,5 @@ class LoginUserAction
         if ($user->isStudent() && ! $user->hasActiveAccess()) {
             throw new AccountDisabledException('Student account access is currently inactive or suspended.');
         }
-
-        return $user;
     }
 }

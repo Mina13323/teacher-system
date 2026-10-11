@@ -68,6 +68,19 @@ export function setAuthToken(token) {
     }
 }
 
+let unauthorizedHandler = null;
+
+/**
+ * Registers what happens when a request that carried the sign-in token is
+ * answered 401: the sign-in was revoked (logout elsewhere, a move to another
+ * device, staff action) or has expired. Requests marked `skipAuthHandler`
+ * (sign-in itself, and the boot check, which handles its own result) are
+ * left alone.
+ */
+export function setUnauthorizedHandler(fn) {
+    unauthorizedHandler = typeof fn === 'function' ? fn : null;
+}
+
 /**
  * Send an asynchronous request with keepalive: true.
  * Used for critical events when the browser/PWA is closing or backgrounded,
@@ -102,7 +115,7 @@ export function sendKeepalive(endpoint, data = {}) {
  * Normalize any axios/server response into the app's success/data shape and
  * convert failures into ApiError. Always returns the API `data` payload.
  */
-async function request(config) {
+async function request({ skipAuthHandler = false, ...config }) {
     try {
         const response = await client.request(config);
         // Backend envelope: { success, message, data }. Paginated/collection
@@ -160,7 +173,16 @@ async function request(config) {
             }
         }
 
-        throw new ApiError(message, { status, errors, data: error.response?.data, code: error.code });
+        const apiError = new ApiError(message, { status, errors, data: error.response?.data, code: error.code });
+        const sentToken = Boolean(error.config?.headers?.Authorization);
+        if (status === 401 && sentToken && !skipAuthHandler && unauthorizedHandler) {
+            try {
+                unauthorizedHandler(apiError);
+            } catch {
+                /* the caller still receives the error */
+            }
+        }
+        throw apiError;
     }
 }
 

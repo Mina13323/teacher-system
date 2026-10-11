@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
-import { ApiError } from './client';
+import api, { ApiError, setAuthToken, setUnauthorizedHandler } from './client';
 
 describe('ApiError.friendly', () => {
     afterEach(() => {
@@ -29,5 +29,46 @@ describe('ApiError.friendly', () => {
         expect(ApiError.friendly(503)).toBe('The server is busy right now. Your work is safe. Please try again in a moment.');
         i18n.global.locale.value = 'ar';
         expect(ApiError.friendly(503)).toBe('الخادم مشغول الآن. عملك محفوظ. يرجى المحاولة مرة أخرى بعد قليل.');
+    });
+});
+
+function respondWith(status, data = {}) {
+    return (config) => Promise.reject(Object.assign(new Error(`HTTP ${status}`), {
+        config,
+        response: { status, data, headers: {}, config },
+    }));
+}
+
+describe('client: revoked sign-in', () => {
+    afterEach(() => {
+        setUnauthorizedHandler(null);
+        setAuthToken(null);
+    });
+
+    it('reports a 401 to a request that carried the sign-in token', async () => {
+        const handler = vi.fn();
+        setUnauthorizedHandler(handler);
+        setAuthToken('1|secret');
+
+        await expect(api.get('/student/dashboard', undefined, { adapter: respondWith(401, { code: 'session_transferred' }) }))
+            .rejects.toBeInstanceOf(ApiError);
+
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(handler.mock.calls[0][0].data.code).toBe('session_transferred');
+    });
+
+    it('leaves sign-in requests, signed-out requests and other errors alone', async () => {
+        const handler = vi.fn();
+        setUnauthorizedHandler(handler);
+
+        // No token sent (signed out): a 401 is just a failed request.
+        await expect(api.post('/auth/login', {}, { adapter: respondWith(401) })).rejects.toBeInstanceOf(ApiError);
+
+        setAuthToken('1|secret');
+        await expect(api.get('/auth/me', undefined, { skipAuthHandler: true, adapter: respondWith(401) })).rejects.toBeInstanceOf(ApiError);
+        await expect(api.get('/teacher/dashboard', undefined, { adapter: respondWith(403) })).rejects.toBeInstanceOf(ApiError);
+        await expect(api.get('/student/exams', undefined, { adapter: respondWith(503) })).rejects.toBeInstanceOf(ApiError);
+
+        expect(handler).not.toHaveBeenCalled();
     });
 });

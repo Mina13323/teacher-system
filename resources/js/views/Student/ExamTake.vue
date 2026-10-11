@@ -26,6 +26,7 @@ import { collectUnsavedDrafts } from '@/utils/examDrafts';
 import { createExplanationAcks, explanationsNeedingSave } from '@/utils/explanationAcks';
 import { singleFlight } from '@/utils/singleFlight';
 import { takeHandedOffAttempt } from '@/utils/attemptHandoff';
+import { useAuthStore } from '@/stores/auth';
 import { applyAnswerAck, isAnswerAck } from '@/utils/answerAck';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -63,6 +64,7 @@ const questionSaveSeq = new Map();
 
 /** Device-to-server clock offset; the countdown runs on server time. */
 const serverClock = createServerClock();
+const auth = useAuthStore();
 /**
  * When a beat is a full attempt status check (a database request) instead of
  * a time ping. A confirmed answer save counts as a status check for this.
@@ -579,6 +581,11 @@ onBeforeRouteLeave((to) => {
         allowRouteLeave = false;
         return true;
     }
+
+    // The sign-in ended (the account moved to another device, or was
+    // revoked): there is nothing to confirm. The attempt stays on the server
+    // and resumes after signing in again; the local recovery copy is kept.
+    if (to.name === 'login' && !auth.isAuthenticated) return true;
 
     const restoringAttempt = route.name === 'student.attempt' && loading.value && !attempt.value;
     if (!restoringAttempt && (result.value || attempt.value?.status !== 'in_progress' || blocked.value)) {

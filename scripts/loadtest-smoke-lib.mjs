@@ -115,7 +115,15 @@ export async function runSmoke({ base, email, password, fetchImpl, log = () => {
 
   try {
     // 1. Sign in.
-    const login = dataOf('login', await call('login', 'POST', '/auth/login', { email, password }));
+    let signIn = await call('login', 'POST', '/auth/login', { email, password });
+    // A fixture student still signed in from an earlier run: students may use
+    // one device at a time, so confirm the move, as the login page does.
+    if (signIn.status === 409 && signIn.json && signIn.json.code === 'session_transfer_required') {
+      const transferToken = signIn.json.data && signIn.json.data.transfer_token;
+      need('login', typeof transferToken === 'string' && transferToken.length > 0, 'no transfer token in the 409 response');
+      signIn = await call('session transfer', 'POST', '/auth/session/transfer', { transfer_token: transferToken });
+    }
+    const login = dataOf('login', signIn);
     need('login', typeof login.token === 'string' && login.token.length > 0, 'no token in the response');
     need('login', login.user && login.user.email === email, 'signed in as a different account than requested');
     token = login.token;

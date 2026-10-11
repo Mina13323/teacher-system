@@ -21,9 +21,11 @@ export function toList(res, extraMeta = {}) {
 
 // ---- Auth -----------------------------------------------------------------
 export const auth = {
-    me: () => api.get('/auth/me'),
-    login: (payload) => api.post('/auth/login', payload),
-    logout: () => api.post('/auth/logout'),
+    // The boot check and sign-in handle their own 401s (see setUnauthorizedHandler).
+    me: () => api.get('/auth/me', undefined, { skipAuthHandler: true }),
+    login: (payload) => api.post('/auth/login', payload, { skipAuthHandler: true }),
+    transferSession: (payload) => api.post('/auth/session/transfer', payload, { skipAuthHandler: true }),
+    logout: () => api.post('/auth/logout', undefined, { skipAuthHandler: true }),
     profile: () => api.get('/auth/profile'),
     updateProfile: (payload) => api.put('/auth/profile', payload),
     changePassword: (payload) => api.put('/auth/password', payload),

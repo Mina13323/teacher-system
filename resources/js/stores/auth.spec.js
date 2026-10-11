@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 const me = vi.fn();
-vi.mock('@/api', () => ({ auth: { me: (...args) => me(...args) } }));
+const transferSession = vi.fn();
+vi.mock('@/api', () => ({
+    auth: { me: (...args) => me(...args), transferSession: (...args) => transferSession(...args) },
+}));
 
 const { ApiError } = await import('@/api/client');
 const { useAuthStore, ME_RETRY_DELAYS_MS } = await import('./auth');
@@ -108,5 +111,96 @@ describe('auth store fetchMe', () => {
 
         expect(me).toHaveBeenCalledTimes(2);
         expect(auth.token).toBeNull();
+    });
+});
+
+describe('auth store: persistent sign-in', () => {
+    beforeEach(() => {
+        globalThis.localStorage = storage();
+        localStorage.setItem('atlas.auth.token', '1|secret');
+        setActivePinia(createPinia());
+        me.mockReset();
+        transferSession.mockReset();
+    });
+
+    it('restores the user from the stored token after a reload or restart, with one /auth/me', async () => {
+        me.mockResolvedValue({ id: 7, roles: ['student'], unread_count: 2 });
+        // A new page load (or browser restart) builds a new store from storage.
+        const auth = useAuthStore();
+        expect(auth.isAuthenticated).toBe(true);
+
+        await auth.fetchMe({ wait: noWait });
+
+        expect(me).toHaveBeenCalledTimes(1);
+        expect(auth.user.id).toBe(7);
+        expect(auth.booted).toBe(true);
+    });
+
+    it.each([403, 404, 422])('keeps the sign-in when /auth/me answers %s (not a verdict on the token)', async (status) => {
+        me.mockRejectedValue(failure(status));
+        const auth = useAuthStore();
+
+        await expect(auth.fetchMe({ wait: noWait })).rejects.toBeInstanceOf(ApiError);
+
+        expect(auth.token).toBe('1|secret');
+        expect(localStorage.getItem('atlas.auth.token')).toBe('1|secret');
+        expect(auth.bootError).not.toBeNull();
+    });
+
+    it('keeps the sign-in when a proxy answers /auth/me with a page instead of the user', async () => {
+        me.mockResolvedValue('<!doctype html><html></html>');
+        const auth = useAuthStore();
+
+        await expect(auth.fetchMe({ wait: noWait })).rejects.toBeInstanceOf(ApiError);
+
+        expect(auth.token).toBe('1|secret');
+        expect(auth.user).toBeNull();
+        expect(auth.bootError).not.toBeNull();
+    });
+
+    it('remembers that the account moved to another device', async () => {
+        me.mockRejectedValue(failure(401, { data: { code: 'session_transferred' } }));
+        const auth = useAuthStore();
+
+        await expect(auth.fetchMe({ wait: noWait })).rejects.toBeInstanceOf(ApiError);
+
+        expect(auth.token).toBeNull();
+        expect(auth.endedReason).toBe('session_transferred');
+    });
+
+    it('ends a sign-in revoked mid-session and says why', () => {
+        const auth = useAuthStore();
+
+        expect(auth.handleUnauthorized(failure(401))).toBe(true);
+        expect(auth.token).toBeNull();
+        expect(localStorage.getItem('atlas.auth.token')).toBeNull();
+        expect(auth.endedReason).toBe('session_ended');
+
+        // Already signed out: nothing more to do.
+        expect(auth.handleUnauthorized(failure(401))).toBe(false);
+    });
+
+    it('keeps an exam recovery copy when a sign-in ends', () => {
+        localStorage.setItem('exam.recovery.42', '{"answers":{}}');
+        const auth = useAuthStore();
+
+        auth.handleUnauthorized(failure(401, { data: { code: 'session_transferred' } }));
+
+        expect(auth.endedReason).toBe('session_transferred');
+        expect(localStorage.getItem('exam.recovery.42')).toBe('{"answers":{}}');
+    });
+
+    it('signs in on this device after a confirmed transfer', async () => {
+        localStorage.removeItem('atlas.auth.token');
+        transferSession.mockResolvedValue({ user: { id: 7, roles: ['student'] }, token: '2|new', unread_count: 0 });
+        const auth = useAuthStore();
+        auth.endedReason = 'session_transferred';
+
+        await auth.transferSession('ticket');
+
+        expect(transferSession).toHaveBeenCalledWith({ transfer_token: 'ticket' });
+        expect(auth.token).toBe('2|new');
+        expect(localStorage.getItem('atlas.auth.token')).toBe('2|new');
+        expect(auth.endedReason).toBeNull();
     });
 });
