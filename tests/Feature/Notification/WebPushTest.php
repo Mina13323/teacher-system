@@ -8,7 +8,9 @@ use App\Models\PushSubscription;
 use App\Models\User;
 use App\Notifications\ScheduledReminderNotification;
 use App\Services\Push\WebPushSender;
+use App\Jobs\SendWebPushJob;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Tests\Feature\ApiTestCase;
 use Tests\Feature\Exam\Concerns\InteractsWithExams;
 
@@ -204,6 +206,31 @@ class WebPushTest extends ApiTestCase
             ->where('type', ScheduledReminderNotification::class)
             ->where('data', 'like', '%exam_opening%')
             ->count(), 'suppressed reminder must not be recorded (retry next run)');
+    }
+
+    public function test_reminders_queue_no_push_job_that_could_not_deliver(): void
+    {
+        $this->subscribedExamScenario();
+        $unsubscribed = $this->createUserWithRole(UserRole::Student);
+        $this->actingAs($unsubscribed, 'sanctum')
+            ->postJson('/api/v1/student/courses/'.Exam::query()->value('course_id').'/enroll')->assertStatus(201);
+
+        // No VAPID keys: nothing is queued at all; both reminders are still recorded.
+        Queue::fake();
+        $this->app->instance(WebPushSender::class, new RecordingSender());
+        $this->artisan('reminders:dispatch')->assertExitCode(0);
+        Queue::assertNotPushed(SendWebPushJob::class);
+        $this->assertSame(2, DB::table('notifications')->where('type', ScheduledReminderNotification::class)->count());
+
+        // Push enabled: only the student with a subscription gets a job.
+        DB::table('notifications')->delete(); // the dedupe key lives in the notification
+        Queue::fake();
+        $enabled = new RecordingSender();
+        $enabled->enabled = true;
+        $this->app->instance(WebPushSender::class, $enabled);
+        $this->artisan('reminders:dispatch')->assertExitCode(0);
+        Queue::assertPushed(SendWebPushJob::class, 1);
+        $this->assertSame(2, DB::table('notifications')->where('type', ScheduledReminderNotification::class)->count());
     }
 
     // ---- Encryption self-test + dead endpoint cleanup -----------------------
