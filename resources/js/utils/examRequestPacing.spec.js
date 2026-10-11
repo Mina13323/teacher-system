@@ -16,6 +16,7 @@ import {
     autosaveNominalDelay,
     createAutosaveScheduler,
     createHeartbeatScheduler,
+    heartbeatAction,
     deadlineFlushLeadMs,
     dueDraftPass,
     predeadlineDraftLeadMs,
@@ -516,5 +517,35 @@ describe('exam deadline and status pacing', () => {
     it('spreads the time-up submit over a bounded window', () => {
         expect(timeUpSubmitDelayMs(() => 0)).toBe(0);
         expect(timeUpSubmitDelayMs(() => 0.999999)).toBeLessThanOrEqual(TIME_UP_SUBMIT_SPREAD_MS);
+    });
+});
+
+describe('heartbeatAction', () => {
+    it('sends the status check when it is due, whatever else holds', () => {
+        expect(heartbeatAction({ statusDue: true })).toBe('status');
+        expect(heartbeatAction({ statusDue: true, connectionLost: true, clockNeedsResync: true })).toBe('status');
+    });
+
+    it('pings only while the connection is down or after a clock jump', () => {
+        expect(heartbeatAction({ statusDue: false, connectionLost: true })).toBe('ping');
+        expect(heartbeatAction({ statusDue: false, clockNeedsResync: true })).toBe('ping');
+    });
+
+    it('sends nothing on an ordinary beat', () => {
+        expect(heartbeatAction({ statusDue: false, connectionLost: false, clockNeedsResync: false })).toBe('none');
+    });
+
+    it('cuts a quiet half hour from about 120 pings to none, keeping the status checks', () => {
+        // Simulated beats of a student who never saves and keeps a steady clock.
+        let lastStatus = 0;
+        const sent = { status: 0, ping: 0, none: 0 };
+        for (let t = 15_000; t <= 30 * 60_000; t += 15_000) {
+            const action = heartbeatAction({ statusDue: shouldCheckStatus(t, lastStatus) });
+            sent[action] += 1;
+            if (action === 'status') lastStatus = t;
+        }
+        expect(sent.ping).toBe(0);
+        expect(sent.status).toBeGreaterThanOrEqual(14);
+        expect(sent.status).toBeLessThanOrEqual(16);
     });
 });

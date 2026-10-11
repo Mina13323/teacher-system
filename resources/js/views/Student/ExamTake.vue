@@ -10,6 +10,7 @@ import { examResultNotifies, useNotificationsStore } from '@/stores/notification
 import {
     createAutosaveScheduler,
     createHeartbeatScheduler,
+    heartbeatAction,
     deadlineFlushLeadMs,
     dueDraftPass,
     EXPLANATION_SAVE_IDLE_MS,
@@ -462,12 +463,19 @@ async function sendHeartbeat() {
         stopHeartbeat();
         return;
     }
-    // Most beats are a database-free time ping; a full status check (which
-    // reads and writes the attempt row) goes out about two minutes after the
-    // attempt state was last confirmed (by a status check or a confirmed
-    // answer save), at least every ~6 minutes, and on the first beat after a
-    // lost connection comes back.
-    if (!statusGate.isDue(Date.now(), { forced: statusSyncWanted })) {
+    // A full status check (which reads and writes the attempt row) goes out
+    // about two minutes after the attempt state was last confirmed (by a
+    // status check or a confirmed answer save), at least every ~6 minutes,
+    // and on the first beat after a lost connection comes back. Other beats
+    // send a database-free time ping only while the connection is down or
+    // after the device clock jumped; otherwise nothing (heartbeatAction).
+    const action = heartbeatAction({
+        statusDue: statusGate.isDue(Date.now(), { forced: statusSyncWanted }),
+        connectionLost: connectionLost.value,
+        clockNeedsResync: serverClock.needsResync(),
+    });
+    if (action === 'none') return;
+    if (action === 'ping') {
         await syncServerClock();
         return;
     }
@@ -499,10 +507,10 @@ async function sendHeartbeat() {
  * Liveness beat: first one at a random point in the first 15 s, then every
  * 15 s ± 20%, so students who start together do not stay in step. Paused
  * while the tab is hidden, with one beat as soon as it is visible again.
- * About seven beats in eight are a database-free time ping; the rest are the
- * attempt status check (which also records last_heartbeat_at). While the
- * student keeps saving answers, fewer beats are status checks (at least one
- * every ~6 minutes); see statusCheckGate.
+ * About one beat in eight is the attempt status check (which also records
+ * last_heartbeat_at); while the student keeps saving answers, fewer are (at
+ * least one every ~6 minutes; see statusCheckGate). The rest send nothing
+ * unless the connection is down or the device clock jumped (heartbeatAction).
  */
 const heartbeat = createHeartbeatScheduler({ beat: sendHeartbeat });
 

@@ -6,10 +6,13 @@
 //   arrive during the ramp: login -> dashboard -> exam list -> exam details
 //   wait for the common opening moment, then the client's start pacing (0-45 s)
 //   start (compact) -> exam loop until the deadline:
-//     /time ping every 12-18 s (no DB), status check every ~2 min after the
+//     a beat every 12-18 s: a status check about every ~2 min after the
 //     attempt state was last confirmed (a confirmed answer save counts, at
 //     least one real check every ~6 min; B1_SAVE_DEFERS_STATUS=0 restores the
-//     plain ~2 min schedule of the client before B1),
+//     plain ~2 min schedule of the client before B1); other beats send
+//     nothing, as the client now does on a steady clock and connection
+//     (TIME_PINGS=1 restores the earlier /time ping on every other beat),
+//     one /time ping when the attempt opens and one at the deadline,
 //     an answer every ANSWER_GAP_MIN..MAX s (default 40-80 s, about 1/min),
 //     an integrity event at INTEGRITY_PER_MIN (default 0.3/min)
 //   deadline: submit at a random point 0-50 s after it (the client's spread)
@@ -40,6 +43,9 @@ const STATUS_GAP_S = 115;
 // Mirrors resources/js/utils/statusCheckGate.js.
 const STATUS_MAX_GAP_S = 3 * STATUS_GAP_S;
 const SAVE_DEFERS_STATUS = num('B1_SAVE_DEFERS_STATUS', 1) !== 0;
+// heartbeatAction(): beats between status checks send no /time ping unless
+// the clock jumped or the connection is down. 1 = the schedule before that.
+const TIME_PINGS = num('TIME_PINGS', 0) !== 0;
 const START_PACING_MAX_S = num('START_PACING_MAX_S', 45);
 const SUBMIT_SPREAD_S = 50;
 const UNREAD_MIN_S = 60;
@@ -303,7 +309,7 @@ export default function (data) {
           lastObserved = now;
           closed = !!s && s.status !== undefined && s.status !== 'in_progress';
           if (closed) failIfClosedEarly(deadline, serverNow(), 'status check');
-        } else {
+        } else if (TIME_PINGS) {
           timePing(offset);
         }
         nextPing = now + between(PING_MIN_S, PING_MAX_S) * 1000;
@@ -312,9 +318,11 @@ export default function (data) {
       sleep(Math.max(0.2, (wakeAt - Date.now()) / 1000));
     }
 
-    // The screen locks at the deadline; the submit goes out 0-50 s later.
+    // The screen locks at the deadline after one last server clock check
+    // (onTimeUp); the submit goes out 0-50 s later.
     const untilDeadline = (deadline - serverNow()) / 1000;
     if (untilDeadline > 0) sleep(untilDeadline);
+    timePing(offset);
     sleep(between(0, SUBMIT_SPREAD_S));
     const submitRes = track(request('POST', `/student/attempts/${attempt.id}/submit`, null, token, 'submit', m.submit));
     const sub = json(submitRes);

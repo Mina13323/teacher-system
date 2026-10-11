@@ -50,3 +50,50 @@ describe('createServerClock', () => {
         expect(clock.offset()).toBe(7);
     });
 });
+
+describe('needsResync', () => {
+    function clocks() {
+        const t = { wall: 1_000_000, mono: 5_000 };
+        const clock = createServerClock({ now: () => t.wall, monotonic: () => t.mono });
+        return { t, clock };
+    }
+
+    it('wants a sample until one arrives', () => {
+        const { clock } = clocks();
+        expect(clock.needsResync()).toBe(true);
+    });
+
+    it('needs no new sample while the device clock runs normally', () => {
+        const { t, clock } = clocks();
+        clock.observe(t.wall + 50, t.wall - 100, t.wall);
+        // An hour passes on both clocks, with half a second of natural drift.
+        t.wall += 3_600_000;
+        t.mono += 3_600_000 - 500;
+        expect(clock.needsResync()).toBe(false);
+    });
+
+    it('notices the device clock being changed and drops the stale offset on the next sample', () => {
+        const { t, clock } = clocks();
+        clock.observe(t.wall + 10_000 - 25, t.wall - 50, t.wall); // device 10 s behind, rtt 50
+        expect(clock.offset()).toBe(10_000);
+
+        // The student sets the device clock an hour back; only 30 s really passed.
+        t.wall += 30_000 - 3_600_000;
+        t.mono += 30_000;
+        expect(clock.needsResync()).toBe(true);
+        expect(clock.needsResync()).toBe(true); // stays wanted until a sample arrives
+
+        // The new sample has a slower round trip than the old one, yet replaces it.
+        clock.observe(t.wall + 3_610_000 - 500, t.wall - 1_000, t.wall);
+        expect(clock.offset()).toBe(3_610_000);
+        expect(clock.needsResync()).toBe(false);
+    });
+
+    it('notices a sleep during which the page clock paused', () => {
+        const { t, clock } = clocks();
+        clock.observe(t.wall, t.wall, t.wall);
+        t.wall += 600_000; // ten minutes asleep
+        t.mono += 10;
+        expect(clock.needsResync()).toBe(true);
+    });
+});

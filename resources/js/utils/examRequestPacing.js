@@ -19,15 +19,16 @@ export const HEARTBEAT_INTERVAL_MS = 15_000;
 export const HEARTBEAT_JITTER_RATIO = 0.2;
 
 /**
- * Most beats are a database-free server-time ping. A full attempt status
- * check (which reads and writes MySQL) is sent only when this long has passed
- * since the last one: with 12–18 s beats, about once every two minutes.
+ * A full attempt status check (which reads and writes MySQL) is sent only
+ * when this long has passed since the last one: with 12–18 s beats, about
+ * once every two minutes. Other beats send nothing, or a database-free time
+ * ping when one is useful (see heartbeatAction).
  *
  * Why two minutes is safe: the status check does not enforce anything. The
  * server refuses every answer, event and submit after the deadline or after
  * the attempt was closed (by the teacher, the integrity threshold or the
- * expiry sweep), and the countdown runs on the server clock that the
- * database-free pings keep in sync, so the screen locks at the real deadline
+ * expiry sweep), and the countdown runs on the measured server clock, so
+ * the screen locks at the real deadline
  * without asking. The check only lets an idle student's screen notice an
  * early closure or a teacher's extension sooner; any save in between notices
  * it at once (422, then a reload). last_heartbeat_at is stored for display
@@ -47,6 +48,28 @@ export const STATUS_CHECK_MIN_GAP_MS = 115_000;
 export function shouldCheckStatus(nowMs, lastStatusCheckMs) {
     if (lastStatusCheckMs === null || lastStatusCheckMs === undefined) return true;
     return nowMs - lastStatusCheckMs >= STATUS_CHECK_MIN_GAP_MS;
+}
+
+/**
+ * What one heartbeat tick sends: 'status' (the attempt status check),
+ * 'ping' (the database-free /time request) or 'none'.
+ *
+ * A time ping used to go out on every other tick (every 12-18 s), only to
+ * re-measure the device clock and to show whether the server was reachable.
+ * Neither needs that rate:
+ *  - the clock offset stays valid until the device clock jumps, which the
+ *    server clock detects locally (`needsResync`), and every status check
+ *    (at least every ~6 minutes) carries a fresh server time anyway;
+ *  - an answer save reports its own failure, the browser's offline event
+ *    raises the connection banner, and while the banner is up every tick
+ *    still pings so the screen notices as soon as the server is back.
+ * At 500 students the old schedule was about 33 requests per second of
+ * pings alone; this keeps the pings to the moments they carry information.
+ */
+export function heartbeatAction({ statusDue, connectionLost = false, clockNeedsResync = false }) {
+    if (statusDue) return 'status';
+    if (connectionLost || clockNeedsResync) return 'ping';
+    return 'none';
 }
 
 /**
