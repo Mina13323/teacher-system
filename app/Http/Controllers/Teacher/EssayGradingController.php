@@ -96,7 +96,7 @@ class EssayGradingController extends Controller
             ->orderBy('a.attempt_number')
             ->orderBy('a.id')
             ->orderBy('aq.position')
-            ->paginate((int) ($filters['per_page'] ?? 20))
+            ->paginate($this->perPage($request))
             ->withQueryString();
 
         $rows = collect($page->items())->map(fn ($row) => $this->row($row))->values();

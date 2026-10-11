@@ -47,7 +47,7 @@ class StudentAttemptController extends Controller
             $query->where('exam_id', (int) $filters['exam_id']);
         }
 
-        $page = $query->paginate((int) ($filters['per_page'] ?? 20))->withQueryString();
+        $page = $query->paginate($this->perPage($request))->withQueryString();
 
         $rows = collect($page->items())->map(function (ExamAttempt $a) {
             $outcome = $a->outcome();
