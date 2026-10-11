@@ -71,7 +71,9 @@ class ExamAttemptDetailResource extends JsonResource
                         'selected_option_ids' => $selectedIds,
                         'answer_text' => $ans?->answer_text,
                         'is_correct' => $ans?->is_correct,
-                        'points_earned' => $ans !== null ? (int) $ans->points_earned : 0,
+                        // NULL while ungraded (essay not yet graded, or no answer
+                        // row): an ungraded essay is not a zero.
+                        'points_earned' => $ans?->points_earned !== null ? (int) $ans->points_earned : null,
                         'feedback' => $ans?->feedback,
                         'graded_by' => $ans?->graded_by,
                         'graded_at' => $ans?->graded_at?->toISOString(),

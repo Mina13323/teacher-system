@@ -299,4 +299,71 @@ class GradingSafetyTest extends ApiTestCase
 
         $this->assertSame(ExamAttemptStatus::Published, ExamAttempt::findOrFail($attempt['id'])->status);
     }
+
+    // ------------------------------------------------------------------
+    // P0-3: an ungraded essay is not a zero
+    // ------------------------------------------------------------------
+
+    private function staffQuestion(array $attempt, int $questionId): array
+    {
+        return collect($this->actingAs($this->teacher, 'sanctum')
+            ->getJson("/api/v1/teacher/attempts/{$attempt['id']}")
+            ->assertOk()
+            ->json('data.questions'))->firstWhere('id', $questionId);
+    }
+
+    public function test_an_ungraded_essay_is_null_and_an_awarded_zero_is_zero(): void
+    {
+        $exam = $this->exam(2);
+        $attempt = $this->start($exam);
+        [$written, $blank] = $this->essayIds($attempt);
+        $this->writeEssay($attempt, $written, 'Answer.');
+        $this->submit($attempt);
+
+        $this->assertNull($this->staffQuestion($attempt, $written)['points_earned'], 'Written but ungraded.');
+        $this->assertNull($this->staffQuestion($attempt, $blank)['points_earned'], 'No answer row at all.');
+
+        $this->grade($attempt, $written, 0)->assertOk();
+        $this->assertSame(0, $this->staffQuestion($attempt, $written)['points_earned']);
+        $this->assertNull($this->staffQuestion($attempt, $blank)['points_earned']);
+
+        // The auto-graded choice question still reports its awarded points.
+        $this->assertSame(0, $this->staffQuestion($attempt, $this->choiceId($attempt))['points_earned']);
+    }
+
+    public function test_the_award_must_be_an_explicit_whole_number_within_the_frozen_maximum(): void
+    {
+        $exam = $this->exam();
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $this->writeEssay($attempt, $essay, 'Answer.');
+        $this->submit($attempt);
+
+        foreach ([null, '', -1, 11, 2.5, 'ten'] as $bad) {
+            $this->grade($attempt, $essay, $bad)->assertStatus(422);
+        }
+        $this->assertNull(ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $essay)->value('points_earned'));
+
+        $this->grade($attempt, $essay, 10)->assertOk();
+        $this->assertSame(10, ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $essay)->value('points_earned'));
+    }
+
+    public function test_the_student_review_is_unchanged_by_the_staff_representation(): void
+    {
+        $exam = $this->exam(1, ['show_result_immediately' => false]);
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $this->writeEssay($attempt, $essay, 'Answer.');
+        $this->submit($attempt);
+        $this->grade($attempt, $essay, 0)->assertOk();
+        $this->publish($attempt)->assertOk();
+
+        $review = collect($this->actingAs($this->student, 'sanctum')
+            ->getJson("/api/v1/student/attempts/{$attempt['id']}")
+            ->assertOk()
+            ->json('data.questions'))->firstWhere('id', $essay)['review'] ?? null;
+
+        $this->assertNotNull($review);
+        $this->assertSame(0, $review['points_earned']);
+    }
 }

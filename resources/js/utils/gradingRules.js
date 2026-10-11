@@ -24,3 +24,24 @@ export function canOpenGrading(attempt) {
 export function isGradable(attempt) {
     return GRADABLE_STATUSES.includes(statusOf(attempt));
 }
+
+/**
+ * Reads the points a teacher typed for an essay. Nothing is ever turned into
+ * a zero: an empty field is "not graded", and 0 counts only when typed.
+ * Returns { ok: true, value } or { ok: false, reason: 'empty' | 'invalid' | 'range' }.
+ * Whole points only (the server stores integers).
+ */
+export function parseAwardedPoints(raw, max) {
+    const text = raw === null || raw === undefined ? '' : String(raw).trim();
+    if (text === '') return { ok: false, reason: 'empty' };
+    if (!/^\d+$/.test(text)) return { ok: false, reason: /^-/.test(text) ? 'range' : 'invalid' };
+    const value = Number(text);
+    const limit = max === null || max === undefined || max === '' ? NaN : Number(max);
+    if (Number.isFinite(limit) && value > limit) return { ok: false, reason: 'range' };
+    return { ok: true, value };
+}
+
+/** The form value for a stored essay grade: '' while ungraded, never 0 by default. */
+export function gradeFieldValue(pointsEarned) {
+    return pointsEarned === null || pointsEarned === undefined ? '' : String(pointsEarned);
+}

@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { teacher, toList } from '@/api';
 import { toggleBoundedSelection } from '@/utils/boundedSelection';
-import { canOpenGrading, isGradable } from '@/utils/gradingRules';
+import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints } from '@/utils/gradingRules';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -581,12 +581,12 @@ async function openGrading(attempt) {
         // Populate form
         if (gradingData.value?.questions?.length) {
             gradingData.value.questions.forEach((q) => {
-                gradeForm[q.id] = q.points_earned !== null ? q.points_earned : 0;
+                gradeForm[q.id] = gradeFieldValue(q.points_earned);
                 gradeFeedback[q.id] = q.feedback || '';
             });
         } else if (gradingData.value?.answers) {
             gradingData.value.answers.forEach((ans) => {
-                gradeForm[ans.question_id] = ans.points_earned !== null ? ans.points_earned : 0;
+                gradeForm[ans.question_id] = gradeFieldValue(ans.points_earned);
                 gradeFeedback[ans.question_id] = ans.feedback || '';
             });
         }
@@ -598,19 +598,32 @@ async function openGrading(attempt) {
     }
 }
 
-async function submitEssayGrade(questionId) {
+/** Why the typed points cannot be saved yet ('' when they can). */
+function gradeError(q) {
+    const parsed = parseAwardedPoints(gradeForm[q.id], q.points);
+    if (parsed.ok) return '';
+    return parsed.reason === 'empty' ? t('exams.awardedPointsRequired') : t('exams.awardedPointsRange', { max: q.points });
+}
+
+async function submitEssayGrade(q) {
     if (!gradingAttempt.value) return;
+    // An empty field is "not graded": never send it as 0.
+    const parsed = parseAwardedPoints(gradeForm[q.id], q.points);
+    if (!parsed.ok) {
+        toast.error(gradeError(q));
+        return;
+    }
     gradingBusy.value = true;
     try {
-        const pts = Number(gradeForm[questionId] || 0);
-        const fb = gradeFeedback[questionId] || null;
+        const fb = gradeFeedback[q.id] || null;
         const res = await teacher.gradeEssay(gradingAttempt.value.id, {
-            question_id: questionId,
-            awarded_points: pts,
+            question_id: q.id,
+            awarded_points: parsed.value,
             feedback: fb,
         });
         const updated = res.data || res;
         gradingData.value = updated;
+        gradeForm[q.id] = String(parsed.value);
         toast.success(t('exams.essayGradeSaved'));
         loadAttempts(attemptsMeta.value?.current_page || 1);
         if (attemptsView.value === 'student') loadGrouped();
@@ -1154,7 +1167,7 @@ function attemptStatusLabel(statusOrAttempt) {
                                         {{ (q.is_correct ?? (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct) ? '✓ ' + $t('exams.answerCorrect') : '✗ ' + $t('exams.answerIncorrect') }}
                                     </span>
                                     <span class="text-xs text-ink-500 font-medium">
-                                        ({{ $t('exams.pointsEarnedOf', { earned: q.points_earned ?? (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? 0, total: q.points }) }})
+                                        ({{ $t('exams.pointsEarnedOf', { earned: q.points_earned ?? (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? '—', total: q.points }) }})
                                     </span>
                                 </div>
                                 <!-- Option breakdown if available from snapshot -->
@@ -1187,12 +1200,22 @@ function attemptStatusLabel(statusOrAttempt) {
 
                         <!-- Grading Controls for Essay -->
                         <div v-if="(q.question_type || q.type) === 'essay' && isGradable(gradingData)" class="border-t pt-3 space-y-3">
+                            <p v-if="q.points_earned === null || q.points_earned === undefined" class="text-xs font-semibold text-amber-700">⏳ {{ $t('exams.essayNotGraded') }}</p>
                             <div class="grid gap-3 sm:grid-cols-2">
-                                <AppInput v-model="gradeForm[q.id]" type="number" min="0" :max="q.points" :label="$t('exams.awardedPoints')" id="essay-pts" />
-                                <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" id="essay-fb" />
+                                <AppInput
+                                    v-model="gradeForm[q.id]"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    :max="q.points"
+                                    :label="$t('exams.awardedPoints')"
+                                    :id="`essay-pts-${q.id}`"
+                                    :error="gradeForm[q.id] !== '' ? gradeError(q) : ''"
+                                />
+                                <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" :id="`essay-fb-${q.id}`" />
                             </div>
                             <div class="flex justify-end">
-                                <AppButton size="sm" variant="outline" :loading="gradingBusy" @click="submitEssayGrade(q.id)">{{ $t('exams.saveQuestionGrade') }}</AppButton>
+                                <AppButton size="sm" variant="outline" :loading="gradingBusy" :disabled="Boolean(gradeError(q))" @click="submitEssayGrade(q)">{{ $t('exams.saveQuestionGrade') }}</AppButton>
                             </div>
                         </div>
                     </div>
