@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers\Teacher;
 
+use App\Actions\Audit\RecordAuditLogAction;
+use App\Actions\Exam\PublishExamGradesAction;
 use App\Enums\ExamAttemptStatus;
 use App\Enums\QuestionType;
+use App\Exceptions\EssayGradingIncompleteException;
+use App\Exceptions\InvalidAttemptStateException;
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
 use App\Models\ExamAnswer;
+use App\Models\ExamAttempt;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +36,19 @@ use Illuminate\Validation\Rule;
 class EssayGradingController extends Controller
 {
     private const ESSAY_QUEUE_MAX_PER_PAGE = 50;
+
+    /**
+     * Attempts published per request. Each goes through PublishExamGradesAction
+     * (its own transaction, notification and audit row), so a request stays
+     * bounded; the client sends the next batch while `has_more` is true.
+     */
+    public const PUBLISH_BATCH = 50;
+
+    public function __construct(
+        private readonly PublishExamGradesAction $publishGrades,
+        private readonly RecordAuditLogAction $auditLog,
+    ) {
+    }
 
     public function essayAnswers(Request $request, Exam $exam): JsonResponse
     {
@@ -83,6 +101,73 @@ class EssayGradingController extends Controller
         }
 
         return $this->success(array_merge(['exam' => ['id' => $exam->id, 'title' => $exam->title]], $payload), 'Essay answers retrieved.');
+    }
+
+    /**
+     * POST /teacher/exams/{exam}/publish-grades — publish every eligible attempt
+     * of the exam, at most PUBLISH_BATCH per request.
+     *
+     * Eligible: handed in, fully graded (status `submitted`), not yet published.
+     * Attempts still awaiting essay grading, already published or still running
+     * are never selected; each attempt is re-checked by PublishExamGradesAction
+     * under its own lock (P0 rules), so one refusal or failure never rolls back
+     * another attempt's publication. Retrying is safe: published attempts are
+     * no longer selected and the student is notified only on first publication.
+     */
+    public function publishAll(Request $request, Exam $exam): JsonResponse
+    {
+        $this->authorize('viewAttempts', $exam);
+
+        $validated = $request->validate([
+            'confirmed' => ['required', 'accepted'],
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:'.self::PUBLISH_BATCH],
+        ]);
+        $limit = (int) ($validated['limit'] ?? self::PUBLISH_BATCH);
+        $user = $request->user();
+
+        $candidates = ExamAttempt::query()
+            ->where('exam_id', $exam->getKey())
+            ->where('status', ExamAttemptStatus::Submitted->value)
+            ->whereNull('grades_published_at')
+            ->orderBy('id')
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $candidates->count() > $limit;
+        $counts = ['published' => 0, 'blocked_ungraded' => 0, 'skipped' => 0, 'failed' => 0];
+
+        foreach ($candidates->take($limit) as $attempt) {
+            $attempt->setRelation('exam', $exam);
+
+            if (! $user->can('publishGrades', $attempt)) {
+                $counts['skipped']++;
+
+                continue;
+            }
+
+            try {
+                $this->publishGrades->execute($user, $attempt);
+                $counts['published']++;
+            } catch (EssayGradingIncompleteException) {
+                $counts['blocked_ungraded']++;
+            } catch (InvalidAttemptStateException) {
+                $counts['skipped']++;
+            } catch (\Throwable $e) {
+                // One attempt's failure never undoes the others (each publication
+                // committed on its own); it is reported and counted.
+                report($e);
+                $counts['failed']++;
+            }
+        }
+
+        $this->auditLog->execute('grade.publish_all', $exam, array_map('strval', $counts + [
+            'has_more' => $hasMore ? 1 : 0,
+        ]), $user);
+
+        return $this->success(array_merge($counts, [
+            'has_more' => $hasMore,
+            'attempts' => $this->attemptCounts($exam),
+        ]), 'Grades published.');
     }
 
     /** Essay questions of handed-in attempts of this exam, with their answer row if any. */
@@ -205,6 +290,22 @@ class EssayGradingController extends Controller
             ])
             ->values();
 
+        return [
+            'questions' => $questions,
+            'ungraded' => $questions->sum('ungraded'),
+            'graded' => $questions->sum('graded'),
+            'attempts' => $this->attemptCounts($exam),
+        ];
+    }
+
+    /**
+     * Handed-in attempts by publication state, in one aggregate query:
+     * fully graded and unpublished, awaiting essay grading, published.
+     *
+     * @return array{ready_to_publish: int, awaiting_grading: int, published: int}
+     */
+    private function attemptCounts(Exam $exam): array
+    {
         $attempts = DB::table('exam_attempts')
             ->where('exam_id', $exam->getKey())
             ->whereNull('deleted_at')
@@ -216,14 +317,9 @@ class EssayGradingController extends Controller
             ->first();
 
         return [
-            'questions' => $questions,
-            'ungraded' => $questions->sum('ungraded'),
-            'graded' => $questions->sum('graded'),
-            'attempts' => [
-                'ready_to_publish' => (int) ($attempts->ready_to_publish ?? 0),
-                'awaiting_grading' => (int) ($attempts->awaiting_grading ?? 0),
-                'published' => (int) ($attempts->published ?? 0),
-            ],
+            'ready_to_publish' => (int) ($attempts->ready_to_publish ?? 0),
+            'awaiting_grading' => (int) ($attempts->awaiting_grading ?? 0),
+            'published' => (int) ($attempts->published ?? 0),
         ];
     }
 }
