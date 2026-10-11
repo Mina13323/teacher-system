@@ -366,4 +366,86 @@ class GradingSafetyTest extends ApiTestCase
         $this->assertNotNull($review);
         $this->assertSame(0, $review['points_earned']);
     }
+
+    // ------------------------------------------------------------------
+    // P0-4: no final result while essays are ungraded
+    // ------------------------------------------------------------------
+
+    public function test_publication_is_refused_with_the_number_of_ungraded_essays(): void
+    {
+        $exam = $this->exam(2);
+        $attempt = $this->start($exam);
+        [$written, $blank] = $this->essayIds($attempt);
+        $this->writeEssay($attempt, $written, 'Private essay text.');
+        $this->submit($attempt);
+        $before = $this->snapshotOf($attempt['id']);
+
+        $response = $this->publish($attempt)
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'essays_ungraded')
+            ->assertJsonPath('data.ungraded_essays', 2);
+        $this->assertStringNotContainsString('Private essay text.', $response->getContent());
+
+        $this->assertSame($before, $this->snapshotOf($attempt['id']));
+        $row = ExamAttempt::findOrFail($attempt['id']);
+        $this->assertSame(ExamAttemptStatus::Grading, $row->status);
+        $this->assertNull($row->grades_published_at);
+        Notification::assertNothingSent();
+
+        // The blank essay still counts until it is explicitly graded.
+        $this->grade($attempt, $written, 7)->assertOk();
+        $this->publish($attempt)->assertStatus(422)->assertJsonPath('data.ungraded_essays', 1);
+        $this->assertFalse(ExamAnswer::where('attempt_id', $attempt['id'])->where('question_id', $blank)->exists(),
+            'A refused publication never invents a graded row for the blank essay.');
+
+        // An explicit zero is a grade: publication now succeeds.
+        $this->grade($attempt, $blank, 0)->assertOk();
+        $this->publish($attempt)->assertOk()->assertJsonPath('data.grades_published', true);
+        $row = ExamAttempt::findOrFail($attempt['id']);
+        $this->assertSame(ExamAttemptStatus::Published, $row->status);
+        $this->assertSame(7, (int) $row->score);
+        Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 1);
+    }
+
+    public function test_a_refused_publication_rolls_back_scoring_of_a_never_scored_attempt(): void
+    {
+        $exam = $this->exam(1);
+        $attempt = $this->start($exam);
+        $this->writeEssay($attempt, $this->essayIds($attempt)[0], 'Text.');
+        $this->submit($attempt);
+        // A legacy handed-in row that was never scored.
+        ExamAttempt::whereKey($attempt['id'])->update(['scored_at' => null, 'score' => null, 'percentage' => null]);
+        $before = $this->snapshotOf($attempt['id']);
+
+        $this->publish($attempt)->assertStatus(422)->assertJsonPath('data.ungraded_essays', 1);
+
+        $this->assertSame($before, $this->snapshotOf($attempt['id']));
+    }
+
+    public function test_changing_a_published_score_notifies_once_and_identical_grades_do_not(): void
+    {
+        $exam = $this->exam(1);
+        $attempt = $this->start($exam);
+        $essay = $this->essayIds($attempt)[0];
+        $this->writeEssay($attempt, $essay, 'Text.');
+        $this->submit($attempt);
+        $this->grade($attempt, $essay, 4)->assertOk();
+        Notification::assertNothingSent();
+        $this->publish($attempt)->assertOk();
+        Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 1);
+
+        // Same value again (e.g. a repeated click): no new notification.
+        $this->grade($attempt, $essay, 4)->assertOk();
+        Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 1);
+
+        // An authorized regrade changes the published score: the student is told.
+        $this->grade($attempt, $essay, 9)->assertOk();
+        Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 2);
+        $this->assertSame(9, (int) ExamAttempt::findOrFail($attempt['id'])->score);
+
+        // Re-publishing the regraded result does not notify again.
+        $this->publish($attempt)->assertOk();
+        Notification::assertSentToTimes($this->student, ResultAvailableNotification::class, 2);
+    }
 }

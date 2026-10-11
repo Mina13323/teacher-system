@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints } from './gradingRules.js';
+import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints, ungradedEssayCount, ungradedEssaysFromError } from './gradingRules.js';
 
 describe('grading actions offered on the teacher attempt screen (P0-1)', () => {
     it('never offers grading for a running attempt', () => {
@@ -60,5 +60,28 @@ describe('essay points entry (P0-3)', () => {
         expect(gradeFieldValue(undefined)).toBe('');
         expect(gradeFieldValue(0)).toBe('0');
         expect(gradeFieldValue(6)).toBe('6');
+    });
+});
+
+describe('publication waits for every essay grade (P0-4)', () => {
+    const questions = [
+        { id: 1, question_type: 'single_choice', points_earned: 0 },
+        { id: 2, question_type: 'essay', points_earned: null },
+        { id: 3, question_type: 'essay', points_earned: 0 },
+        { id: 4, question_type: 'essay' },
+        { id: 5, type: 'essay', points_earned: 5 },
+    ];
+
+    it('counts ungraded and blank essays, not graded zeros or choice questions', () => {
+        expect(ungradedEssayCount(questions)).toBe(2);
+        expect(ungradedEssayCount([])).toBe(0);
+        expect(ungradedEssayCount(undefined)).toBe(0);
+    });
+
+    it('reads the outstanding count from a refused publication only', () => {
+        expect(ungradedEssaysFromError({ status: 422, data: { code: 'essays_ungraded', data: { ungraded_essays: 3 } } })).toBe(3);
+        expect(ungradedEssaysFromError({ status: 422, data: { message: 'still in progress' } })).toBeNull();
+        expect(ungradedEssaysFromError({ status: 500, data: { code: 'essays_ungraded' } })).toBeNull();
+        expect(ungradedEssaysFromError(null)).toBeNull();
     });
 });

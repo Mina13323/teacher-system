@@ -45,3 +45,21 @@ export function parseAwardedPoints(raw, max) {
 export function gradeFieldValue(pointsEarned) {
     return pointsEarned === null || pointsEarned === undefined ? '' : String(pointsEarned);
 }
+
+/**
+ * Essay questions of a staff attempt that have no grade yet (blank essays
+ * included). The server refuses to publish while this is above zero.
+ */
+export function ungradedEssayCount(questions) {
+    if (!Array.isArray(questions)) return 0;
+    return questions.filter((q) => (q.question_type || q.type) === 'essay'
+        && (q.points_earned === null || q.points_earned === undefined)).length;
+}
+
+/** The outstanding-essay count from a refused publication, or null for any other error. */
+export function ungradedEssaysFromError(error) {
+    const body = error?.data;
+    if (error?.status !== 422 || body?.code !== 'essays_ungraded') return null;
+    const n = Number(body?.data?.ungraded_essays);
+    return Number.isFinite(n) ? n : null;
+}

@@ -9,6 +9,7 @@ use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\User;
+use App\Notifications\ResultAvailableNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\DB;
  * first by FinalizeExpiredAttemptAction, exactly as the sweep would; a strictly
  * expired attempt is never graded. The state is checked, and the score and
  * status recomputed, on the attempt row locked inside the grading transaction.
+ *
+ * Changing the score of a result the student can already see notifies the
+ * student once, after commit (as a regrade does); a grade that leaves the
+ * score as it was sends nothing.
  */
 class GradeEssayAnswerAction
 {
@@ -74,7 +79,7 @@ class GradeEssayAnswerAction
             throw new \InvalidArgumentException("Awarded points must be between 0 and {$attemptQuestion->points}.");
         }
 
-        $graded = DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
+        [$graded, $publishedScoreChanged] = DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
             // Lock the attempt so two concurrent grading requests cannot both
             // recompute the total from a stale set of answers, and decide from
             // this locked row rather than the route-bound model.
@@ -105,6 +110,7 @@ class GradeEssayAnswerAction
 
             // Recompute from the freshly persisted answers.
             $result = $this->calculateResult->execute($locked);
+            $previousScore = [$locked->score, $locked->percentage];
 
             $locked->score = $result['earned_points'];
             $locked->percentage = $result['percentage'];
@@ -123,8 +129,17 @@ class GradeEssayAnswerAction
 
             $locked->save();
 
-            return $locked;
+            $publishedScoreChanged = $locked->grades_published_at !== null
+                && $previousScore !== [$locked->score, $locked->percentage];
+
+            return [$locked, $publishedScoreChanged];
         });
+
+        // After commit: a rolled-back grade can never announce a change.
+        if ($publishedScoreChanged) {
+            $graded->loadMissing('student');
+            $graded->student?->notify(new ResultAvailableNotification($graded));
+        }
 
         $this->auditLog->execute('grade.essay', $graded, [
             'question_id' => $questionId,

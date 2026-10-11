@@ -932,6 +932,7 @@ export default {
         awardedPointsRequired: 'أدخل الدرجة (الصفر يُحتسب فقط عندما تكتبه).',
         awardedPointsRange: 'أدخل رقمًا صحيحًا من 0 إلى {max}.',
         saveQuestionGrade: 'حفظ درجة هذا السؤال',
+        publishBlockedUngraded: 'صحِّح كل الأسئلة المقالية قبل النشر: {n} بلا درجة حتى الآن.',
         publishConfirmTitle: 'نشر هذه النتيجة؟',
         publishConfirmMessage: 'سيرى {name} الدرجة والملاحظات فور النشر. راجع درجات الأسئلة المقالية أولًا.',
         publishGradesAction: 'رصد ونشر الدرجات للطالب (Send Grades)',

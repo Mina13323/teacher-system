@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { teacher, toList } from '@/api';
 import { toggleBoundedSelection } from '@/utils/boundedSelection';
-import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints } from '@/utils/gradingRules';
+import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints, ungradedEssayCount, ungradedEssaysFromError } from '@/utils/gradingRules';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -48,6 +48,8 @@ const gradeFeedback = reactive({});
 const gradingBusy = ref(false);
 const publishBusy = ref(false);
 const publishConfirmOpen = ref(false);
+/** Essays of the open attempt still without a grade: publication waits for them. */
+const ungradedEssays = computed(() => ungradedEssayCount(gradingData.value?.questions));
 
 // ---- Attempt management: grouped by student (P1) and search ----
 const attemptsView = ref('flat'); // 'flat' | 'student'
@@ -635,7 +637,7 @@ async function submitEssayGrade(q) {
 }
 
 async function submitPublishGrades() {
-    if (!gradingAttempt.value || !isGradable(gradingData.value)) return;
+    if (!gradingAttempt.value || !isGradable(gradingData.value) || ungradedEssays.value > 0) return;
     publishBusy.value = true;
     try {
         const res = await teacher.publishGrades(gradingAttempt.value.id);
@@ -646,7 +648,9 @@ async function submitPublishGrades() {
         loadAttempts(attemptsMeta.value?.current_page || 1);
         if (attemptsView.value === 'student') loadGrouped();
     } catch (e) {
-        toast.error(e.message);
+        const outstanding = ungradedEssaysFromError(e);
+        toast.error(outstanding !== null ? t('exams.publishBlockedUngraded', { n: outstanding }) : e.message);
+        publishConfirmOpen.value = false;
     } finally {
         publishBusy.value = false;
     }
@@ -1221,9 +1225,12 @@ function attemptStatusLabel(statusOrAttempt) {
                     </div>
                 </div>
 
+                <p v-if="isGradable(gradingData) && ungradedEssays > 0" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+                    {{ $t('exams.publishBlockedUngraded', { n: ungradedEssays }) }}
+                </p>
                 <div class="flex justify-between items-center border-t pt-4">
                     <AppButton variant="outline" @click="gradingAttempt = null">{{ $t('common.close') }}</AppButton>
-                    <AppButton v-if="isGradable(gradingData)" variant="success" :loading="publishBusy" @click="publishConfirmOpen = true">
+                    <AppButton v-if="isGradable(gradingData)" variant="success" :loading="publishBusy" :disabled="ungradedEssays > 0" @click="publishConfirmOpen = true">
                         🚀 {{ $t('exams.publishGradesAction') }}
                     </AppButton>
                 </div>

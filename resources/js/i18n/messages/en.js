@@ -931,6 +931,7 @@ export default {
         awardedPointsRequired: 'Enter the points (0 counts only when you type it).',
         awardedPointsRange: 'Enter a whole number from 0 to {max}.',
         saveQuestionGrade: 'Save this question\'s grade',
+        publishBlockedUngraded: 'Grade every essay before publishing: {n} still without a grade.',
         publishConfirmTitle: 'Publish this result?',
         publishConfirmMessage: '{name} will see the score and the feedback as soon as you publish. Check every essay grade first.',
         publishGradesAction: 'Record & publish grades to the student',

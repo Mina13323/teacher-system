@@ -15,6 +15,7 @@ use App\Exceptions\ExamNotReadyToPublishException;
 use App\Exceptions\ExamStructureLockedException;
 use App\Exceptions\ExamWindowClosedException;
 use App\Exceptions\ExamWindowNotOpenException;
+use App\Exceptions\EssayGradingIncompleteException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
 use App\Exceptions\InvalidVideoPlaybackSessionException;
@@ -204,6 +205,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'success' => false,
                     'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (EssayGradingIncompleteException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'essays_ungraded',
+                    'data' => ['ungraded_essays' => $e->ungradedEssays],
                 ], 422);
             }
         });

@@ -4,6 +4,7 @@ namespace App\Actions\Exam;
 
 use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
+use App\Exceptions\EssayGradingIncompleteException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAttempt;
 use App\Models\User;
@@ -19,6 +20,10 @@ use Illuminate\Support\Facades\DB;
  * finalized first by FinalizeExpiredAttemptAction, under the exam's own expiry
  * policy, exactly as the sweep would. An attempt that ended `expired` under the
  * strict policy is never graded, so it cannot be published either.
+ *
+ * A final result is never published while an essay answer is ungraded
+ * (blank essays included): the request is refused with the number of
+ * outstanding essays and nothing about the attempt changes.
  */
 class PublishExamGradesAction
 {
@@ -67,6 +72,11 @@ class PublishExamGradesAction
             $locked->unsetRelation('answers');
             $locked->unsetRelation('attemptQuestions');
             $result = $this->calculateResult->execute($locked);
+
+            if ($result['ungraded_essays'] > 0) {
+                // Rolls back everything above, including any legacy scoring.
+                throw new EssayGradingIncompleteException($result['ungraded_essays']);
+            }
 
             $wasPublished = $locked->grades_published_at !== null;
 

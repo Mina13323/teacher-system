@@ -251,6 +251,13 @@ class StaffParityMatrixTest extends ApiTestCase
     {
         foreach ([$this->teacher, $this->assistant] as $staff) {
             $attempt = $this->freshSubmittedEssayAttempt();
+            // A result is published only once its essays are graded (P0-4).
+            $this->actingAs($staff, 'sanctum')
+                ->postJson("/api/v1/teacher/attempts/{$attempt->id}/grade-essay", [
+                    'question_id' => $this->ids['question'],
+                    'awarded_points' => 15,
+                ])
+                ->assertStatus(200);
 
             $this->actingAs($staff, 'sanctum')
                 ->postJson("/api/v1/teacher/attempts/{$attempt->id}/publish-grades")
