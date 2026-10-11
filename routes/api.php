@@ -158,6 +158,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    // Essay-grading workspace: the essay answers of handed-in attempts only.
+    Route::get('exams/{exam}/essay-answers', [\App\Http\Controllers\Teacher\EssayGradingController::class, 'essayAnswers']);
     Route::post('exams/{exam}/attempts/bulk-delete', [TeacherExamController::class, 'deleteSelectedAttempts']);
     Route::get('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'makeUpAssignments']);
     Route::post('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'assignMakeUps']);

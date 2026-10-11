@@ -51,10 +51,12 @@ class ExamAnswer extends Model
      */
     public static function gradeVersion(?self $answer): string
     {
+        // Normalized types, so a token computed from a raw query row matches
+        // one computed from a model whatever the database driver returns.
         return substr(sha1(json_encode([
-            $answer?->points_earned,
+            $answer?->points_earned !== null ? (int) $answer->points_earned : null,
             $answer?->feedback === '' ? null : $answer?->feedback,
-            $answer?->graded_by,
+            $answer?->graded_by !== null ? (int) $answer->graded_by : null,
             $answer?->graded_at?->toISOString(),
         ])), 0, 16);
     }
