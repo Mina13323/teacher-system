@@ -5,6 +5,7 @@ namespace App\Actions\Exam;
 use App\Actions\Audit\RecordAuditLogAction;
 use App\Enums\ExamAttemptStatus;
 use App\Enums\QuestionType;
+use App\Exceptions\GradeConflictException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
@@ -25,6 +26,12 @@ use Illuminate\Support\Facades\DB;
  * Changing the score of a result the student can already see notifies the
  * student once, after commit (as a regrade does); a grade that leaves the
  * score as it was sends nothing.
+ *
+ * Optimistic concurrency: a caller may pass the grade version it loaded
+ * (ExamAnswer::gradeVersion). If the stored grade changed since, nothing is
+ * written and a GradeConflictException carries the current grade; a conflict
+ * is never resolved by last-write-wins. A save identical to the stored grade
+ * writes nothing and records no audit entry.
  */
 class GradeEssayAnswerAction
 {
@@ -40,8 +47,27 @@ class GradeEssayAnswerAction
         ExamAttempt $attempt,
         int $questionId,
         int $awardedPoints,
-        ?string $feedback = null
+        ?string $feedback = null,
+        ?string $expectedVersion = null,
     ): ExamAttempt {
+        $graded = $this->grade($staffUser, $attempt, $questionId, $awardedPoints, $feedback, $expectedVersion)['attempt'];
+
+        return $graded->fresh(['answers.selectedOptions', 'attemptQuestions']);
+    }
+
+    /**
+     * @return array{attempt: ExamAttempt, answer: ExamAnswer, result: array<string, mixed>, changed: bool}
+     */
+    public function grade(
+        User $staffUser,
+        ExamAttempt $attempt,
+        int $questionId,
+        int $awardedPoints,
+        ?string $feedback = null,
+        ?string $expectedVersion = null,
+    ): array {
+        $feedback = $feedback === '' ? null : $feedback;
+
         $current = ExamAttempt::query()->findOrFail($attempt->getKey());
         if ($current->status->isInProgress() && $current->isExpired()) {
             // Overdue: the lifecycle step the sweep owns (it re-checks under its own lock).
@@ -79,7 +105,7 @@ class GradeEssayAnswerAction
             throw new \InvalidArgumentException("Awarded points must be between 0 and {$attemptQuestion->points}.");
         }
 
-        [$graded, $publishedScoreChanged] = DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback) {
+        $outcome = DB::transaction(function () use ($attempt, $attemptQuestion, $staffUser, $questionId, $awardedPoints, $feedback, $expectedVersion) {
             // Lock the attempt so two concurrent grading requests cannot both
             // recompute the total from a stale set of answers, and decide from
             // this locked row rather than the route-bound model.
@@ -91,15 +117,31 @@ class GradeEssayAnswerAction
                     : 'This attempt expired without being submitted, so it is not graded.');
             }
 
-            $answer = ExamAnswer::firstOrCreate(
-                [
-                    'attempt_id' => $locked->getKey(),
-                    'question_id' => $questionId,
-                ],
-                [
-                    'answered_at' => now(),
-                ]
-            );
+            $answer = ExamAnswer::query()
+                ->where('attempt_id', $locked->getKey())
+                ->where('question_id', $questionId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($expectedVersion !== null && ! hash_equals(ExamAnswer::gradeVersion($answer), $expectedVersion)) {
+                throw new GradeConflictException(self::gradeState($answer));
+            }
+
+            $unchanged = $answer !== null
+                && $answer->points_earned !== null
+                && (int) $answer->points_earned === $awardedPoints
+                && ($answer->feedback === '' ? null : $answer->feedback) === $feedback;
+
+            if ($unchanged) {
+                // A repeated, value-identical save: nothing to write or audit.
+                return [$locked, $answer, $this->calculateResult->execute($locked), false, false];
+            }
+
+            $answer ??= ExamAnswer::create([
+                'attempt_id' => $locked->getKey(),
+                'question_id' => $questionId,
+                'answered_at' => now(),
+            ]);
 
             $answer->points_earned = $awardedPoints;
             $answer->is_correct = $awardedPoints === $attemptQuestion->points;
@@ -132,8 +174,10 @@ class GradeEssayAnswerAction
             $publishedScoreChanged = $locked->grades_published_at !== null
                 && $previousScore !== [$locked->score, $locked->percentage];
 
-            return [$locked, $publishedScoreChanged];
+            return [$locked, $answer, $result, true, $publishedScoreChanged];
         });
+
+        [$graded, $answer, $result, $changed, $publishedScoreChanged] = $outcome;
 
         // After commit: a rolled-back grade can never announce a change.
         if ($publishedScoreChanged) {
@@ -141,14 +185,31 @@ class GradeEssayAnswerAction
             $graded->student?->notify(new ResultAvailableNotification($graded));
         }
 
-        $this->auditLog->execute('grade.essay', $graded, [
-            'question_id' => $questionId,
-            'awarded_points' => $awardedPoints,
-            'max_points' => $attemptQuestion->points,
-            'has_feedback' => $feedback !== null ? '1' : '0',
-            'graded_by' => $staffUser->getKey(),
-        ], $staffUser);
+        if ($changed) {
+            $this->auditLog->execute('grade.essay', $graded, [
+                'question_id' => $questionId,
+                'awarded_points' => $awardedPoints,
+                'max_points' => $attemptQuestion->points,
+                'has_feedback' => $feedback !== null ? '1' : '0',
+                'graded_by' => $staffUser->getKey(),
+            ], $staffUser);
+        }
 
-        return $graded->fresh(['answers.selectedOptions', 'attemptQuestions']);
+        return ['attempt' => $graded, 'answer' => $answer, 'result' => $result, 'changed' => $changed];
+    }
+
+    /**
+     * The grade as the grading screens show it.
+     *
+     * @return array{points_earned: int|null, feedback: string|null, graded_at: string|null, grade_version: string}
+     */
+    public static function gradeState(?ExamAnswer $answer): array
+    {
+        return [
+            'points_earned' => $answer?->points_earned !== null ? (int) $answer->points_earned : null,
+            'feedback' => $answer?->feedback === '' ? null : $answer?->feedback,
+            'graded_at' => $answer?->graded_at?->toISOString(),
+            'grade_version' => ExamAnswer::gradeVersion($answer),
+        ];
     }
 }

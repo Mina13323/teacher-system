@@ -77,6 +77,8 @@ class ExamAttemptDetailResource extends JsonResource
                         'feedback' => $ans?->feedback,
                         'graded_by' => $ans?->graded_by,
                         'graded_at' => $ans?->graded_at?->toISOString(),
+                        // Optimistic-concurrency token for the essay grade.
+                        'grade_version' => \App\Models\ExamAnswer::gradeVersion($ans),
                         'options' => $aq->relationLoaded('attemptOptions') ? $aq->attemptOptions->map(fn ($opt) => [
                             'id' => $opt->option_id,
                             'attempt_option_id' => $opt->id,

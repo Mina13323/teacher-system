@@ -16,6 +16,7 @@ use App\Exceptions\ExamStructureLockedException;
 use App\Exceptions\ExamWindowClosedException;
 use App\Exceptions\ExamWindowNotOpenException;
 use App\Exceptions\EssayGradingIncompleteException;
+use App\Exceptions\GradeConflictException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
 use App\Exceptions\InvalidVideoPlaybackSessionException;
@@ -206,6 +207,17 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 422);
+            }
+        });
+
+        $exceptions->render(function (GradeConflictException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'grade_conflict',
+                    'data' => ['current' => $e->current],
+                ], 409);
             }
         });
 
