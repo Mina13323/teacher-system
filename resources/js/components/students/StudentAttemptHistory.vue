@@ -72,7 +72,7 @@ onMounted(() => load(1));
             <section v-for="g in groups" :key="g.exam_id" class="rounded-lg border border-ink-100">
                 <h3 class="flex flex-wrap items-center justify-between gap-2 border-b border-ink-100 bg-ink-50/50 px-3 py-2">
                     <router-link :to="`/teacher/exams/${g.exam_id}`" class="min-w-0 break-words text-sm font-semibold text-terracotta-700 hover:underline" dir="auto">{{ g.exam_title }}</router-link>
-                    <span class="text-xs text-ink-500">{{ $t('students.attemptsCount', { n: g.attempts.length }) }}</span>
+                    <span class="text-xs text-ink-500">{{ $t('students.attemptsCount', { n: g.attempts.length }, g.attempts.length) }}</span>
                 </h3>
                 <ul class="divide-y divide-ink-100">
                     <li v-for="a in g.attempts" :key="a.attempt_id" class="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">

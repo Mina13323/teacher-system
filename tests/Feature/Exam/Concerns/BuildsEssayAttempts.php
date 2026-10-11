@@ -66,12 +66,16 @@ trait BuildsEssayAttempts
             ->json('data');
     }
 
+    /** Essay question ids in a stable order (attempts may shuffle questions). */
     private function essayIds(array $attempt): array
     {
-        return array_values(array_map(
+        $ids = array_values(array_map(
             fn ($q) => $q['id'],
             array_filter($attempt['questions'], fn ($q) => $q['question_type'] === 'essay')
         ));
+        sort($ids);
+
+        return $ids;
     }
 
     private function choiceId(array $attempt): int

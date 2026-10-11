@@ -36,6 +36,21 @@ if (['ungraded', 'graded', 'all'].includes(q.status)) s.filters.status = q.statu
 else if (q.attempt_id || q.student_id) s.filters.status = 'all';
 
 const item = computed(() => session.current());
+/** Filters start open on desktop and folded on smaller screens (answer first). */
+const filtersOpen = ref(typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches);
+/** Height of an on-screen keyboard (VisualViewport), so the sticky bar stays above it. */
+const keyboardInset = ref(0);
+function onViewportResize() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const covered = window.innerHeight - vv.height - vv.offsetTop;
+    keyboardInset.value = covered > 120 ? Math.round(covered) : 0;
+}
+const questionIndex = computed(() => {
+    const list = s.summary?.questions ?? [];
+    const i = list.findIndex((x) => x.question_id === item.value?.question_id);
+    return i === -1 ? null : i + 1;
+});
 const draft = computed(() => session.draftFor(item.value));
 const listOpen = ref(false);
 const pointsInput = ref(null);
@@ -177,25 +192,27 @@ watch(() => s.index, () => { listOpen.value = false; });
 onMounted(() => {
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onBeforeUnload);
+    window.visualViewport?.addEventListener('resize', onViewportResize);
     session.load();
 });
 onBeforeUnmount(() => {
     clearTimeout(searchTimer);
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('beforeunload', onBeforeUnload);
+    window.visualViewport?.removeEventListener('resize', onViewportResize);
 });
 </script>
 
 <template>
     <div class="mx-auto max-w-6xl space-y-4">
         <!-- Header: compact and sticky under the portal header -->
-        <header class="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 -mx-3 border-b border-ink-100 bg-parchment-50/95 px-3 py-3 backdrop-blur sm:-mx-4 sm:px-4 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+        <header>
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="min-w-0">
-                    <router-link :to="`/teacher/exams/${examId}`" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('grading.backToExam') }}</router-link>
-                    <h1 class="truncate text-lg font-bold text-ink-900 sm:text-2xl" dir="auto">{{ $t('grading.title') }} · {{ s.exam?.title || '' }}</h1>
+                    <router-link :to="`/teacher/exams/${examId}`" class="inline-flex min-h-11 items-center text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('grading.backToExam') }}</router-link>
+                    <h1 class="break-words text-lg font-bold text-ink-900 sm:text-2xl" dir="auto">{{ $t('grading.title') }} · {{ s.exam?.title || '' }}</h1>
                 </div>
-                <AppButton size="sm" variant="success" :disabled="!totals" @click="publishOpen = true">{{ $t('grading.publishAll') }}</AppButton>
+                <AppButton size="sm" variant="success" class="min-h-11" :disabled="!totals" @click="publishOpen = true">{{ $t('grading.publishAll') }}</AppButton>
             </div>
             <div v-if="totals" class="mt-2">
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-600 sm:text-sm">
@@ -209,8 +226,21 @@ onBeforeUnmount(() => {
             </div>
         </header>
 
+        <!-- Compact progress strip, sticky under the portal header on phones and tablets -->
+        <div v-if="totals && item" class="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 -mx-3 border-b border-ink-100 bg-parchment-50/95 px-3 py-2 backdrop-blur sm:-mx-4 sm:px-4 lg:hidden">
+            <div class="flex items-center justify-between gap-2 text-xs">
+                <span class="min-w-0 truncate font-semibold text-ink-800" dir="auto">
+                    <template v-if="questionIndex">Q{{ questionIndex }} · </template>{{ item.student.name }}
+                </span>
+                <span class="shrink-0 text-ink-600">{{ totals.graded }}/{{ totals.total }}</span>
+            </div>
+            <div class="mt-1 h-1 w-full overflow-hidden rounded-full bg-ink-100" aria-hidden="true">
+                <div class="h-full rounded-full bg-emerald-500 transition-all" :style="{ width: `${progressPct}%` }" />
+            </div>
+        </div>
+
         <!-- Filters -->
-        <details class="group rounded-xl border border-ink-100 bg-white shadow-sm" open>
+        <details class="group rounded-xl border border-ink-100 bg-white shadow-sm" :open="filtersOpen" @toggle="filtersOpen = $event.target.open">
             <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 py-2 text-sm font-semibold text-ink-800">
                 {{ $t('grading.filters') }}
                 <span class="text-ink-400 transition group-open:rotate-180" aria-hidden="true">▾</span>
@@ -296,14 +326,14 @@ onBeforeUnmount(() => {
                                 <span v-if="item.grades_published" class="font-medium text-emerald-700"> · {{ $t('grading.pubPublished') }}</span>
                             </p>
                         </div>
-                        <AppBadge :tone="stateTone"><span aria-live="polite" role="status">{{ stateLabel }}</span></AppBadge>
+                        <AppBadge :tone="stateTone">{{ stateLabel }}</AppBadge>
                     </div>
 
                     <div class="mt-4 border-t border-ink-100 pt-4">
                         <p class="text-xs font-semibold text-ink-500">{{ $t('grading.maxPoints', { n: item.max_points }) }}</p>
                         <p class="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-ink-900" dir="auto">{{ item.question_text }}</p>
                         <details v-if="questionMeta?.reference_answer" class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                            <summary class="min-h-9 cursor-pointer font-semibold">{{ $t('grading.referenceAnswer') }}</summary>
+                            <summary class="flex min-h-11 cursor-pointer items-center font-semibold">{{ $t('grading.referenceAnswer') }}</summary>
                             <p class="mt-1 whitespace-pre-wrap break-words" dir="auto">{{ questionMeta.reference_answer }}</p>
                         </details>
                     </div>
@@ -315,22 +345,50 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <!-- Grading controls: sticky above the mobile bottom bar -->
-                <div class="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] z-10 rounded-xl border border-ink-200 bg-white p-4 shadow-lg lg:bottom-4">
+                <!-- Feedback, quick values and navigation (in the page flow) -->
+                <div class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+                    <label :for="`grade-feedback-${item.attempt_id}-${item.question_id}`" class="mb-1 block text-sm font-medium text-ink-800">{{ $t('grading.feedback') }}</label>
+                    <textarea
+                        :id="`grade-feedback-${item.attempt_id}-${item.question_id}`"
+                        rows="3"
+                        maxlength="2000"
+                        class="w-full rounded-lg border border-ink-200 px-3 py-2 text-base"
+                        dir="auto"
+                        :value="draft?.feedback ?? ''"
+                        @input="session.setFeedback($event.target.value)"
+                    />
+                    <div class="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        <button type="button" class="min-h-11 rounded-lg border border-ink-200 px-4 text-sm font-medium hover:bg-ink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" :aria-label="`${$t('grading.points', { max: item.max_points })}: 0`" @click="setQuick(0)">{{ $t('grading.pointsZero') }}</button>
+                        <button type="button" class="min-h-11 rounded-lg border border-ink-200 px-4 text-sm font-medium hover:bg-ink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" @click="setQuick(item.max_points)">{{ $t('grading.pointsMax', { n: item.max_points }) }}</button>
+                        <AppButton size="sm" variant="outline" class="min-h-11" :disabled="s.loading" @click="session.previous()">{{ $t('grading.previous') }}</AppButton>
+                        <AppButton size="sm" variant="outline" class="min-h-11" :disabled="s.loading" @click="session.next()">{{ $t('grading.next') }}</AppButton>
+                        <AppButton size="sm" variant="outline" class="col-span-2 min-h-11" :disabled="s.loading" @click="session.nextUngraded()">{{ $t('grading.nextUngraded') }}</AppButton>
+                        <AppButton size="sm" variant="outline" class="col-span-2 min-h-11 sm:ms-auto" :loading="draft?.state === 'saving'" :disabled="draft?.state === 'conflict' || Boolean(pointsError)" @click="session.save()">{{ $t('grading.save') }}</AppButton>
+                    </div>
+                    <p class="mt-2 hidden text-xs text-ink-400 lg:block">{{ $t('grading.keyboardHint') }}</p>
+                </div>
+
+                <!-- Compact sticky bar: points, status, Save & next. Above the
+                     mobile bottom bar, and above an on-screen keyboard. -->
+                <div
+                    class="sticky z-20 rounded-xl border border-ink-200 bg-white p-3 shadow-lg"
+                    :class="keyboardInset ? '' : 'bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-4'"
+                    :style="keyboardInset ? { bottom: `${keyboardInset + 8}px` } : undefined"
+                >
                     <div v-if="draft?.state === 'conflict' && draft.conflict" class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900" role="alert">
                         <p class="font-semibold">{{ $t('grading.conflictTitle') }}</p>
                         <p class="mt-1">{{ $t('grading.conflictBody', { points: draft.conflict.points_earned ?? '—', mine: draft.points || '—' }) }}</p>
                         <p v-if="draft.conflict.feedback" class="mt-1 whitespace-pre-wrap break-words" dir="auto">{{ $t('grading.conflictFeedback', { feedback: draft.conflict.feedback }) }}</p>
                         <div class="mt-2 flex flex-wrap gap-2">
-                            <AppButton size="sm" variant="outline" @click="session.acceptServerVersion()">{{ $t('grading.useTheirs') }}</AppButton>
-                            <AppButton size="sm" variant="primary" @click="session.keepMineAfterConflict()">{{ $t('grading.keepMine') }}</AppButton>
+                            <AppButton size="sm" variant="outline" class="min-h-11" @click="session.acceptServerVersion()">{{ $t('grading.useTheirs') }}</AppButton>
+                            <AppButton size="sm" variant="primary" class="min-h-11" @click="session.keepMineAfterConflict()">{{ $t('grading.keepMine') }}</AppButton>
                         </div>
                     </div>
-                    <p v-else-if="failureMessage" class="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">{{ failureMessage }}</p>
+                    <p v-else-if="failureMessage" class="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">{{ failureMessage }}</p>
 
-                    <div class="grid gap-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
-                        <div>
-                            <label :for="`grade-points-${item.attempt_id}-${item.question_id}`" class="mb-1 block text-sm font-medium text-ink-800">{{ $t('grading.points', { max: item.max_points }) }}</label>
+                    <div class="flex items-end gap-2">
+                        <div class="w-24 shrink-0 sm:w-32">
+                            <label :for="`grade-points-${item.attempt_id}-${item.question_id}`" class="mb-1 block truncate text-xs font-medium text-ink-800">{{ $t('grading.points', { max: item.max_points }) }}</label>
                             <input
                                 :id="`grade-points-${item.attempt_id}-${item.question_id}`"
                                 ref="pointsInput"
@@ -343,39 +401,13 @@ onBeforeUnmount(() => {
                                 :class="pointsError ? 'border-rose-300' : 'border-ink-200'"
                                 :value="draft?.points ?? ''"
                                 :aria-invalid="Boolean(pointsError)"
-                                :aria-describedby="pointsError ? `grade-points-error-${item.attempt_id}-${item.question_id}` : undefined"
+                                :aria-describedby="`grade-status-${item.attempt_id}-${item.question_id}`"
                                 @input="session.setPoints($event.target.value)"
                             />
-                            <p v-if="pointsError" :id="`grade-points-error-${item.attempt_id}-${item.question_id}`" class="mt-1 text-xs text-rose-600">{{ pointsError }}</p>
-                            <div class="mt-2 flex gap-2">
-                                <button type="button" class="min-h-11 flex-1 rounded-lg border border-ink-200 px-3 text-sm font-medium hover:bg-ink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" @click="setQuick(0)">{{ $t('grading.pointsZero') }}</button>
-                                <button type="button" class="min-h-11 flex-1 rounded-lg border border-ink-200 px-3 text-sm font-medium hover:bg-ink-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400" @click="setQuick(item.max_points)">{{ $t('grading.pointsMax', { n: item.max_points }) }}</button>
-                            </div>
                         </div>
-                        <div>
-                            <label :for="`grade-feedback-${item.attempt_id}-${item.question_id}`" class="mb-1 block text-sm font-medium text-ink-800">{{ $t('grading.feedback') }}</label>
-                            <textarea
-                                :id="`grade-feedback-${item.attempt_id}-${item.question_id}`"
-                                rows="3"
-                                maxlength="2000"
-                                class="w-full rounded-lg border border-ink-200 px-3 py-2 text-base"
-                                dir="auto"
-                                :value="draft?.feedback ?? ''"
-                                @input="session.setFeedback($event.target.value)"
-                            />
-                        </div>
+                        <p :id="`grade-status-${item.attempt_id}-${item.question_id}`" class="min-w-0 flex-1 truncate pb-3 text-xs" :class="pointsError ? 'text-rose-600' : 'text-ink-500'" aria-live="polite">{{ pointsError || stateLabel }}</p>
+                        <AppButton variant="primary" class="min-h-11 shrink-0" :loading="draft?.state === 'saving'" :disabled="draft?.state === 'conflict' || Boolean(pointsError)" @click="saveAndNext">{{ $t('grading.saveNext') }}</AppButton>
                     </div>
-
-                    <div class="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
-                        <div class="col-span-2 grid grid-cols-3 gap-2 sm:flex">
-                            <AppButton size="sm" variant="outline" class="min-h-11" :disabled="s.loading" @click="session.previous()">{{ $t('grading.previous') }}</AppButton>
-                            <AppButton size="sm" variant="outline" class="min-h-11" :disabled="s.loading" @click="session.next()">{{ $t('grading.next') }}</AppButton>
-                            <AppButton size="sm" variant="ghost" class="min-h-11" :disabled="s.loading" @click="session.nextUngraded()">{{ $t('grading.nextUngraded') }}</AppButton>
-                        </div>
-                        <AppButton size="sm" variant="outline" class="min-h-11" :loading="draft?.state === 'saving'" :disabled="draft?.state === 'conflict' || Boolean(pointsError)" @click="session.save()">{{ $t('grading.save') }}</AppButton>
-                        <AppButton size="sm" variant="primary" class="min-h-11" :loading="draft?.state === 'saving'" :disabled="draft?.state === 'conflict' || Boolean(pointsError)" @click="saveAndNext">{{ $t('grading.saveNext') }}</AppButton>
-                    </div>
-                    <p class="mt-2 hidden text-xs text-ink-400 lg:block">{{ $t('grading.keyboardHint') }}</p>
                 </div>
             </section>
         </div>

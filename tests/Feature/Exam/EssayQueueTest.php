@@ -68,7 +68,11 @@ class EssayQueueTest extends ApiTestCase
 
         $this->assertCount(2, $data, 'Two essay questions of the one handed-in attempt; the running attempt is not queued.');
         $this->assertSame([$done['id'], $done['id']], array_column($data, 'attempt_id'));
-        [$written, $blank] = $data;
+        // Rows follow the student's (possibly shuffled) question order; pick by id.
+        [$writtenId, $blankId] = $this->essayIds($done);
+        $byQuestion = collect($data)->keyBy('question_id');
+        $written = $byQuestion[$writtenId];
+        $blank = $byQuestion[$blankId];
         $this->assertSame("Paragraph one.\n\nParagraph two.", $written['answer_text']);
         $this->assertTrue($written['has_answer']);
         $this->assertFalse($blank['has_answer']);
@@ -242,5 +246,26 @@ class EssayQueueTest extends ApiTestCase
         $this->assertLessThanOrEqual(8, $large);
         $this->assertSame($large - 2, $pageOnly, 'The summary is exactly two aggregate queries.');
         fwrite(STDERR, "\n[budget] essay queue page: {$large} queries total (with summary), {$pageOnly} without summary\n");
+    }
+
+    public function test_pick_question_opens_on_the_first_question_with_work_left_in_one_request(): void
+    {
+        $exam = $this->exam(2);
+        $a = $this->attemptAs($this->enrolledStudent('A', 'A'), $exam, ['x', 'y']);
+        $this->attemptAs($this->enrolledStudent('B', 'B'), $exam, ['x', 'y']);
+        [$q1, $q2] = $this->essayIds($a);
+        // Everything on q1 graded: the workspace should open on q2.
+        foreach (\App\Models\ExamAttempt::where('exam_id', $exam->id)->pluck('id') as $id) {
+            $this->grade(['id' => $id], $q1, 5)->assertOk();
+        }
+
+        $res = $this->queue($exam, ['pick_question' => 1, 'status' => 'ungraded'])->assertOk();
+
+        $this->assertSame($q2, $res->json('data.selected_question_id'));
+        $this->assertSame([$q2, $q2], array_column($res->json('data.answers'), 'question_id'));
+        $this->assertArrayHasKey('summary', $res->json('data'));
+        // An explicit question or attempt filter is never overridden.
+        $this->assertSame($q1, $this->queue($exam, ['pick_question' => 1, 'question_id' => $q1])->json('data.selected_question_id'));
+        $this->assertCount(2, $this->queue($exam, ['pick_question' => 1, 'attempt_id' => $a['id']])->json('data.answers'));
     }
 }

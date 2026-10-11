@@ -73,6 +73,9 @@ export function createGradingSession({ api, examId, perPage = DEFAULT_PER_PAGE, 
         const f = state.filters;
         const q = { page, per_page: perPage, status: f.status, publication_status: f.publication_status, include_summary: includeSummary ? 1 : 0 };
         if (f.mode === 'question' && f.question_id) q.question_id = f.question_id;
+        // Question mode without a question yet: the server picks the first one
+        // with work left, in the same request.
+        if (f.mode === 'question' && !f.question_id && !f.attempt_id && !f.student_id) q.pick_question = 1;
         if (f.search && f.search.trim()) q.search = f.search.trim();
         if (f.attempt_id) q.attempt_id = f.attempt_id;
         if (f.student_id) q.student_id = f.student_id;
@@ -90,14 +93,9 @@ export function createGradingSession({ api, examId, perPage = DEFAULT_PER_PAGE, 
             state.exam = res?.exam ?? state.exam;
             state.items = Array.isArray(res?.answers) ? res.answers : [];
             state.meta = res?.meta ?? null;
-            if (res?.summary) {
-                state.summary = res.summary;
-                // Question mode needs a question: default to the first with work left.
-                if (state.filters.mode === 'question' && !state.filters.question_id && res.summary.questions?.length) {
-                    const first = res.summary.questions.find((q) => q.ungraded > 0) ?? res.summary.questions[0];
-                    state.filters.question_id = first.question_id;
-                    return load({ page: 1, includeSummary: false, index });
-                }
+            if (res?.summary) state.summary = res.summary;
+            if (state.filters.mode === 'question' && !state.filters.question_id && res?.selected_question_id) {
+                state.filters.question_id = res.selected_question_id;
             }
             // Keep unsaved drafts; refresh the rest from the server.
             for (const item of state.items) {

@@ -65,7 +65,22 @@ class EssayGradingController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.self::ESSAY_QUEUE_MAX_PER_PAGE],
             'page' => ['sometimes', 'integer', 'min:1'],
             'include_summary' => ['sometimes', 'boolean'],
+            // Without question_id: pick the first essay question that still
+            // has ungraded answers (else the first), so the workspace opens
+            // with one request.
+            'pick_question' => ['sometimes', 'boolean'],
         ]);
+
+        $includeSummary = $request->boolean('include_summary', true);
+        $summary = $includeSummary ? $this->summary($exam) : null;
+
+        if ($request->boolean('pick_question') && empty($filters['question_id']) && empty($filters['attempt_id']) && empty($filters['student_id'])) {
+            $questions = $summary['questions'] ?? $this->summary($exam)['questions'];
+            $picked = $questions->firstWhere('ungraded', '>', 0) ?? $questions->first();
+            if ($picked) {
+                $filters['question_id'] = $picked['question_id'];
+            }
+        }
 
         $page = $this->filtered($this->base($exam), $filters)
             ->join('users as u', 'u.id', '=', 'a.student_id')
@@ -96,8 +111,11 @@ class EssayGradingController extends Controller
             ],
         ];
 
-        if ($request->boolean('include_summary', true)) {
-            $payload['summary'] = $this->summary($exam);
+        if ($summary !== null) {
+            $payload['summary'] = $summary;
+        }
+        if (! empty($filters['question_id'])) {
+            $payload['selected_question_id'] = (int) $filters['question_id'];
         }
 
         return $this->success(array_merge(['exam' => ['id' => $exam->id, 'title' => $exam->title]], $payload), 'Essay answers retrieved.');
@@ -271,7 +289,9 @@ class EssayGradingController extends Controller
         $questions = $this->base($exam)
             ->leftJoin('questions as q', 'q.id', '=', 'aq.question_id')
             ->groupBy('aq.question_id')
-            ->orderByRaw('MIN(aq.position)')
+            // The exam's question order (snapshot positions may be shuffled per attempt).
+            ->orderByRaw('MIN(COALESCE(q.position, aq.position))')
+            ->orderBy('aq.question_id')
             ->selectRaw('aq.question_id, MAX(aq.question_text) as question_text, MAX(aq.points) as max_points, MIN(aq.position) as position,
                 MAX(q.reference_answer) as reference_answer,
                 SUM(CASE WHEN ans.points_earned IS NULL THEN 1 ELSE 0 END) as ungraded,

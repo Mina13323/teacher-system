@@ -205,7 +205,7 @@ export default {
         statCalls: 'مكالمات نشطة',
         recentCourses: 'أحدث الدورات',
         activeAttempts: 'محاولات نشطة',
-        gradingHint: "{zero} بدرجة صفر · {ready} جاهزة للنشر",
+        gradingHint: "{zero} حصلت على صفر · {ready} جاهزة للنشر",
         gradingQueue: "أسئلة مقالية للتصحيح",
         essaysLeft: "متبقٍ {n}",
         publishedCount: "نتائج منشورة: {n}",

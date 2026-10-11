@@ -45,6 +45,7 @@ function apiWith(pages, over = {}) {
             answers: pages[(q.page ?? 1) - 1] ?? [],
             meta: { current_page: q.page ?? 1, last_page: pages.length, per_page: 2, total: pages.flat().length },
             ...(q.include_summary ? { summary: summary() } : {}),
+            ...(q.pick_question || q.question_id ? { selected_question_id: q.question_id ?? 7 } : {}),
         })),
         saveEssayGrade: vi.fn(async (attemptId, p) => ({
             attempt_id: attemptId,
@@ -69,12 +70,17 @@ async function started(pages = [[row(1, 7), row(2, 7)], [row(3, 7)]], over = {})
 }
 
 describe('grading session: loading', () => {
-    it('defaults to question mode on the first question with work left, ungraded first', async () => {
+    it('opens in one request: the server picks the first question with work left', async () => {
         const { api, session } = await started();
+        expect(api.essayAnswers).toHaveBeenCalledTimes(1);
+        expect(api.essayAnswers.mock.calls[0][1]).toMatchObject({ pick_question: 1, status: 'ungraded', page: 1, per_page: 2, include_summary: 1 });
         expect(session.state.filters.question_id).toBe(7);
-        const last = api.essayAnswers.mock.calls.at(-1)[1];
-        expect(last).toMatchObject({ question_id: 7, status: 'ungraded', page: 1, per_page: 2 });
         expect(session.current().attempt_id).toBe(1);
+        // Later pages ask for that question explicitly.
+        await session.next();
+        await session.next();
+        expect(api.essayAnswers.mock.calls.at(-1)[1]).toMatchObject({ question_id: 7, page: 2 });
+        expect(api.essayAnswers.mock.calls.at(-1)[1].pick_question).toBeUndefined();
     });
 
     it('never lets an older response replace a newer one', async () => {
