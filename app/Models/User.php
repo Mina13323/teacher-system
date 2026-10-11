@@ -376,6 +376,15 @@ class User extends Authenticatable
         return (bool) $this->is_active;
     }
 
+    /**
+     * Unread in-app notifications. The one place the badge count is computed
+     * (GET /notifications/unread-count and GET /auth/me).
+     */
+    public function unreadNotificationCount(): int
+    {
+        return $this->unreadNotifications()->count();
+    }
+
     public function canAccessLessons(): bool
     {
         return (bool) ($this->can_access_lessons ?? true);

@@ -26,7 +26,7 @@ class NotificationController extends Controller
 
     public function unreadCount(Request $request): JsonResponse
     {
-        $count = $request->user()->unreadNotifications()->count();
+        $count = $request->user()->unreadNotificationCount();
 
         return $this->success(['unread_count' => $count], 'Unread count retrieved.');
     }

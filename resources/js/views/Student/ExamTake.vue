@@ -6,7 +6,7 @@ import { useAsync } from '@/composables/useAsync';
 import { useExamIntegrity } from '@/composables/useExamIntegrity';
 import { student } from '@/api';
 import { useToast } from '@/composables/toast';
-import { useNotificationsStore } from '@/stores/notifications';
+import { examResultNotifies, useNotificationsStore } from '@/stores/notifications';
 import {
     createAutosaveScheduler,
     createHeartbeatScheduler,
@@ -172,7 +172,7 @@ async function reloadAfterTermination() {
         if (fresh && fresh.status !== 'in_progress') {
             result.value = fresh;
         }
-        notifications.refreshUnread();
+        if (examResultNotifies(fresh)) notifications.refreshUnread();
         toast.error(t('examTake.integrityTerminated'));
     } catch {
         expired.value = true;
@@ -269,10 +269,14 @@ function acceptSubmission(res) {
     stopMonitoring();
     cancelEssayDraftSave();
     clearRecovery();
-    // The result is on screen already (submit response). The unread badge is
-    // refreshed a little later, not in the same second as the class's submits.
+    // The result is on screen already (submit response). When the submit
+    // published it, the "result available" notification was just added: the
+    // unread badge is refreshed a little later, not in the same second as the
+    // class's submits. Otherwise the submit added no notification.
     clearTimeout(resultNoticeTimer);
-    resultNoticeTimer = setTimeout(() => notifications.refreshUnread(), resultNoticeRefreshDelayMs());
+    if (examResultNotifies(res)) {
+        resultNoticeTimer = setTimeout(() => notifications.refreshUnread(), resultNoticeRefreshDelayMs());
+    }
 }
 
 /** True when the connection banner was raised by a failed server-time ping. */

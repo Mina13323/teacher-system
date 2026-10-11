@@ -41,13 +41,26 @@ class AuthController extends Controller
         return $this->success([
             'user' => new UserResource($user->load('roles')),
             'token' => $token,
+            // The badge starts right after signing in, as it does from /auth/me.
+            'unread_count' => $user->unreadNotificationCount(),
         ], 'Login successful.');
     }
 
+    /**
+     * The signed-in user, plus their unread notification count so the
+     * portal's badge is right from the first screen without a separate
+     * request. The count is for the token's own user only, and is added here
+     * rather than to UserResource so lists of users never count per row.
+     */
     public function me(Request $request): JsonResponse
     {
+        $user = $request->user()->load('roles');
+
         return $this->success(
-            new UserResource($request->user()->load('roles')),
+            array_merge(
+                (new UserResource($user))->resolve($request),
+                ['unread_count' => $user->unreadNotificationCount()],
+            ),
             'Authenticated user retrieved.'
         );
     }

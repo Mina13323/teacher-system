@@ -350,8 +350,12 @@ export default function (data) {
       return;
     }
 
-    sleep(between(UNREAD_MIN_S, UNREAD_MAX_S));
-    track(request('GET', '/notifications/unread-count', null, token, 'unread', t.unread));
+    // The client refreshes the badge only when the submit published the
+    // result (which is when the server adds a notification).
+    if (sub && sub.data && sub.data.grades_published) {
+      sleep(between(UNREAD_MIN_S, UNREAD_MAX_S));
+      track(request('GET', '/notifications/unread-count', null, token, 'unread', t.unread));
+    }
 
     ok = finalized && finalOk;
   } finally {

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { auth as authApi } from '@/api';
 import { setAuthToken } from '@/api/client';
+import { useNotificationsStore } from '@/stores/notifications';
 
 const TOKEN_KEY = 'atlas.auth.token';
 
@@ -69,7 +70,11 @@ export const useAuthStore = defineStore('auth', {
         isRenewalDue: (s) => s.user?.access_status === 'due',
     },
     actions: {
-        applyAuth({ user, token }) {
+        applyAuth({ user, token, unread_count: unreadCount }) {
+            // A new sign-in never shows the previous user's badge or inbox.
+            const notifications = useNotificationsStore();
+            notifications.reset();
+            notifications.setUnread(unreadCount);
             this.user = user;
             this.token = token;
             this.booted = true;
@@ -112,7 +117,10 @@ export const useAuthStore = defineStore('auth', {
             for (let attempt = 0; ; attempt++) {
                 try {
                     const res = await authApi.me();
+                    if (this.user && res?.id !== this.user.id) useNotificationsStore().reset();
                     this.user = res;
+                    // The badge count rides on /auth/me (no separate request).
+                    useNotificationsStore().setUnread(res?.unread_count);
                     this.bootError = null;
                     this.booted = true;
                     return res;
@@ -160,6 +168,7 @@ export const useAuthStore = defineStore('auth', {
             this.clear();
         },
         clear() {
+            useNotificationsStore().reset();
             this.user = null;
             this.profile = null;
             this.token = null;
