@@ -1,18 +1,25 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { learning, student } from '@/api';
 import { useToast } from '@/composables/toast';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppTextarea from '@/components/ui/AppTextarea.vue';
+import { createLazyTabs } from '@/utils/lazyTabs';
 
 /**
  * PHASE 4 — lesson-level learning tools: private notes, Q&A thread and a
  * personal bookmark. Notes are owner-only; Q&A is answered by the teacher /
  * assistants; deleted messages keep their thread slot ("[removed]").
+ *
+ * Notes and Q&A are tabs, fetched the first time each is opened and kept.
+ * The bookmark state comes with the lesson (`bookmark`: { id } or null); it
+ * is looked up here only when the lesson did not say (undefined). The parent
+ * keys this component by lesson, so a lesson change starts fresh.
  */
 const props = defineProps({
     lessonId: { type: [Number, String], required: true },
+    bookmark: { type: Object, default: undefined },
 });
 
 const { t } = useI18n();
@@ -23,30 +30,54 @@ const noteBody = ref('');
 const questions = ref([]);
 const questionBody = ref('');
 const replyDrafts = ref({});
-const bookmarked = ref(false);
+const bookmarked = ref(Boolean(props.bookmark));
 const busy = ref(false);
 /** The id of this lesson's bookmark, when known (saves a lookup on removal). */
-const bookmarkId = ref(null);
+const bookmarkId = ref(props.bookmark?.id ?? null);
+/** The open tab: 'notes', 'qa' or null (none opened yet). */
+const activeTab = ref(null);
+const tabError = ref(null);
+/** The tab whose first load is in progress (its empty-state text waits). */
+const tabLoading = ref(null);
 
-async function loadNotes() {
-    const n = await student.notes({ lesson_id: props.lessonId });
-    notes.value = (n.data || n || []);
-}
+const tabs = createLazyTabs({
+    loaders: {
+        notes: () => student.notes({ lesson_id: props.lessonId }),
+        qa: () => learning.questions(props.lessonId),
+    },
+    apply: (name, res) => {
+        const list = (res?.data || res || []);
+        if (name === 'notes') notes.value = list;
+        else questions.value = list;
+    },
+});
 
-async function loadQuestions() {
-    const q = await learning.questions(props.lessonId);
-    questions.value = (q.data || q || []);
-}
-
-async function loadAll() {
+async function openTab(name) {
+    activeTab.value = name;
+    tabError.value = null;
+    if (!tabs.isLoaded(name)) tabLoading.value = name;
     try {
-        const [n, q, b] = await Promise.all([
-            student.notes({ lesson_id: props.lessonId }),
-            learning.questions(props.lessonId),
-            student.bookmarks(),
-        ]);
-        notes.value = (n.data || n || []);
-        questions.value = (q.data || q || []);
+        await tabs.open(name);
+    } catch (e) {
+        if (activeTab.value === name) tabError.value = e;
+    } finally {
+        if (tabLoading.value === name) tabLoading.value = null;
+    }
+}
+
+function loadNotes() {
+    return tabs.reload('notes');
+}
+
+function loadQuestions() {
+    return tabs.reload('qa');
+}
+
+/** Only when the lesson response did not carry the bookmark (older server). */
+async function lookUpBookmark() {
+    if (props.bookmark !== undefined) return;
+    try {
+        const b = await student.bookmarks();
         const list = (b.data || b || []);
         const mine = list.find((x) => String(x.lesson_id) === String(props.lessonId) && !x.video_id);
         bookmarked.value = Boolean(mine);
@@ -130,7 +161,8 @@ async function toggleBookmark() {
     }
 }
 
-onMounted(loadAll);
+onMounted(lookUpBookmark);
+onBeforeUnmount(() => tabs.dispose());
 </script>
 
 <template>
@@ -142,8 +174,27 @@ onMounted(loadAll);
             </AppButton>
         </div>
 
+        <!-- Tabs: each list is fetched the first time its tab is opened -->
+        <div class="flex gap-2" role="tablist">
+            <AppButton
+                size="sm"
+                role="tab"
+                :aria-selected="activeTab === 'notes'"
+                :variant="activeTab === 'notes' ? 'primary' : 'outline'"
+                @click="openTab('notes')"
+            >📝 {{ $t('lessonExtras.notesTitle') }}</AppButton>
+            <AppButton
+                size="sm"
+                role="tab"
+                :aria-selected="activeTab === 'qa'"
+                :variant="activeTab === 'qa' ? 'primary' : 'outline'"
+                @click="openTab('qa')"
+            >💬 {{ $t('lessonExtras.qaTitle') }}</AppButton>
+        </div>
+        <p v-if="tabError" class="text-xs text-rose-600">{{ tabError.message }}</p>
+
         <!-- Private notes -->
-        <section class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+        <section v-if="activeTab === 'notes'" class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
             <h2 class="text-sm font-semibold text-ink-800">📝 {{ $t('lessonExtras.notesTitle') }}</h2>
             <p class="mt-0.5 text-xs text-ink-400">{{ $t('lessonExtras.notesPrivate') }}</p>
             <ul class="mt-3 space-y-2">
@@ -159,7 +210,7 @@ onMounted(loadAll);
         </section>
 
         <!-- Q&A -->
-        <section class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
+        <section v-else-if="activeTab === 'qa'" class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
             <h2 class="text-sm font-semibold text-ink-800">💬 {{ $t('lessonExtras.qaTitle') }}</h2>
             <div class="mt-3 space-y-3">
                 <div v-for="q in questions" :key="q.id" class="rounded-lg border border-ink-100 p-3">
@@ -181,7 +232,7 @@ onMounted(loadAll);
                         <AppButton size="sm" variant="ghost" @click="reply(q.id)">{{ $t('lessonExtras.replyBtn') }}</AppButton>
                     </div>
                 </div>
-                <p v-if="!questions.length" class="text-xs text-ink-400">{{ $t('lessonExtras.qaEmpty') }}</p>
+                <p v-if="!questions.length && tabLoading !== 'qa'" class="text-xs text-ink-400">{{ $t('lessonExtras.qaEmpty') }}</p>
             </div>
             <div class="mt-3 space-y-2">
                 <AppTextarea v-model="questionBody" :rows="2" :placeholder="$t('lessonExtras.askPlaceholder')" id="lesson-question" />

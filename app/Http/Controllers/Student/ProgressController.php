@@ -36,18 +36,7 @@ class ProgressController extends Controller
         $this->assertAccess($request);
         $this->assertLessonPublished($lesson);
 
-        $progress = LessonProgress::query()
-            ->where('student_id', $request->user()->getKey())
-            ->where('lesson_id', $lesson->getKey())
-            ->first();
-
-        $progress ??= new LessonProgress([
-            'student_id' => $request->user()->getKey(),
-            'lesson_id' => $lesson->getKey(),
-            'completed' => false,
-            'progress_percentage' => 0,
-            'last_position_seconds' => 0,
-        ]);
+        $progress = LessonProgress::forStudentLesson((int) $request->user()->getKey(), (int) $lesson->getKey());
 
         return $this->success(
             // load() (not whenLoaded-only): the lesson page reads the title,

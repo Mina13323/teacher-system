@@ -30,6 +30,25 @@ class LessonProgress extends Model
         ];
     }
 
+    /**
+     * The student's progress row for a lesson, or an unsaved zero-progress
+     * row when they have not started it.
+     */
+    public static function forStudentLesson(int $studentId, int $lessonId): self
+    {
+        return static::query()
+            ->where('student_id', $studentId)
+            ->where('lesson_id', $lessonId)
+            ->first()
+            ?? new static([
+                'student_id' => $studentId,
+                'lesson_id' => $lessonId,
+                'completed' => false,
+                'progress_percentage' => 0,
+                'last_position_seconds' => 0,
+            ]);
+    }
+
     public function student(): BelongsTo
     {
         return $this->belongsTo(User::class, 'student_id');

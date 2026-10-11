@@ -1,10 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useAsync } from '@/composables/useAsync';
-import { student, toList } from '@/api';
+import { student } from '@/api';
 import { useToast } from '@/composables/toast';
+import { createLessonPageLoader } from '@/utils/lessonPage';
 import ProtectedPlayer from '@/components/video/ProtectedPlayer.vue';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
@@ -17,33 +17,61 @@ import LessonExtras from '@/components/learning/LessonExtras.vue';
 const { t } = useI18n();
 const route = useRoute();
 const toast = useToast();
-const lessonId = route.params.id;
+/** The route is reused when only the lesson id changes, so read it live. */
+const lessonId = computed(() => String(route.params.id));
 
 const progress = ref(null);
 const lesson = ref(null);
 const attachments = ref([]);
 const videos = ref([]);
 const activeVideo = ref(null);
+/** The student's bookmark on this lesson: { id } or null; undefined = unknown. */
+const bookmark = ref(undefined);
+/** Which lesson the state above belongs to. */
+const loadedLessonId = ref(null);
 
-const { loading, error, run } = useAsync(async () => {
-    // (The page only needs the course id for its back link, from the URL.)
-    const [lRes, p, vRes] = await Promise.all([
-        student.lesson(lessonId).catch(() => null),
-        student.lessonProgress(lessonId).catch(() => null),
-        student.lessonVideos(lessonId).catch(() => toList(null)),
-    ]);
-    // The endpoint returns { lesson, attachments }; tolerate a bare lesson too.
-    lesson.value = lRes && lRes.id ? lRes : (lRes?.lesson || null);
-    attachments.value = (lRes?.attachments || []).map((a) => ({ id: a.id, title: a.title, size: a.size, type: a.type }));
-    progress.value = p;
-    videos.value = toList(vRes).items;
-});
+// One request for lesson, attachments, progress, video list and bookmark.
+// (The page only needs the course id for its back link, from the URL.)
+const pageLoader = createLessonPageLoader({ api: student });
+
+const loading = ref(true);
+const error = ref(null);
+
+async function loadLesson() {
+    activeVideo.value = null;
+    loading.value = true;
+    error.value = null;
+    try {
+        const page = await pageLoader.load(lessonId.value);
+        // null: the student has moved on to another lesson meanwhile; that
+        // lesson's own load settles the page.
+        if (!page) return;
+        lesson.value = page.lesson;
+        attachments.value = page.attachments;
+        progress.value = page.progress;
+        videos.value = page.videos;
+        bookmark.value = page.bookmark;
+        loadedLessonId.value = page.lessonId;
+        loading.value = false;
+    } catch (e) {
+        // Nothing of another lesson stays on screen under this one's error.
+        lesson.value = null;
+        attachments.value = [];
+        progress.value = null;
+        videos.value = [];
+        bookmark.value = undefined;
+        loadedLessonId.value = null;
+        error.value = e;
+        loading.value = false;
+    }
+}
 
 async function markComplete() {
+    const id = lessonId.value;
     try {
-        await student.saveLessonProgress(lessonId, { progress_percentage: 100, last_position_seconds: 0, completed: true });
+        await student.saveLessonProgress(id, { progress_percentage: 100, last_position_seconds: 0, completed: true });
         toast.success(t('lesson.markedComplete'));
-        if (progress.value) {
+        if (progress.value && loadedLessonId.value === id) {
             progress.value.completed = true;
             progress.value.progress_percentage = 100;
         }
@@ -62,11 +90,17 @@ async function downloadAttachment(att) {
 
 function selectVideo(v) {
     activeVideo.value = null;
+    const forLesson = loadedLessonId.value;
     // wait a tick so the player unmounts & clears its session before switching.
-    setTimeout(() => { activeVideo.value = v; }, 0);
+    setTimeout(() => {
+        if (loadedLessonId.value === forLesson && lessonId.value === forLesson) activeVideo.value = v;
+    }, 0);
 }
 
-onMounted(() => run());
+onMounted(loadLesson);
+watch(lessonId, (next, prev) => {
+    if (next !== prev) loadLesson();
+});
 </script>
 
 <template>
@@ -94,7 +128,13 @@ onMounted(() => run());
                 <EmptyState icon="play" :title="$t('lesson.noVideosTitle')" :message="$t('lesson.noVideosMessage')" />
 
                 <!-- PHASE 4: notes, Q&A and bookmark -->
-                <LessonExtras class="mt-6" :lesson-id="lessonId" />
+                <LessonExtras
+                    v-if="loadedLessonId === lessonId"
+                    :key="lessonId"
+                    class="mt-6"
+                    :lesson-id="lessonId"
+                    :bookmark="bookmark"
+                />
 
                 <!-- Lesson attachments -->
                 <div v-if="attachments.length" class="mt-4 rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
@@ -135,7 +175,7 @@ onMounted(() => run());
                 <!-- Player -->
                 <div class="lg:col-span-2">
                     <AppCard :title="activeVideo?.title || $t('common.video')" :padded="false" class="overflow-hidden">
-                        <ProtectedPlayer v-if="activeVideo" :video-id="activeVideo.id" :watermark-text="progress?.lesson?.title || ''" />
+                        <ProtectedPlayer v-if="activeVideo" :video-id="activeVideo.id" :watermark-text="lesson?.title || progress?.lesson?.title || ''" />
                         <div v-else class="flex h-72 flex-col items-center justify-center rounded-b-xl bg-ink-50 text-ink-400">
                             <Icon name="play" :size="36" />
                             <p class="mt-2 text-sm">{{ $t('lesson.selectVideo') }}</p>

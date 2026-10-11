@@ -44,12 +44,13 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string }
       responses:
-        '200': { description: Token + user }
+        '200': { description: Token + user + unread_count (the user's unread notifications) }
   /auth/me:
     get:
       tags: [Auth]
       summary: Current user
-      responses: { '200': { description: User } }
+      description: Includes unread_count, the signed-in user's own unread notification count (same value as /notifications/unread-count).
+      responses: { '200': { description: User + unread_count } }
   /courses:
     get:
       tags: [Courses & Lessons]
@@ -67,8 +68,16 @@ paths:
     get:
       tags: [Courses & Lessons]
       summary: Lesson content (title + body + attachments), policy-gated
-      description: Honors roadmap enforcement when the course enables it.
-      parameters: [{ $ref: '#/components/parameters/lessonId' }]
+      description: >-
+        Honors roadmap enforcement when the course enables it. Optional
+        include=progress,videos,bookmark (any subset) adds the student's
+        progress, the published video list (metadata only; playback still
+        requires /student/videos/{id}/playback) and the student's own
+        lesson-level bookmark ({ id } or null). Without include the response
+        is unchanged.
+      parameters:
+        - { $ref: '#/components/parameters/lessonId' }
+        - { name: include, in: query, required: false, schema: { type: string, example: 'progress,videos,bookmark' } }
       responses:
         '200': { description: Lesson }
         '403': { description: Locked (roadmap) or not enrolled }

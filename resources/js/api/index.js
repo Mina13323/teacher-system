@@ -1,4 +1,5 @@
 import api, { sendKeepalive, downloadFile } from './client';
+import { LESSON_PAGE_INCLUDE } from '@/utils/lessonPage';
 
 /**
  * Normalize a "list" payload returned by cross the API's `data` slot.
@@ -102,6 +103,8 @@ export const student = {
     saveLessonProgress: (lessonId, payload) => api.put(`/student/lessons/${lessonId}/progress`, payload),
     lessonVideos: (lessonId) => api.get(`/student/lessons/${lessonId}/videos`),
     lesson: (lessonId) => api.get(`/student/lessons/${lessonId}`),
+    // Lesson + progress + video list + own bookmark in one request (lesson page).
+    lessonPage: (lessonId) => api.get(`/student/lessons/${lessonId}`, { include: LESSON_PAGE_INCLUDE }),
     playback: (videoId) => api.get(`/student/videos/${videoId}/playback`),
     playbackEvent: (videoId, payload) => api.post(`/student/videos/${videoId}/playback/events`, payload),
     exams: (params) => api.get('/student/exams', params),
