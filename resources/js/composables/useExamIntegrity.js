@@ -354,6 +354,10 @@ export function useExamIntegrity(options = {}) {
     function start() {
         if (started.value) return;
         started.value = true;
+        // The page may already be fullscreen (entered from the start click
+        // on the exam page, or kept across a reload): no change event will
+        // say so, so read the current state.
+        fullscreenActive.value = typeof document !== 'undefined' && Boolean(document.fullscreenElement);
 
         document.addEventListener('visibilitychange', onVisibilityChange);
         document.addEventListener('copy', onCopy);

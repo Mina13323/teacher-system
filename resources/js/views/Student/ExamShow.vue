@@ -9,6 +9,7 @@ import { isAmbiguousStartFailure, recoverActiveAttempt } from '@/utils/examStart
 import { clearAttemptHandoff, handOffAttempt } from '@/utils/attemptHandoff';
 import { startPacingDelayMs } from '@/utils/examRequestPacing';
 import { createServerClock } from '@/utils/serverClock';
+import { enterFullscreenForStart, leaveFullscreen } from '@/utils/examFullscreen';
 import { useToast } from '@/composables/toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -135,6 +136,10 @@ async function startPacingDelay() {
 async function confirmStart() {
     if (!rulesAccepted.value || starting.value) return;
 
+    // Inside the click itself: the browser allows fullscreen only from the
+    // student's gesture, which would expire during the waits below.
+    enterFullscreenForStart(data.value?.integrity_rules);
+
     starting.value = true;
     startNotice.value = '';
     try {
@@ -195,6 +200,9 @@ async function confirmStart() {
     } finally {
         preparing.value = false;
         starting.value = false;
+        // No exam screen to stay fullscreen for (refused, closed window,
+        // unconfirmed start): give the student their normal window back.
+        if (router.currentRoute.value.name !== 'student.attempt') leaveFullscreen();
     }
 }
 
