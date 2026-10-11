@@ -65,9 +65,30 @@ const shortcuts = computed(() => [
 
             <div class="grid gap-5 sm:grid-cols-3">
                 <StatCard :label="$t('dashboard.activeAttempts')" :value="data.active_attempts_count" icon="clipboard" tone="sky" />
-                <StatCard :label="$t('dashboard.pendingEssayGrading')" :value="data.pending_essay_grading" icon="layers" tone="amber" />
+                <router-link
+                    v-if="data.grading_queue?.length"
+                    :to="data.grading_queue[0].url"
+                    class="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta-400"
+                    :aria-label="`${$t('dashboard.pendingEssayGrading')}: ${data.pending_essay_grading}`"
+                >
+                    <StatCard :label="$t('dashboard.pendingEssayGrading')" :value="data.pending_essay_grading" icon="layers" tone="amber" :hint="$t('dashboard.gradingHint', { zero: data.essays_graded_zero ?? 0, ready: data.attempts_ready_to_publish ?? 0 })" />
+                </router-link>
+                <StatCard v-else :label="$t('dashboard.pendingEssayGrading')" :value="data.pending_essay_grading" icon="layers" tone="amber" :hint="$t('dashboard.gradingHint', { zero: data.essays_graded_zero ?? 0, ready: data.attempts_ready_to_publish ?? 0 })" />
                 <StatCard :label="$t('dashboard.assignmentsNeedingGrading')" :value="data.assignments_needing_grading" icon="check" tone="emerald" />
             </div>
+
+            <AppCard v-if="data.grading_queue?.length" :title="$t('dashboard.gradingQueue')">
+                <router-link
+                    v-for="g in data.grading_queue"
+                    :key="g.exam_id"
+                    :to="g.url"
+                    class="flex min-h-11 items-center justify-between gap-3 rounded-xl px-2 py-3 transition hover:bg-parchment-50"
+                >
+                    <p class="min-w-0 truncate font-medium text-ink-800" dir="auto">{{ g.title }}</p>
+                    <AppBadge tone="warning">{{ $t('dashboard.essaysLeft', { n: g.ungraded }) }}</AppBadge>
+                </router-link>
+                <p class="mt-2 px-2 text-xs text-ink-400">{{ $t('dashboard.publishedCount', { n: data.attempts_published ?? 0 }) }}</p>
+            </AppCard>
 
             <AppCard :title="$t('dashboard.flaggedAttempts')">
                 <template v-if="data.flagged_attempts.length">
