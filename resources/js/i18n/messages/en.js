@@ -279,6 +279,10 @@ export default {
         capCompetitions: 'Competitions',
     },
     students: {
+        attemptHistory: "Exams and attempts",
+        noAttemptsTitle: "No exam attempts yet",
+        noAttemptsMessage: "Attempts on your exams will appear here, grouped by exam.",
+        attemptsCount: "{n} attempts",
         title: 'Students',
         new: 'New student',
         edit: 'Edit student',

@@ -138,6 +138,8 @@ export const teacher = {
 
     students: (params) => api.get('/teacher/students', params),
     student: (id) => api.get(`/teacher/students/${id}`),
+    // The student's exam attempts (paginated, scoped to the viewer's exams).
+    studentAttempts: (id, params) => api.get(`/teacher/students/${id}/attempts`, params),
     createStudent: (payload) => api.post('/teacher/students', payload),
     updateStudent: (id, payload) => api.put(`/teacher/students/${id}`, payload),
     deactivateStudent: (id) => api.patch(`/teacher/students/${id}/deactivate`),

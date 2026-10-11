@@ -279,6 +279,10 @@ export default {
         capCompetitions: 'مسابقات',
     },
     students: {
+        attemptHistory: "الامتحانات والمحاولات",
+        noAttemptsTitle: "لا توجد محاولات بعد",
+        noAttemptsMessage: "ستظهر هنا محاولات الطالب في امتحاناتك مجمّعة حسب الامتحان.",
+        attemptsCount: "{n} محاولات",
         title: 'الطلاب',
         new: 'طالب جديد',
         edit: 'تعديل الطالب',

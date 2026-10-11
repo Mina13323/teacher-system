@@ -232,6 +232,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
     Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
     Route::get('students/{student}', [TeacherStudentController::class, 'show']);
+    // A student's exam attempts, grouped by exam on the student page (paginated, staff-scoped).
+    Route::get('students/{student}/attempts', [\App\Http\Controllers\Teacher\StudentAttemptController::class, 'index']);
     Route::put('students/{student}', [TeacherStudentController::class, 'update']);
     Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [TeacherStudentController::class, 'deactivate']);
