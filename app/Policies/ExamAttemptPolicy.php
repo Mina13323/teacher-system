@@ -121,9 +121,10 @@ class ExamAttemptPolicy
      *  - the student who owns the attempt can never grade or publish it,
      *  - a user holding the student role can never reach these abilities.
      *
-     * Everyone else must be an admin (handled by before()), the teacher who
-     * manages the exam, or an assistant holding the operational `exams.view`
-     * permission granted by PermissionSeeder.
+     * Everyone else must be an admin (handled by before()) or staff who
+     * manage the exam: its teacher, or an assistant within that teacher's
+     * scope (User::isStaffFor — the employing teacher, or every teacher under
+     * co-teaching). A permission alone never reaches another teacher's attempts.
      */
     private function canGrade(User $user, ExamAttempt $attempt): bool
     {
@@ -135,10 +136,6 @@ class ExamAttemptPolicy
             return false;
         }
 
-        if ($this->canManageExam($user, $attempt)) {
-            return true;
-        }
-
-        return $user->isAssistant() && $user->hasPermissionTo('exams.view');
+        return $this->canManageExam($user, $attempt);
     }
 }
