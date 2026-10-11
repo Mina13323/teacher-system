@@ -84,9 +84,25 @@ class RecordIntegrityEventAction
         // the attempt lock (the common case for bursts of the same event). The
         // check is repeated under the lock below, so two concurrent identical
         // events still record at most one.
-        $state = $this->isDuplicate($attempt, $type)
-            ? ['event' => null, 'deduplicated' => true, 'counted' => false, 'attempt' => $attempt]
-            : $this->recordLocked($attempt, $type, $occurredAt, $metadata, $enabled);
+        //
+        // An event worth no risk points (a return to the page, re-entering
+        // fullscreen, or any event whose protection is off) cannot change the
+        // warning count, the risk score, the integrity status or trigger a
+        // termination, so it is written without the attempt lock and the
+        // risk re-sum: the record is the same, it just no longer waits
+        // behind answer saves on the attempt row.
+        $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
+
+        $state = match (true) {
+            $this->isDuplicate($attempt, $type) => ['event' => null, 'deduplicated' => true, 'counted' => false, 'attempt' => $attempt],
+            $riskPoints === 0 => [
+                'event' => ExamIntegrityEvent::create($this->eventAttributes($attempt, $type, $occurredAt, $metadata, $enabled)),
+                'deduplicated' => false,
+                'counted' => false,
+                'attempt' => $attempt,
+            ],
+            default => $this->recordLocked($attempt, $type, $occurredAt, $metadata, $enabled),
+        };
 
         $locked = $state['attempt'];
         $threshold = $this->warningThresholdFor($locked);
@@ -151,24 +167,9 @@ class RecordIntegrityEventAction
                 ];
             }
 
-            $severity = $this->riskConfig->severity($type);
-            $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
-
-            if (! $enabled) {
-                // Evidence preserved but does not inflate the score because the
-                // corresponding protection is disabled for this attempt.
-                $metadata = array_merge($metadata, ['ignored' => true, 'reason' => 'protection_disabled']);
-                $severity = IntegritySeverity::Low;
-            }
-
-            $event = ExamIntegrityEvent::create([
-                'attempt_id' => $locked->getKey(),
-                'event_type' => $type->value,
-                'occurred_at' => $occurredAt,
-                'metadata' => $metadata ?: null,
-                'severity' => $severity->value,
-                'risk_points' => $riskPoints,
-            ]);
+            $attributes = $this->eventAttributes($locked, $type, $occurredAt, $metadata, $enabled);
+            $riskPoints = $attributes['risk_points'];
+            $event = ExamIntegrityEvent::create($attributes);
 
             // Only enabled, risk-bearing events count toward the warning
             // threshold — an ignored/zero-risk event is not a violation.
@@ -190,6 +191,34 @@ class RecordIntegrityEventAction
                 'attempt' => $locked,
             ];
         });
+    }
+
+    /**
+     * The stored event: server-assigned severity and risk points. When the
+     * matching protection is off for this attempt, the evidence is kept but
+     * marked ignored and worth no points.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    private function eventAttributes(ExamAttempt $attempt, IntegrityEventType $type, Carbon $occurredAt, array $metadata, bool $enabled): array
+    {
+        $severity = $this->riskConfig->severity($type);
+        $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
+
+        if (! $enabled) {
+            $metadata = array_merge($metadata, ['ignored' => true, 'reason' => 'protection_disabled']);
+            $severity = IntegritySeverity::Low;
+        }
+
+        return [
+            'attempt_id' => $attempt->getKey(),
+            'event_type' => $type->value,
+            'occurred_at' => $occurredAt,
+            'metadata' => $metadata ?: null,
+            'severity' => $severity->value,
+            'risk_points' => $riskPoints,
+        ];
     }
 
     /**

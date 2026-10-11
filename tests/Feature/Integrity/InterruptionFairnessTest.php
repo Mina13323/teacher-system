@@ -185,6 +185,35 @@ class InterruptionFairnessTest extends ApiTestCase
         $this->assertSame(5, $attempt->integrityEvents()->count());
     }
 
+    public function test_a_zero_risk_event_keeps_the_risk_state_and_is_refused_once_the_attempt_ends(): void
+    {
+        $attempt = $this->startedAttempt();
+        $post = fn (string $type) => $this->actingAs($attempt->student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attempt->id}/integrity-events", ['event_type' => $type]);
+
+        $post('TAB_SWITCH')->assertStatus(201)->assertJsonPath('data.warning_count', 1);
+        $before = $attempt->fresh();
+
+        // A return to the page: recorded, worth nothing, risk state untouched.
+        $this->travelTo(now()->addSeconds(10));
+        $post('WINDOW_FOCUS')->assertStatus(201)
+            ->assertJsonPath('data.recorded', true)
+            ->assertJsonPath('data.counted', false)
+            ->assertJsonPath('data.warning_count', 1);
+        $after = $attempt->fresh();
+        $this->assertSame((int) $before->violation_warnings, (int) $after->violation_warnings);
+        $this->assertSame($before->risk_score, $after->risk_score);
+        $this->assertSame($before->integrity_status, $after->integrity_status);
+        $this->assertSame(0, (int) $attempt->integrityEvents()->where('event_type', 'WINDOW_FOCUS')->value('risk_points'));
+
+        // After submission even an informational event is refused.
+        $this->actingAs($attempt->student, 'sanctum')
+            ->postJson("/api/v1/student/attempts/{$attempt->id}/submit")->assertOk();
+        $this->travelTo(now()->addSeconds(10));
+        $post('FULLSCREEN_ENTER')->assertStatus(422);
+        $this->assertSame(0, $attempt->integrityEvents()->where('event_type', 'FULLSCREEN_ENTER')->count());
+    }
+
     public function test_burst_dedup_does_not_inflate_warning_counter(): void
     {
         $attempt = $this->startedAttempt();
