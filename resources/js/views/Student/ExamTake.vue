@@ -15,11 +15,11 @@ import {
     EXPLANATION_SAVE_IDLE_MS,
     essayDraftSaveDelayMs,
     predeadlineDraftLeadMs,
-    shouldCheckStatus,
     timeUpSubmitDelayMs,
     resultNoticeRefreshDelayMs,
 } from '@/utils/examRequestPacing';
 import { createServerClock } from '@/utils/serverClock';
+import { createStatusCheckGate } from '@/utils/statusCheckGate';
 import { createKeyedQueue } from '@/utils/keyedQueue';
 import { collectUnsavedDrafts } from '@/utils/examDrafts';
 import { createExplanationAcks, explanationsNeedingSave } from '@/utils/explanationAcks';
@@ -62,8 +62,13 @@ const questionSaveSeq = new Map();
 
 /** Device-to-server clock offset; the countdown runs on server time. */
 const serverClock = createServerClock();
-/** When the last full attempt status check (a database request) was sent. */
-let lastStatusCheckAt = null;
+/**
+ * When a beat is a full attempt status check (a database request) instead of
+ * a time ping. A confirmed answer save counts as a status check for this.
+ */
+const statusGate = createStatusCheckGate();
+/** The deadline the running countdown uses (null when no countdown runs). */
+let countdownExpiresAt = null;
 /**
  * Unsaved drafts are sent in two passes before the deadline: everything
  * 35–95 s before, then only what changed since, 8–28 s before (both random).
@@ -90,11 +95,32 @@ function noteAnswerSaved(payload) {
 }
 
 function sendAnswerInOrder(questionId, payload) {
-    return saves.run(Number(questionId), () => (
-        pendingAnswers.value[questionId] === payload
-            ? student.answer(attempt.value.id, payload)
-            : SUPERSEDED
-    ));
+    return saves.run(Number(questionId), async () => {
+        if (pendingAnswers.value[questionId] !== payload) return SUPERSEDED;
+        const attemptId = attempt.value.id;
+        const sentAt = Date.now();
+        const updated = await student.answer(attemptId, payload);
+        noteConfirmedSave(updated, attemptId, sentAt);
+        return updated;
+    });
+}
+
+/**
+ * The server confirmed a save: it saw the attempt in progress with this
+ * deadline, so the next status check can wait (see statusCheckGate). Only a
+ * response that came back successful reaches this.
+ */
+function noteConfirmedSave(updated, attemptId, sentAt) {
+    statusGate.noteSaveResponse(updated, {
+        sentAtMs: sentAt,
+        sentForAttemptId: attemptId,
+        current: {
+            attemptId: attempt.value?.id,
+            status: attempt.value?.status,
+            expiresAt: countdownExpiresAt,
+            blocked: blocked.value,
+        },
+    });
 }
 
 /**
@@ -433,14 +459,16 @@ async function sendHeartbeat() {
         return;
     }
     // Most beats are a database-free time ping; a full status check (which
-    // reads and writes the attempt row) goes out about every two minutes,
-    // and on the first beat after a lost connection comes back.
-    if (!statusSyncWanted && !shouldCheckStatus(Date.now(), lastStatusCheckAt)) {
+    // reads and writes the attempt row) goes out about two minutes after the
+    // attempt state was last confirmed (by a status check or a confirmed
+    // answer save), at least every ~6 minutes, and on the first beat after a
+    // lost connection comes back.
+    if (!statusGate.isDue(Date.now(), { forced: statusSyncWanted })) {
         await syncServerClock();
         return;
     }
     const sentAt = Date.now();
-    lastStatusCheckAt = sentAt;
+    statusGate.noteStatusCheck(sentAt);
     try {
         const res = await student.heartbeat(attempt.value.id);
         serverClock.observe(Number(res?.server_time_ms), sentAt, Date.now());
@@ -468,7 +496,9 @@ async function sendHeartbeat() {
  * 15 s ± 20%, so students who start together do not stay in step. Paused
  * while the tab is hidden, with one beat as soon as it is visible again.
  * About seven beats in eight are a database-free time ping; the rest are the
- * attempt status check (which also records last_heartbeat_at).
+ * attempt status check (which also records last_heartbeat_at). While the
+ * student keeps saving answers, fewer beats are status checks (at least one
+ * every ~6 minutes); see statusCheckGate.
  */
 const heartbeat = createHeartbeatScheduler({ beat: sendHeartbeat });
 
@@ -510,7 +540,7 @@ const { loading, error, run: load } = useAsync(async () => {
     if (a?.violation_warnings) warningCount.value = a.violation_warnings;
     // The attempt was just read from the server, so the next status check can
     // wait; measure the clock offset now (database-free) for the countdown.
-    lastStatusCheckAt = Date.now();
+    statusGate.reset(Date.now());
     if (a?.status === 'in_progress') {
         // Reading the attempt finalizes it on the server once its deadline has
         // passed, so "in progress" here means time is genuinely left.
@@ -697,6 +727,7 @@ function correctOptionsText(q) {
 function startTimer() {
     clearInterval(timer);
     timer = null;
+    countdownExpiresAt = null;
 
     if (attempt.value?.status !== 'in_progress') {
         timeLeft.value = 0;
@@ -705,6 +736,7 @@ function startTimer() {
 
     const expires = attempt.value?.expires_at;
     if (!expires) return;
+    countdownExpiresAt = expires;
 
     const tick = () => {
         const ms = new Date(expires).getTime() - serverClock.serverNow();
@@ -1078,7 +1110,7 @@ async function onTimeUp() {
             // deadline with the saved answers — nothing is lost. Keep a
             // status check going so the screen refreshes once it is back.
             toast.info(t('examTake.timeUpOffline'));
-            lastStatusCheckAt = null;
+            statusGate.invalidate();
             startHeartbeat();
         }
     } finally {

@@ -231,4 +231,6 @@ aborts by itself on any 503 `service_busy`.
 Knobs: `ANSWER_GAP_MIN`/`ANSWER_GAP_MAX` (seconds between answers, default 40/80), `INTEGRITY_PER_MIN`
 (default 0.3), `INTEGRITY_EVENT` (default `WINDOW_FOCUS`, zero risk), `OPEN_AT_S` (when the exam
 "opens", default ramp + 15 s), `START_PACING_MAX_S` (default 45, as the client), `EXAM_MINUTES`
-(must cover the seeded `--duration`, default 15).
+(must cover the seeded `--duration`, default 15), `B1_SAVE_DEFERS_STATUS` (default `1`: a confirmed answer
+save defers the next status check, as the client does since B1; `0` replays the earlier plain ~2 min
+schedule for a before/after comparison).

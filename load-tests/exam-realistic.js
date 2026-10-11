@@ -6,7 +6,10 @@
 //   arrive during the ramp: login -> dashboard -> exam list -> exam details
 //   wait for the common opening moment, then the client's start pacing (0-45 s)
 //   start (compact) -> exam loop until the deadline:
-//     /time ping every 12-18 s (no DB), status check every ~2 min,
+//     /time ping every 12-18 s (no DB), status check every ~2 min after the
+//     attempt state was last confirmed (a confirmed answer save counts, at
+//     least one real check every ~6 min; B1_SAVE_DEFERS_STATUS=0 restores the
+//     plain ~2 min schedule of the client before B1),
 //     an answer every ANSWER_GAP_MIN..MAX s (default 40-80 s, about 1/min),
 //     an integrity event at INTEGRITY_PER_MIN (default 0.3/min)
 //   deadline: submit at a random point 0-50 s after it (the client's spread)
@@ -34,6 +37,9 @@ const num = (name, dflt) => (__ENV[name] === undefined || __ENV[name] === '' ? d
 const PING_MIN_S = 12;
 const PING_MAX_S = 18;
 const STATUS_GAP_S = 115;
+// Mirrors resources/js/utils/statusCheckGate.js.
+const STATUS_MAX_GAP_S = 3 * STATUS_GAP_S;
+const SAVE_DEFERS_STATUS = num('B1_SAVE_DEFERS_STATUS', 1) !== 0;
 const START_PACING_MAX_S = num('START_PACING_MAX_S', 45);
 const SUBMIT_SPREAD_S = 50;
 const UNREAD_MIN_S = 60;
@@ -267,6 +273,7 @@ export default function (data) {
 
     let nextPing = Date.now() + between(0, PING_MAX_S) * 1000;
     let lastStatus = Date.now();
+    let lastObserved = lastStatus;
     let nextAnswer = Date.now() + between(ANSWER_GAP_MIN, ANSWER_GAP_MAX) * 1000;
     let nextIntegrity = Date.now() + expo(INTEGRITY_PER_MIN) * 1000;
     let qIndex = 0;
@@ -279,7 +286,10 @@ export default function (data) {
         const q = qIndex < questions.length && Math.random() > 0.3
           ? questions[qIndex++]
           : questions[Math.floor(Math.random() * Math.max(1, Math.min(qIndex, questions.length)))];
-        closed = saveAnswer(token, attempt.id, q, saved) === 422;
+        const sentAt = Date.now();
+        const saveStatus = saveAnswer(token, attempt.id, q, saved);
+        closed = saveStatus === 422;
+        if (SAVE_DEFERS_STATUS && saveStatus === 200) lastObserved = Math.max(lastObserved, sentAt);
         if (closed) failIfClosedEarly(deadline, serverNow(), 'answer save');
         nextAnswer = now + between(ANSWER_GAP_MIN, ANSWER_GAP_MAX) * 1000;
       } else if (now >= nextIntegrity) {
@@ -287,9 +297,10 @@ export default function (data) {
         if (closed) failIfClosedEarly(deadline, serverNow(), 'integrity event');
         nextIntegrity = now + expo(INTEGRITY_PER_MIN) * 1000;
       } else if (now >= nextPing) {
-        if (now - lastStatus >= STATUS_GAP_S * 1000) {
+        if (now - lastObserved >= STATUS_GAP_S * 1000 || now - lastStatus >= STATUS_MAX_GAP_S * 1000) {
           const s = statusCheck(token, attempt.id);
           lastStatus = now;
+          lastObserved = now;
           closed = !!s && s.status !== undefined && s.status !== 'in_progress';
           if (closed) failIfClosedEarly(deadline, serverNow(), 'status check');
         } else {

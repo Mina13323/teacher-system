@@ -37,6 +37,9 @@ export const HEARTBEAT_JITTER_RATIO = 0.2;
  * deadline together, so that would add requests at the busiest moment while
  * the client already locks itself at the deadline. After a lost connection
  * comes back, the next beat (at most ~18 s later, jittered) is a status check.
+ *
+ * The gap is counted from the last time the attempt's state was confirmed:
+ * an answer save the server confirmed counts too (statusCheckGate.js).
  */
 export const STATUS_CHECK_MIN_GAP_MS = 115_000;
 
