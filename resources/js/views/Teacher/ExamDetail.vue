@@ -920,19 +920,22 @@ function attemptStatusLabel(statusOrAttempt) {
 
             <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
-                <!-- Task toolbar: group, search, export -->
-                <div class="flex flex-col lg:flex-row lg:items-center gap-3 rounded-xl border border-ink-100 bg-white p-3.5 shadow-sm">
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 min-w-0">
+                <!-- Task toolbar: view + search on the first row, filters + actions on the
+                     second. One row could not hold all of them: the search group shrank
+                     to nothing and the view toggle spilled over the filters. -->
+                <div class="flex flex-col gap-3 rounded-xl border border-ink-100 bg-white p-3.5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
                         <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm shrink-0 w-full sm:w-auto">
                             <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
                             <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
                         </div>
 
                         <!-- Search Input for Student Name, Code, Email, Phone -->
-                        <div class="relative flex-1 min-w-0">
+                        <div class="relative flex-1 min-w-0 sm:min-w-[14rem]">
                             <input
                                 v-model="studentSearch"
                                 type="search"
+                                :aria-label="$t('exams.searchStudentsPlaceholder')"
                                 class="w-full rounded-lg border border-ink-200 ps-9 pe-8 py-2 text-sm focus:border-terracotta-500 focus:outline-none focus:ring-1 focus:ring-terracotta-500"
                                 :placeholder="$t('exams.searchStudentsPlaceholder')"
                                 @input="onStudentSearch"
@@ -951,23 +954,25 @@ function attemptStatusLabel(statusOrAttempt) {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2.5 w-full sm:w-auto">
-                        <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="col-span-2 sm:col-span-1 w-full sm:w-28" @update:model-value="onAttemptFilterChange" />
-                    </div>
+                    <div class="flex flex-col lg:flex-row lg:flex-wrap lg:items-end lg:justify-between gap-3">
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2.5 w-full sm:w-auto">
+                            <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                            <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                            <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="col-span-2 sm:col-span-1 w-full sm:w-28" @update:model-value="onAttemptFilterChange" />
+                        </div>
 
-                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-2 w-full lg:w-auto pt-2 border-t border-ink-100 lg:border-t-0 lg:pt-0">
-                        <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
-                            {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
-                        </AppButton>
-                        <router-link v-if="essayCount > 0" :to="`/teacher/exams/${examId}/grading`" class="col-span-2 sm:col-span-1">
-                            <AppButton variant="primary" size="sm" class="w-full justify-center text-center">📝 {{ $t('grading.openWorkspace') }}</AppButton>
-                        </router-link>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center sm:justify-end gap-2 w-full lg:w-auto pt-2 border-t border-ink-100 lg:border-t-0 lg:pt-0">
+                            <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
+                                {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
+                            </AppButton>
+                            <router-link v-if="essayCount > 0" :to="`/teacher/exams/${examId}/grading`" class="col-span-2 sm:col-span-1">
+                                <AppButton variant="primary" size="sm" class="w-full justify-center text-center">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                            </router-link>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                        </div>
                     </div>
                     <p
                         v-if="exportJob"
