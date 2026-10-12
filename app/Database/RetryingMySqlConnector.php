@@ -4,6 +4,7 @@ namespace App\Database;
 
 use Illuminate\Database\Connectors\MySqlConnector;
 use Illuminate\Support\Facades\Log;
+use PDO;
 use Throwable;
 
 /**
@@ -39,7 +40,7 @@ class RetryingMySqlConnector extends MySqlConnector
         $waitedMs = 0;
         for ($retry = 0; ; $retry++) {
             try {
-                return parent::createConnection($dsn, $config, $options);
+                return $this->withoutLeftoverTransaction(parent::createConnection($dsn, $config, $options), $options);
             } catch (Throwable $e) {
                 if (! ConnectionRefusal::matches($e)) {
                     throw $e;
@@ -72,6 +73,24 @@ class RetryingMySqlConnector extends MySqlConnector
                 $waitedMs += $delayMs;
             }
         }
+    }
+
+    /**
+     * A persistent connection (DB_PERSISTENT) is reused by the next request
+     * on the same PHP worker. PHP normally rolls back an open transaction
+     * when a request ends, but if one is still open here, it belongs to a
+     * request that died mid-way: roll it back (releasing its row locks) so
+     * this request never runs inside, or commits, someone else's work.
+     * pdo_mysql reads this from the server status flags, without a query.
+     */
+    protected function withoutLeftoverTransaction(PDO $pdo, array $options): PDO
+    {
+        if (! empty($options[PDO::ATTR_PERSISTENT]) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+            Log::warning('db.connect.leftover_transaction', ['error_category' => 'DB_PERSISTENT_ROLLBACK']);
+        }
+
+        return $pdo;
     }
 
     /** base × 3^retry, ±50% jitter. */

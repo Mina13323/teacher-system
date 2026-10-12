@@ -160,6 +160,36 @@ class RetryingMySqlConnectorTest extends TestCase
         $this->assertSame(1100, $config['connect_retry_window_ms']);
     }
 
+    public function test_a_reused_persistent_connection_never_carries_an_open_transaction(): void
+    {
+        Log::spy();
+        $connector = $this->connector(['open-transaction']);
+
+        $pdo = $connector->createConnection('mysql:host=x', $this->config(), [PDO::ATTR_PERSISTENT => true]);
+
+        $this->assertFalse($pdo->inTransaction());
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($m, $c) => $m === 'db.connect.leftover_transaction' && $c['error_category'] === 'DB_PERSISTENT_ROLLBACK');
+    }
+
+    public function test_a_fresh_connection_is_left_alone(): void
+    {
+        Log::spy();
+        $pdo = $this->connector(['ok'])->createConnection('mysql:host=x', $this->config(), [PDO::ATTR_PERSISTENT => true]);
+        $this->assertFalse($pdo->inTransaction());
+
+        // Not persistent: the connector does not touch the connection at all.
+        $plain = $this->connector(['open-transaction'])->createConnection('mysql:host=x', $this->config(), []);
+        $this->assertTrue($plain->inTransaction());
+        Log::shouldNotHaveReceived('warning');
+    }
+
+    public function test_persistent_connections_are_off_unless_enabled(): void
+    {
+        $options = config('database.connections.mysql.options');
+
+        $this->assertArrayNotHasKey(PDO::ATTR_PERSISTENT, $options);
+    }
+
     public function test_the_mysql_driver_uses_the_retrying_connector(): void
     {
         $this->assertInstanceOf(RetryingMySqlConnector::class, $this->app->make('db.connector.mysql'));
@@ -184,7 +214,13 @@ class FakeConnector extends RetryingMySqlConnector
             throw $outcome;
         }
 
-        return new PDO('sqlite::memory:');
+        $pdo = new PDO('sqlite::memory:');
+        if ($outcome === 'open-transaction') {
+            // A reused persistent connection whose last request died mid-transaction.
+            $pdo->beginTransaction();
+        }
+
+        return $pdo;
     }
 
     protected function pause(int $ms): void

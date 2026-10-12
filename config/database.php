@@ -59,6 +59,15 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (defined('Pdo\Mysql::ATTR_SSL_CA') ? \Pdo\Mysql::ATTR_SSL_CA : (defined('PDO::MYSQL_ATTR_SSL_CA') ? @PDO::MYSQL_ATTR_SSL_CA : 1012)) => env('MYSQL_ATTR_SSL_CA'),
+                // Opt-in (DB_PERSISTENT=true, off by default): each PHP worker
+                // keeps its MySQL connection between requests instead of
+                // opening a new one per request, which avoids the host's
+                // per-second limit on NEW connections ([2002] Operation not
+                // permitted). Each idle worker then holds one connection, so
+                // the account's PHP process limit must stay under
+                // max_user_connections. A transaction left open by a request
+                // that died is rolled back before reuse (RetryingMySqlConnector).
+                PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', false),
             ]) : [],
             // Retries of a REFUSED new connection only (see
             // App\Database\RetryingMySqlConnector). Queries are never retried.
