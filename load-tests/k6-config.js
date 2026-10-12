@@ -67,7 +67,18 @@ function intEnv(name, dflt) {
 }
 
 function resolveVus() {
-  if (__ENV.STAGE !== undefined && __ENV.STAGE !== '') {
+  // STAGE wins over VUS, and k6 also passes the shell's environment variables
+  // to the script, so a STAGE left in the shell from an earlier run silently
+  // overrides --env VUS (and the ramp spacing with it). Refuse to guess.
+  const hasStage = __ENV.STAGE !== undefined && __ENV.STAGE !== '';
+  const hasVus = __ENV.VUS !== undefined && __ENV.VUS !== '';
+  if (hasStage && hasVus && parseInt(__ENV.STAGE, 10) !== parseInt(__ENV.VUS, 10)) {
+    throw new Error(
+      `Both STAGE=${__ENV.STAGE} and VUS=${__ENV.VUS} are set. Use one: clear the other ` +
+        '(PowerShell: Remove-Item Env:\\STAGE, Env:\\VUS -ErrorAction SilentlyContinue).'
+    );
+  }
+  if (hasStage) {
     const stage = parseInt(__ENV.STAGE, 10);
     if (ALLOWED_STAGES.indexOf(stage) === -1) {
       throw new Error(`STAGE must be one of ${ALLOWED_STAGES.join(', ')} (got "${__ENV.STAGE}")`);
