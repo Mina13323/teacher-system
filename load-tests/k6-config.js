@@ -251,7 +251,7 @@ export function request(method, path, body, token, endpoint, trend) {
   // machine and the host): resent once where that is harmless (see
   // isTransportRetryable), counted in transport_retried / _recovered. A
   // second failure is critical. TRANSPORT_RETRY=0 aborts on the first one.
-  if (TRANSPORT_RETRY && isTransportRetryable({ status: res.status, endpoint, path })) {
+  if (TRANSPORT_RETRY && isTransportRetryable({ status: res.status, endpoint, path, errorCode: res.error_code })) {
     m.transportRetried.add(1);
     sleep(1 + Math.random());
     res = send();

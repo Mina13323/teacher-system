@@ -8,6 +8,7 @@ import {
     examDurationProblem,
     FINAL_STATUSES,
     isBusyRetryable,
+    isDialFailure,
     isTransportRetryable,
     mismatchedAnswers,
     startedAttemptProblem,
@@ -236,5 +237,21 @@ describe('isTransportRetryable', () => {
   it('leaves every answered request alone', () => {
     expect(isTransportRetryable({ status: 500, endpoint: 'answer', path: '/x' })).toBe(false);
     expect(isTransportRetryable({ status: 200, endpoint: 'answer', path: '/x' })).toBe(false);
+  });
+});
+
+describe('dial failures', () => {
+  it('recognizes a connection that was never established (k6 1210-1219)', () => {
+    expect(isDialFailure(1211)).toBe(true); // dial timeout
+    expect(isDialFailure(1212)).toBe(true); // connection refused
+    expect(isDialFailure(1050)).toBe(false); // request timeout: it may have been sent
+    expect(isDialFailure(1220)).toBe(false); // reset by peer
+    expect(isDialFailure(undefined)).toBe(false);
+  });
+
+  it('resends even an exam start or a transfer when nothing was sent', () => {
+    expect(isTransportRetryable({ status: 0, endpoint: 'start', path: '/student/exams/2/start', errorCode: 1211 })).toBe(true);
+    expect(isTransportRetryable({ status: 0, endpoint: 'login', path: '/auth/session/transfer', errorCode: 1210 })).toBe(true);
+    expect(isTransportRetryable({ status: 0, endpoint: 'start', path: '/student/exams/2/start', errorCode: 1050 })).toBe(false);
   });
 });

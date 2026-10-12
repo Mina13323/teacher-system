@@ -97,7 +97,7 @@ instant spike; concurrency then builds up to roughly arrival-rate × flow durati
 | `THINK_SCALE` | `1` | Multiplier for think time; `0` = no pauses (stress), `2` = slower users |
 | `LOGIN_MAX_RETRIES` | `0` | Retries on HTTP 429 at login (see below) |
 | `BUSY_RETRY` | `1` | Resend a `503 service_busy` (MySQL refused a new connection; nothing ran) once after `Retry-After`, as the exam screen does. Counted in `db_busy_retried` / `db_busy_recovered` and still in `http_5xx`; only a resend that also fails aborts. `0` = abort on the first one |
-| `TRANSPORT_RETRY` | `1` | Resend a request that got no HTTP response (timeout, dropped connection) once after 1–2 s, except an exam start or a device-transfer confirmation. Counted in `transport_retried` / `transport_recovered`; only a resend that also fails aborts. `0` = abort on the first one |
+| `TRANSPORT_RETRY` | `1` | Resend a request that got no HTTP response (timeout, dropped connection) once after 1–2 s, except an exam start or a device-transfer confirmation (those too when the connection itself failed, k6 error 1210–1219, since nothing was sent). Counted in `transport_retried` / `transport_recovered`; only a resend that also fails aborts. `0` = abort on the first one |
 | `ANSWERS_PER_ATTEMPT`, `HEARTBEAT_EVERY` | `8`, `2` | student-flow: saves per attempt; heartbeat after every Nth save (+1 before submit) |
 | `DOUBLE_START` | `1` | start storm: two simultaneous starts per student (`0` = single) |
 | `ANSWERS_PER_VU`, `ANSWER_GAP_MS`, `SUBMIT` | `20`, `250`, `1` | answer storm: saves per VU (max 90), gap between saves, submit at the end |

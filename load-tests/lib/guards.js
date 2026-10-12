@@ -54,16 +54,28 @@ export function isBusyRetryable({ status, body }) {
  * connection). The server may or may not have run it, so it is resent once
  * only where running it twice is harmless, as the exam screen retries: an
  * answer save stores the same selection again, a status check or event is
- * read/deduplicated, a submit is answered 422 once final. Not resent: the
+ * read/deduplicated, a submit is answered 422 once final. When the
+ * connection itself failed (isDialFailure) nothing was sent and any request
+ * is resent. Otherwise not resent: the
  * exam start (a second start would return the already-open attempt and look
  * like a dirty fixture) and the device-transfer confirmation (its token works
  * once).
  */
-export function isTransportRetryable({ status, endpoint, path }) {
+export function isTransportRetryable({ status, endpoint, path, errorCode }) {
   if (status !== 0) return false;
+  // k6 1210-1219: the TCP connection was never established (dial error,
+  // timeout, refused), so the request was never sent: resending is safe for
+  // every request, the exam start and the transfer included.
+  if (isDialFailure(errorCode)) return true;
   if (endpoint === 'start') return false;
   if (typeof path === 'string' && path.indexOf('/auth/session/transfer') === 0) return false;
   return true;
+}
+
+/** k6 error codes 1210-1219: a TCP dial failure (no connection, so nothing was sent). */
+export function isDialFailure(errorCode) {
+  const n = Number(errorCode);
+  return Number.isInteger(n) && n >= 1210 && n <= 1219;
 }
 
 /** Seconds to wait before that resend: the server's Retry-After, kept within 1..10. */
