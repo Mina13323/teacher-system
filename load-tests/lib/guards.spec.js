@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
     ABORT_ON_ANY,
+    busyRetryWaitSeconds,
     closedTooEarly,
     criticalSignal,
     examDurationProblem,
     FINAL_STATUSES,
+    isBusyRetryable,
     mismatchedAnswers,
     startedAttemptProblem,
     submitProblem,
@@ -189,4 +191,30 @@ describe('k6 wiring (static checks of the scripts that k6 itself runs)', () => {
         expect(order.every((i) => i > -1)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);
     });
+});
+
+describe('isBusyRetryable', () => {
+  const busy = JSON.stringify({ success: false, message: 'The service is temporarily busy.', code: 'service_busy' });
+
+  it('allows one resend for the app\'s refused-connection 503 only', () => {
+    expect(isBusyRetryable({ status: 503, body: busy })).toBe(true);
+  });
+
+  it('does not resend any other failure', () => {
+    expect(isBusyRetryable({ status: 500, body: busy })).toBe(false);
+    expect(isBusyRetryable({ status: 503, body: JSON.stringify({ success: false, message: 'Maintenance' }) })).toBe(false);
+    expect(isBusyRetryable({ status: 503, body: '<html>Service Unavailable</html>' })).toBe(false);
+    expect(isBusyRetryable({ status: 0, body: '' })).toBe(false);
+    expect(isBusyRetryable({ status: 200, body: busy })).toBe(false);
+  });
+});
+
+describe('busyRetryWaitSeconds', () => {
+  it('follows Retry-After within 1..10 seconds', () => {
+    expect(busyRetryWaitSeconds('5')).toBe(5);
+    expect(busyRetryWaitSeconds('60')).toBe(10);
+    expect(busyRetryWaitSeconds('0')).toBe(1);
+    expect(busyRetryWaitSeconds(undefined)).toBe(1);
+    expect(busyRetryWaitSeconds('soon')).toBe(1);
+  });
 });

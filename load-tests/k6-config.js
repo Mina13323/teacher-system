@@ -4,7 +4,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import exec from 'k6/execution';
-import { ABORT_ON_ANY, criticalSignal } from './lib/guards.js';
+import { ABORT_ON_ANY, busyRetryWaitSeconds, criticalSignal, isBusyRetryable } from './lib/guards.js';
 
 // ---------------------------------------------------------------------------
 // HARD STAGING GUARD. Runs in the k6 init context, i.e. before any VU or HTTP
@@ -98,6 +98,8 @@ if (START_INDEX < 1 || START_INDEX + VUS - 1 > MAX_FIXTURE_STUDENT) {
 }
 export const RAMP_SECONDS = intEnv('RAMP_SECONDS', DEFAULT_RAMP[VUS] || Math.max(10, VUS));
 // 0 disables think time (pure stress); 1 = realistic; 2 = twice as slow.
+// 1 (default): resend a 503 service_busy once, as the app does; 0: abort on the first one.
+export const BUSY_RETRY = intEnv('BUSY_RETRY', 1) !== 0;
 export const THINK_SCALE = parseFloat(__ENV.THINK_SCALE === undefined ? '1' : __ENV.THINK_SCALE);
 // Login is throttled to 10/min/IP by the app. Retry on 429 honouring Retry-After.
 export const LOGIN_MAX_RETRIES = intEnv('LOGIN_MAX_RETRIES', 0);
@@ -157,6 +159,9 @@ export const m = {
   answersSaved: new Counter('answers_saved'),
   fixtureNotClean: new Counter('fixture_not_clean'),
   criticalFailures: new Counter('critical_failures'),
+  // 503 service_busy (refused new DB connection) resent once, and how many of those resends succeeded.
+  busyRetried: new Counter('db_busy_retried'),
+  busyRecovered: new Counter('db_busy_recovered'),
 };
 
 /**
@@ -215,14 +220,28 @@ export function request(method, path, body, token, endpoint, trend) {
   assertStagingUrl(BASE_URL);
   const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = http.request(method, `${API}${path}`, body ? JSON.stringify(body) : null, {
-    headers,
-    timeout: '30s',
-    // `name` collapses /attempts/123/... into one series; `endpoint` is the filter tag.
-    tags: { endpoint, name: `${method} ${path.replace(/\/\d+/g, '/:id')}` },
-  });
-  m.http5xx.add(res.status >= 500);
-  if (trend) trend.add(res.timings.duration);
+  const send = () => {
+    const r = http.request(method, `${API}${path}`, body ? JSON.stringify(body) : null, {
+      headers,
+      timeout: '30s',
+      // `name` collapses /attempts/123/... into one series; `endpoint` is the filter tag.
+      tags: { endpoint, name: `${method} ${path.replace(/\/\d+/g, '/:id')}` },
+    });
+    m.http5xx.add(r.status >= 500);
+    if (trend) trend.add(r.timings.duration);
+    return r;
+  };
+  let res = send();
+  // A refused NEW database connection (503 service_busy) ran nothing, so it is
+  // resent once after Retry-After, as the exam screen does. Every 503 still
+  // counts in http_5xx; only one that also fails the resend is critical.
+  // BUSY_RETRY=0 restores the strict behaviour (abort on the first one).
+  if (BUSY_RETRY && isBusyRetryable({ status: res.status, body: res.body })) {
+    m.busyRetried.add(1);
+    sleep(busyRetryWaitSeconds(res.headers['Retry-After']) + Math.random());
+    res = send();
+    if (res.status < 400) m.busyRecovered.add(1);
+  }
   // Critical signals end the run immediately (5xx, transport failure, SQLSTATE
   // 2002 / connection refused, unexpected 401). See lib/guards.js.
   const critical = criticalSignal({ status: res.status, body: res.body, endpoint });

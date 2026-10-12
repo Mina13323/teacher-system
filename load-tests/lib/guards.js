@@ -34,6 +34,29 @@ export function criticalSignal({ status, body, endpoint }) {
 }
 
 /**
+ * A 503 the app sends when MySQL refused a NEW connection ("service_busy").
+ * The server sends it only before any statement ran, so resending the same
+ * request cannot repeat a write; the exam screen resends answer saves after
+ * such a failure too. One resend is allowed before it counts as critical.
+ */
+export function isBusyRetryable({ status, body }) {
+  if (status !== 503 || typeof body !== 'string' || body.length > 20000) return false;
+  try {
+    const parsed = JSON.parse(body);
+    return !!parsed && parsed.code === 'service_busy';
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Seconds to wait before that resend: the server's Retry-After, kept within 1..10. */
+export function busyRetryWaitSeconds(retryAfter) {
+  const n = parseInt(retryAfter, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 10);
+}
+
+/**
  * The start response must describe one fresh, open attempt for the right exam.
  * @returns {string|null}
  */
