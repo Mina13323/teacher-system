@@ -132,6 +132,34 @@ class RetryingMySqlConnectorTest extends TestCase
         }
     }
 
+    public function test_the_last_retry_lands_in_a_later_second(): void
+    {
+        Log::spy();
+        $refused = new PDOException(self::REFUSED);
+
+        foreach (range(1, 20) as $_) { // the backoff is jittered: check many draws
+            $connector = $this->connector([$refused, $refused, $refused, 'ok']);
+            $pdo = $connector->createConnection('mysql:host=x', $this->config(3, 2000) + ['connect_retry_window_ms' => 1100], []);
+
+            $this->assertInstanceOf(PDO::class, $pdo);
+            $this->assertSame(4, $connector->connects);
+            $this->assertGreaterThanOrEqual(1100, array_sum($connector->pauses));
+            $this->assertLessThanOrEqual(2000, array_sum($connector->pauses));
+            // Only the last wait is stretched; the first two keep their backoff.
+            $this->assertLessThanOrEqual(150, $connector->pauses[0]);
+            $this->assertLessThanOrEqual(450, $connector->pauses[1]);
+        }
+    }
+
+    public function test_the_shipped_defaults_retry_past_one_second_within_two(): void
+    {
+        $config = config('database.connections.mysql');
+
+        $this->assertSame(3, $config['connect_retries']);
+        $this->assertSame(2000, $config['connect_retry_budget_ms']);
+        $this->assertSame(1100, $config['connect_retry_window_ms']);
+    }
+
     public function test_the_mysql_driver_uses_the_retrying_connector(): void
     {
         $this->assertInstanceOf(RetryingMySqlConnector::class, $this->app->make('db.connector.mysql'));

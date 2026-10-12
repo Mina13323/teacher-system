@@ -62,10 +62,13 @@ return [
             ]) : [],
             // Retries of a REFUSED new connection only (see
             // App\Database\RetryingMySqlConnector). Queries are never retried.
-            // Set DB_CONNECT_RETRIES=0 to turn this off.
-            'connect_retries' => (int) env('DB_CONNECT_RETRIES', 2),
+            // Set DB_CONNECT_RETRIES=0 to turn this off. The last retry waits
+            // until 1.1 s after the first refusal, past the host's
+            // per-second limit on new connections; at most ~2 s in total.
+            'connect_retries' => (int) env('DB_CONNECT_RETRIES', 3),
             'connect_retry_base_ms' => 100,
-            'connect_retry_budget_ms' => 1000,
+            'connect_retry_budget_ms' => 2000,
+            'connect_retry_window_ms' => 1100,
         ],
 
         'mariadb' => [

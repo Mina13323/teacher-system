@@ -15,9 +15,14 @@ use Throwable;
  * submission or a grading run. Queries on an open connection are never
  * retried here.
  *
- * Limits: at most `connect_retries` extra attempts (default 2), exponential
- * backoff with ±50% jitter (about 50–150 ms, then 150–450 ms), and a total
- * wait budget (`connect_retry_budget_ms`, default 1000 ms). Each retry is
+ * Limits: at most `connect_retries` extra attempts (at most 3), exponential
+ * backoff with ±50% jitter (about 50–150 ms, then 150–450 ms, then
+ * 450–1350 ms), and a total wait budget (`connect_retry_budget_ms`).
+ *
+ * The host's refusal ([2002] Operation not permitted) is a limit on new
+ * connections per second, so retries inside the same second meet the same
+ * limit. `connect_retry_window_ms` makes the LAST retry wait until at least
+ * that long after the first refusal, so it lands in a later second. Each retry is
  * logged as DB_CONNECT_TRANSIENT, and a refusal that outlasts the retries is
  * logged as DB_CONNECT_FINAL and rethrown unchanged, so the request still
  * fails explicitly (rendered as a 503).
@@ -29,6 +34,7 @@ class RetryingMySqlConnector extends MySqlConnector
         $maxRetries = max(0, min(3, (int) ($config['connect_retries'] ?? 0)));
         $baseMs = max(1, (int) ($config['connect_retry_base_ms'] ?? 100));
         $budgetMs = max(0, (int) ($config['connect_retry_budget_ms'] ?? 1000));
+        $windowMs = max(0, (int) ($config['connect_retry_window_ms'] ?? 0));
 
         $waitedMs = 0;
         for ($retry = 0; ; $retry++) {
@@ -40,6 +46,9 @@ class RetryingMySqlConnector extends MySqlConnector
                 }
 
                 $delayMs = $this->backoffMs($retry, $baseMs);
+                if ($windowMs > 0 && $retry === $maxRetries - 1) {
+                    $delayMs = max($delayMs, $windowMs - $waitedMs);
+                }
 
                 if ($retry >= $maxRetries || $waitedMs + $delayMs > $budgetMs) {
                     Log::error('db.connect.failed', [
