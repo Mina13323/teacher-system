@@ -49,6 +49,23 @@ export function isBusyRetryable({ status, body }) {
   }
 }
 
+/**
+ * A request that got no HTTP response at all (status 0: timeout, dropped
+ * connection). The server may or may not have run it, so it is resent once
+ * only where running it twice is harmless, as the exam screen retries: an
+ * answer save stores the same selection again, a status check or event is
+ * read/deduplicated, a submit is answered 422 once final. Not resent: the
+ * exam start (a second start would return the already-open attempt and look
+ * like a dirty fixture) and the device-transfer confirmation (its token works
+ * once).
+ */
+export function isTransportRetryable({ status, endpoint, path }) {
+  if (status !== 0) return false;
+  if (endpoint === 'start') return false;
+  if (typeof path === 'string' && path.indexOf('/auth/session/transfer') === 0) return false;
+  return true;
+}
+
 /** Seconds to wait before that resend: the server's Retry-After, kept within 1..10. */
 export function busyRetryWaitSeconds(retryAfter) {
   const n = parseInt(retryAfter, 10);

@@ -8,6 +8,7 @@ import {
     examDurationProblem,
     FINAL_STATUSES,
     isBusyRetryable,
+    isTransportRetryable,
     mismatchedAnswers,
     startedAttemptProblem,
     submitProblem,
@@ -216,5 +217,24 @@ describe('busyRetryWaitSeconds', () => {
     expect(busyRetryWaitSeconds('0')).toBe(1);
     expect(busyRetryWaitSeconds(undefined)).toBe(1);
     expect(busyRetryWaitSeconds('soon')).toBe(1);
+  });
+});
+
+describe('isTransportRetryable', () => {
+  it('resends a request that got no response where running it twice is harmless', () => {
+    expect(isTransportRetryable({ status: 0, endpoint: 'answer', path: '/student/attempts/9/answers' })).toBe(true);
+    expect(isTransportRetryable({ status: 0, endpoint: 'integrity', path: '/student/attempts/9/integrity-events' })).toBe(true);
+    expect(isTransportRetryable({ status: 0, endpoint: 'submit', path: '/student/attempts/9/submit' })).toBe(true);
+    expect(isTransportRetryable({ status: 0, endpoint: 'login', path: '/auth/login' })).toBe(true);
+  });
+
+  it('never resends an exam start or a device-transfer confirmation', () => {
+    expect(isTransportRetryable({ status: 0, endpoint: 'start', path: '/student/exams/3/start' })).toBe(false);
+    expect(isTransportRetryable({ status: 0, endpoint: 'login', path: '/auth/session/transfer' })).toBe(false);
+  });
+
+  it('leaves every answered request alone', () => {
+    expect(isTransportRetryable({ status: 500, endpoint: 'answer', path: '/x' })).toBe(false);
+    expect(isTransportRetryable({ status: 200, endpoint: 'answer', path: '/x' })).toBe(false);
   });
 });

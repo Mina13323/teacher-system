@@ -4,7 +4,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import exec from 'k6/execution';
-import { ABORT_ON_ANY, busyRetryWaitSeconds, criticalSignal, isBusyRetryable } from './lib/guards.js';
+import { ABORT_ON_ANY, busyRetryWaitSeconds, criticalSignal, isBusyRetryable, isTransportRetryable } from './lib/guards.js';
 
 // ---------------------------------------------------------------------------
 // HARD STAGING GUARD. Runs in the k6 init context, i.e. before any VU or HTTP
@@ -100,6 +100,8 @@ export const RAMP_SECONDS = intEnv('RAMP_SECONDS', DEFAULT_RAMP[VUS] || Math.max
 // 0 disables think time (pure stress); 1 = realistic; 2 = twice as slow.
 // 1 (default): resend a 503 service_busy once, as the app does; 0: abort on the first one.
 export const BUSY_RETRY = intEnv('BUSY_RETRY', 1) !== 0;
+// 1 (default): resend a request with no HTTP response once where harmless; 0: abort on the first one.
+export const TRANSPORT_RETRY = intEnv('TRANSPORT_RETRY', 1) !== 0;
 export const THINK_SCALE = parseFloat(__ENV.THINK_SCALE === undefined ? '1' : __ENV.THINK_SCALE);
 // Login is throttled to 10/min/IP by the app. Retry on 429 honouring Retry-After.
 export const LOGIN_MAX_RETRIES = intEnv('LOGIN_MAX_RETRIES', 0);
@@ -162,6 +164,9 @@ export const m = {
   // 503 service_busy (refused new DB connection) resent once, and how many of those resends succeeded.
   busyRetried: new Counter('db_busy_retried'),
   busyRecovered: new Counter('db_busy_recovered'),
+  // Requests with no HTTP response resent once, and how many of those resends succeeded.
+  transportRetried: new Counter('transport_retried'),
+  transportRecovered: new Counter('transport_recovered'),
 };
 
 /**
@@ -241,6 +246,16 @@ export function request(method, path, body, token, endpoint, trend) {
     sleep(busyRetryWaitSeconds(res.headers['Retry-After']) + Math.random());
     res = send();
     if (res.status < 400) m.busyRecovered.add(1);
+  }
+  // No HTTP response at all (a timeout or a dropped connection between this
+  // machine and the host): resent once where that is harmless (see
+  // isTransportRetryable), counted in transport_retried / _recovered. A
+  // second failure is critical. TRANSPORT_RETRY=0 aborts on the first one.
+  if (TRANSPORT_RETRY && isTransportRetryable({ status: res.status, endpoint, path })) {
+    m.transportRetried.add(1);
+    sleep(1 + Math.random());
+    res = send();
+    if (res.status !== 0 && res.status < 400) m.transportRecovered.add(1);
   }
   // Critical signals end the run immediately (5xx, transport failure, SQLSTATE
   // 2002 / connection refused, unexpected 401). See lib/guards.js.
