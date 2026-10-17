@@ -138,6 +138,7 @@ const blocked = computed(() => expired.value || timeUp.value || attempt.value?.s
  * the student cannot switch monitoring off from the client. Violations WARN
  * (server-side threshold); only repeated confirmed violations end the attempt.
  */
+const isHomework = computed(() => attempt.value?.exam_type === 'homework');
 const integrityRules = computed(() => attempt.value?.integrity_rules || null);
 const terminatedByIntegrity = ref(false);
 const warningCount = ref(0);
@@ -781,6 +782,10 @@ function fmt(ms) {
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const s = total % 60;
+    if (h >= 24) {
+        // A homework can stay open for days.
+        return `${t('homework.daysLeft', { n: Math.floor(h / 24) })} ${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
     if (h > 0) {
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
@@ -1404,7 +1409,9 @@ onBeforeUnmount(() => {
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ink-100 bg-white px-3 py-3 shadow-sm sm:px-5 sm:py-4">
                 <div class="min-w-0 flex-1">
                     <h1 class="break-words text-base font-semibold text-ink-900 sm:text-lg" dir="auto">{{ attempt.exam_title }}</h1>
-                    <p class="text-xs text-ink-400">{{ $t('common.attemptN', { n: attempt.attempt_number }) }}</p>
+                    <p class="text-xs text-ink-400">
+                        <span v-if="isHomework">{{ $t('homework.label') }} · </span>{{ $t('common.attemptN', { n: attempt.attempt_number }) }}
+                    </p>
                 </div>
                 <div class="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
                     <AppBadge :tone="timeLeft < 60000 ? 'danger' : 'primary'">⏱ {{ fmt(timeLeft) }}</AppBadge>
@@ -1425,7 +1432,7 @@ onBeforeUnmount(() => {
 
             <!-- Proctoring notice: states what is monitored and what ends the attempt -->
             <div
-                v-if="integrityRules && !blocked"
+                v-if="integrityRules && !isHomework && !blocked"
                 class="rounded-xl border px-4 py-3 text-sm"
                 :class="integrityRules.terminate_on_violation ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'"
                 role="status"

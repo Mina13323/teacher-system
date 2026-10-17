@@ -27,6 +27,7 @@ class CreateExamRequest extends FormRequest
     {
         return [
             'title' => ['required', 'string', 'max:255'],
+            'type' => ['nullable', 'in:exam,homework'],
             'lesson_id' => ['nullable', 'integer', 'exists:lessons,id'],
             'unit_ids' => ['nullable', 'array', 'min:1'],
             'unit_ids.*' => ['integer', 'distinct', 'exists:units,id'],
@@ -55,6 +56,12 @@ class CreateExamRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             ExamWindowRules::validate($this->all(), $validator);
+
+            // A homework opens and closes at set times: both are required.
+            if ($this->input('type') === \App\Models\Exam::TYPE_HOMEWORK
+                && (! $this->filled('starts_at') || ! $this->filled('ends_at'))) {
+                $validator->errors()->add('ends_at', 'A homework needs an open time and a close time.');
+            }
 
             /** @var Course $course */
             $course = $this->route('course');

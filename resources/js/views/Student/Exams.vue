@@ -9,7 +9,7 @@ import Pagination from '@/components/ui/Pagination.vue';
 import Icon from '@/components/ui/Icon.vue';
 
 const { loading, error, data, run } = useAsync(async (page = 1) => {
-    const res = await student.exams({ per_page: 10, page });
+    const res = await student.exams({ per_page: 10, page, type: 'exam' });
     return toList(res);
 });
 

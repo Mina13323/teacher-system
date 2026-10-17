@@ -30,6 +30,9 @@ class ExamController extends Controller
         $exams = Exam::query()
             ->published()
             ->whereIn('course_id', $courseIds)
+            // ?type=exam|homework lists one kind (the Exams and Homework
+            // pages); no type keeps the previous behaviour (both).
+            ->when(in_array($request->query('type'), Exam::TYPES, true), fn ($query) => $query->where('type', $request->query('type')))
             ->with('course')
             // `attempts_count` is this student's own attempts. It used to count
             // every student's attempts on each listed exam, which cost a

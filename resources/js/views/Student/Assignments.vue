@@ -9,6 +9,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import Icon from '@/components/ui/Icon.vue';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
+import Pagination from '@/components/ui/Pagination.vue';
 
 /**
  * Student assignments (P2): one screen for the whole loop —
@@ -20,6 +21,9 @@ const toast = useToast();
 
 const loading = ref(true);
 const items = ref([]);
+// Homework: questions like an exam, open between two set times, no proctoring.
+const homework = ref([]);
+const homeworkMeta = ref(null);
 const expanded = ref(null);
 const detail = ref(null); // { assignment, my_submission }
 const detailBusy = ref(false);
@@ -34,10 +38,27 @@ function fmtDate(value) {
     return Number.isNaN(dt.getTime()) ? value : dt.toLocaleString();
 }
 
+function homeworkState(h) {
+    const now = Date.now();
+    if (h.starts_at && new Date(h.starts_at).getTime() > now) return 'upcoming';
+    if (h.ends_at && new Date(h.ends_at).getTime() <= now) return 'closed';
+    return 'open';
+}
+const homeworkTone = { open: 'success', upcoming: 'neutral', closed: 'warning' };
+
+async function loadHomework(page = 1) {
+    const res = toList(await student.exams({ per_page: 10, page, type: 'homework' }));
+    homework.value = res.items;
+    homeworkMeta.value = res.meta;
+}
+
 async function load() {
     loading.value = true;
     try {
-        const res = toList(await student.assignments({ per_page: 30 }));
+        const [res] = await Promise.all([
+            student.assignments({ per_page: 30 }).then(toList),
+            loadHomework(1),
+        ]);
         items.value = res.items;
     } catch (e) {
         toast.error(e.message);
@@ -110,9 +131,29 @@ onMounted(load);
         <h1 class="text-2xl font-bold text-ink-900">{{ $t('nav.assignments') }}</h1>
 
         <LoadingSpinner v-if="loading" />
-        <EmptyState v-else-if="!items.length" icon="clipboard" :title="$t('assignments.emptyTitle')" :message="$t('assignments.emptyMessage')" />
+        <EmptyState v-else-if="!items.length && !homework.length" icon="clipboard" :title="$t('assignments.emptyTitle')" :message="$t('assignments.emptyMessage')" />
 
-        <div v-else class="space-y-3">
+        <div v-if="!loading && homework.length" class="space-y-3">
+            <router-link v-for="h in homework" :key="h.id" :to="`/student/exams/${h.id}`" class="group block">
+                <div class="flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-white px-4 py-3.5 shadow-sm transition group-hover:shadow-md">
+                    <Icon name="clipboard" :size="20" class="text-terracotta-500" />
+                    <div class="min-w-0 flex-1">
+                        <p class="font-medium text-ink-800 group-hover:text-terracotta-700" dir="auto">{{ h.title }}</p>
+                        <p class="text-xs text-ink-400">
+                            {{ $t('homework.window', { from: fmtDate(h.starts_at), to: fmtDate(h.ends_at) }) }}
+                            · {{ $t('common.questionsCount', { n: h.questions_count }) }}
+                            <span v-if="h.course?.title" dir="auto"> · {{ h.course.title }}</span>
+                        </p>
+                    </div>
+                    <AppBadge v-if="h.attempts_count > 0" tone="success">{{ $t('homework.started') }}</AppBadge>
+                    <AppBadge :tone="homeworkTone[homeworkState(h)]">{{ $t(`homework.state.${homeworkState(h)}`) }}</AppBadge>
+                </div>
+            </router-link>
+            <Pagination v-if="homeworkMeta" :meta="homeworkMeta" @change="loadHomework" />
+        </div>
+
+        <div v-if="!loading && items.length" class="space-y-3">
+            <p v-if="homework.length" class="text-sm font-semibold text-ink-700">{{ $t('homework.legacyTitle') }}</p>
             <div v-for="a in items" :key="a.id" class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
                 <button type="button" class="flex w-full flex-wrap items-center gap-3 px-4 py-3.5 text-start" @click="toggle(a.id)">
                     <div class="min-w-0 flex-1">

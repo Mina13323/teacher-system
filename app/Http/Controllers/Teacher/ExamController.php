@@ -49,6 +49,8 @@ class ExamController extends Controller
         $this->authorize('view', $course);
 
         $exams = $course->exams()
+            // ?type=exam|homework for the Exams and Homework tabs; none = both.
+            ->when(in_array($request->query('type'), Exam::TYPES, true), fn ($query) => $query->where('type', $request->query('type')))
             ->with(['course', 'creator', 'lesson'])
             ->withCount(['questions', 'attempts'])
             ->latest()

@@ -25,6 +25,7 @@ class ExamDetailResource extends JsonResource
             'scope' => $this->lesson_id ? 'lesson' : (! empty($this->unit_ids) ? 'units' : 'course'),
             'lesson' => $this->whenLoaded('lesson', fn () => new LessonResource($this->lesson)),
             'title' => $this->title,
+            'type' => $this->type ?? \App\Models\Exam::TYPE_EXAM,
             'description' => $this->description,
             'duration_minutes' => $this->duration_minutes,
             'pass_percentage' => $this->pass_percentage,

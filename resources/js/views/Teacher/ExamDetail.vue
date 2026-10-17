@@ -772,6 +772,7 @@ function attemptStatusLabel(statusOrAttempt) {
             <div class="mt-2 flex flex-wrap items-center gap-3">
                 <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ data?.title || $t('common.exam') }}</h1>
                 <AppBadge :tone="data?.status === 'published' ? 'success' : 'neutral'">{{ data?.status ? $t(`status.${data.status}`, data.status) : '' }}</AppBadge>
+                <AppBadge v-if="data?.type === 'homework'" tone="info">{{ $t('homework.label') }}</AppBadge>
                 <router-link :to="`/teacher/exams/${examId}/edit`"><AppButton variant="outline" size="sm">{{ $t('exams.editExam') }}</AppButton></router-link>
             </div>
             <p class="mt-1 text-ink-500" dir="auto">{{ data?.description }}</p>
@@ -781,8 +782,9 @@ function attemptStatusLabel(statusOrAttempt) {
             <AppButton v-if="data?.status !== 'published'" variant="success" size="sm" :loading="statusBusy" @click="setStatus('publish')">{{ $t('exams.publish') }}</AppButton>
             <AppButton v-else variant="outline" size="sm" :loading="statusBusy" @click="setStatus('archive')">{{ $t('exams.archive') }}</AppButton>
             <AppButton variant="danger" size="sm" @click="deleteOpen = true">{{ $t('common.delete') }}</AppButton>
-            <AppButton variant="outline" size="sm" @click="openIntegrity">{{ $t('exams.integritySettings') }}</AppButton>
-            <AppButton v-if="data?.status === 'published'" variant="outline" size="sm" @click="openMakeUpModal">{{ $t('exams.assignMakeUp') }}</AppButton>
+            <!-- A homework is never proctored: no integrity settings, no make-up. -->
+            <AppButton v-if="data?.type !== 'homework'" variant="outline" size="sm" @click="openIntegrity">{{ $t('exams.integritySettings') }}</AppButton>
+            <AppButton v-if="data?.status === 'published' && data?.type !== 'homework'" variant="outline" size="sm" @click="openMakeUpModal">{{ $t('exams.assignMakeUp') }}</AppButton>
         </div>
 
         <LoadingSpinner v-if="loading" />

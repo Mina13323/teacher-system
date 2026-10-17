@@ -47,6 +47,7 @@ class StudentExamDetailResource extends JsonResource
             'id' => $this->id,
             'course_id' => $this->course_id,
             'title' => $this->title,
+            'type' => $this->type ?? \App\Models\Exam::TYPE_EXAM,
             'description' => $this->description,
             'duration_minutes' => $this->duration_minutes,
             'pass_percentage' => $this->pass_percentage,
