@@ -127,4 +127,33 @@ class LessonProgressAuthorizationTest extends ApiTestCase
         $this->getProgress($this->teacher, $this->second)->assertStatus(403);
         $this->putProgress($this->teacher, $this->second)->assertStatus(403);
     }
+
+    private function roadmapStatuses(): array
+    {
+        $units = $this->actingAs($this->student, 'sanctum')
+            ->getJson("/api/v1/student/courses/{$this->course->id}")->assertOk()->json('data.units');
+
+        return collect($units)->flatMap(fn ($unit) => $unit['lessons'])->pluck('status', 'id')->all();
+    }
+
+    public function test_without_an_enforced_roadmap_every_lesson_is_open_on_the_course_page(): void
+    {
+        $this->putProgress($this->student, $this->first, ['progress_percentage' => 40, 'completed' => false])->assertOk();
+
+        $statuses = $this->roadmapStatuses();
+        $this->assertSame('in_progress', $statuses[$this->first->id]);
+        $this->assertSame('available', $statuses[$this->second->id]);
+        $this->getProgress($this->student, $this->second)->assertOk();
+    }
+
+    public function test_an_enforced_roadmap_locks_a_lesson_until_the_previous_one_is_completed(): void
+    {
+        $this->course->forceFill(['roadmap_enforced' => true])->save();
+
+        $this->assertSame('locked', $this->roadmapStatuses()[$this->second->id]);
+
+        $this->putProgress($this->student, $this->first)->assertOk();
+        $this->assertSame('available', $this->roadmapStatuses()[$this->second->id]);
+        $this->getProgress($this->student, $this->second)->assertOk();
+    }
 }
