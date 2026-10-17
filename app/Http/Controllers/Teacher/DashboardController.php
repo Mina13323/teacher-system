@@ -39,6 +39,8 @@ class DashboardController extends Controller
         // teacher owns — with three withCount subqueries attached to each — and
         // then sum the results in PHP, purely to render five numbers.
         $examIds = \App\Models\Exam::query()->whereIn('course_id', $courseIds)->pluck('id');
+        $grading = $this->gradingWork($examIds);
+
         return $this->success([
             'courses_count' => $courses()->count(),
             'published_count' => $courses()->where('status', CourseStatus::Published->value)->count(),
@@ -68,11 +70,15 @@ class DashboardController extends Controller
                 ->whereIn('exam_id', $examIds)
                 ->where('status', 'in_progress')
                 ->count(),
-            'pending_essay_grading' => \App\Models\ExamAttempt::query()
-                ->whereIn('exam_id', $examIds)
-                ->where('status', 'grading')
-                ->whereHas('answers', fn ($a) => $a->whereNull('graded_at'))
-                ->count(),
+            // Essay ANSWERS still without a grade in handed-in attempts (blank
+            // essays included). It used to count attempts with any answer
+            // lacking graded_at, which choice answers never set.
+            'pending_essay_grading' => $grading['ungraded'],
+            'essays_graded_zero' => $grading['graded_zero'],
+            'attempts_ready_to_publish' => $grading['ready_to_publish'],
+            'attempts_published' => $grading['published'],
+            // Exams with essays left to grade, linking to the grading workspace.
+            'grading_queue' => $grading['exams'],
             'flagged_attempts' => \App\Models\ExamAttempt::query()
                 ->whereIn('exam_id', $examIds)
                 ->where('integrity_status', 'flagged')
@@ -106,5 +112,61 @@ class DashboardController extends Controller
                 ->where('status', 'submitted')
                 ->count(),
         ], 'Dashboard retrieved.');
+    }
+
+    /**
+     * Essay-grading work across the given exams, in two aggregate queries
+     * (never one per exam, attempt or student). Only handed-in attempts count.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $examIds
+     * @return array{ungraded: int, graded_zero: int, ready_to_publish: int, published: int, exams: list<array<string, mixed>>}
+     */
+    private function gradingWork(\Illuminate\Support\Collection $examIds): array
+    {
+        $handedIn = \App\Enums\ExamAttemptStatus::submittedValues();
+
+        $perExam = \Illuminate\Support\Facades\DB::table('exam_attempt_questions as aq')
+            ->join('exam_attempts as a', 'a.id', '=', 'aq.attempt_id')
+            ->join('exams as e', 'e.id', '=', 'a.exam_id')
+            ->leftJoin('exam_answers as ans', function ($join) {
+                $join->on('ans.attempt_id', '=', 'aq.attempt_id')->on('ans.question_id', '=', 'aq.question_id');
+            })
+            ->whereIn('a.exam_id', $examIds)
+            ->whereNull('a.deleted_at')
+            ->whereIn('a.status', $handedIn)
+            ->where('aq.question_type', \App\Enums\QuestionType::Essay->value)
+            ->groupBy('a.exam_id', 'e.title')
+            ->selectRaw('a.exam_id, e.title,
+                SUM(CASE WHEN ans.points_earned IS NULL THEN 1 ELSE 0 END) as ungraded,
+                SUM(CASE WHEN ans.points_earned = 0 THEN 1 ELSE 0 END) as graded_zero')
+            ->get();
+
+        $attempts = \Illuminate\Support\Facades\DB::table('exam_attempts')
+            ->whereIn('exam_id', $examIds)
+            ->whereNull('deleted_at')
+            ->whereIn('status', $handedIn)
+            ->selectRaw("
+                SUM(CASE WHEN grades_published_at IS NULL AND status = 'submitted' THEN 1 ELSE 0 END) as ready_to_publish,
+                SUM(CASE WHEN grades_published_at IS NOT NULL THEN 1 ELSE 0 END) as published")
+            ->first();
+
+        return [
+            'ungraded' => (int) $perExam->sum('ungraded'),
+            'graded_zero' => (int) $perExam->sum('graded_zero'),
+            'ready_to_publish' => (int) ($attempts->ready_to_publish ?? 0),
+            'published' => (int) ($attempts->published ?? 0),
+            'exams' => $perExam
+                ->filter(fn ($row) => (int) $row->ungraded > 0)
+                ->sortByDesc(fn ($row) => (int) $row->ungraded)
+                ->take(5)
+                ->map(fn ($row) => [
+                    'exam_id' => (int) $row->exam_id,
+                    'title' => $row->title,
+                    'ungraded' => (int) $row->ungraded,
+                    'url' => "/teacher/exams/{$row->exam_id}/grading?status=ungraded",
+                ])
+                ->values()
+                ->all(),
+        ];
     }
 }

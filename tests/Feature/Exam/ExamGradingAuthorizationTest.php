@@ -277,8 +277,10 @@ class ExamGradingAuthorizationTest extends ApiTestCase
     {
         Notification::fake();
 
-        [$student, , $attempt] = $this->makeSubmittedEssayAttempt();
+        [$student, , $attempt, $question] = $this->makeSubmittedEssayAttempt();
         $teacher = $attempt->exam->creator;
+        // A result is published only once its essays are graded (P0-4).
+        $this->gradeTheEssay($teacher, $attempt, $question);
 
         $this->actingAs($teacher, 'sanctum')
             ->postJson("/api/v1/teacher/attempts/{$attempt->id}/publish-grades")
@@ -344,8 +346,9 @@ class ExamGradingAuthorizationTest extends ApiTestCase
      */
     public function test_result_notification_points_at_the_attempt(): void
     {
-        [$student, , $attempt] = $this->makeSubmittedEssayAttempt();
+        [$student, , $attempt, $question] = $this->makeSubmittedEssayAttempt();
         $teacher = $attempt->exam->creator;
+        $this->gradeTheEssay($teacher, $attempt, $question);
 
         Notification::fake();
 
@@ -358,5 +361,15 @@ class ExamGradingAuthorizationTest extends ApiTestCase
             fn (ResultAvailableNotification $n) => $n->toArray($student)['subject_id'] === $attempt->id
                 && $n->toArray($student)['subject_type'] === 'exam_attempt'
         );
+    }
+
+    private function gradeTheEssay(\App\Models\User $teacher, ExamAttempt $attempt, Question $question): void
+    {
+        $this->actingAs($teacher, 'sanctum')
+            ->postJson("/api/v1/teacher/attempts/{$attempt->id}/grade-essay", [
+                'question_id' => $question->id,
+                'awarded_points' => 15,
+            ])
+            ->assertStatus(200);
     }
 }

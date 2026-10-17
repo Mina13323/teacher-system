@@ -37,15 +37,19 @@ class AttemptController extends Controller
             'question_id' => ['required', 'integer'],
             'awarded_points' => ['required', 'integer', 'min:0'],
             'feedback' => ['nullable', 'string', 'max:2000'],
+            // The grade version the grader loaded (optimistic concurrency).
+            'expected_version' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'compact_response' => ['sometimes', 'boolean'],
         ]);
 
         try {
-            $updatedAttempt = $this->gradeEssayAnswer->execute(
+            $graded = $this->gradeEssayAnswer->grade(
                 $request->user(),
                 $attempt,
                 (int) $validated['question_id'],
                 (int) $validated['awarded_points'],
-                $validated['feedback'] ?? null
+                $validated['feedback'] ?? null,
+                $validated['expected_version'] ?? null,
             );
         } catch (\InvalidArgumentException $e) {
             throw \Illuminate\Validation\ValidationException::withMessages([
@@ -53,8 +57,29 @@ class AttemptController extends Controller
             ]);
         }
 
+        if ($request->boolean('compact_response')) {
+            // The grading workspace: only the saved answer and the attempt
+            // summary it changed, never the whole attempt.
+            $updated = $graded['attempt'];
+
+            return $this->success(array_merge([
+                'attempt_id' => $updated->id,
+                'question_id' => (int) $validated['question_id'],
+                'saved' => $graded['changed'],
+            ], GradeEssayAnswerAction::gradeState($graded['answer']), [
+                'attempt' => [
+                    'id' => $updated->id,
+                    'status' => $updated->displayStatus(),
+                    'score' => $updated->score,
+                    'percentage' => $updated->percentage,
+                    'grades_published' => $updated->grades_published_at !== null,
+                    'ungraded_essays' => $graded['result']['ungraded_essays'],
+                ],
+            ]), 'Essay answer graded successfully.');
+        }
+
         return $this->success(
-            new ExamAttemptDetailResource($updatedAttempt->load(['exam', 'student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions'])),
+            new ExamAttemptDetailResource($graded['attempt']->fresh()->load(['exam', 'student', 'answers.selectedOptions', 'attemptQuestions.attemptOptions'])),
             'Essay answer graded successfully.'
         );
     }

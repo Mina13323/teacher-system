@@ -11,7 +11,8 @@ class LoadTestSeedCommand extends Command
     protected $signature = 'loadtest:seed
         {--students= : Number of fixture students (1..max, default from config)}
         {--window-days=7 : Days the exam window stays open from now}
-        {--reset-attempts : Also delete existing fixture attempts so the exam can be retaken}';
+        {--reset-attempts : Also delete existing fixture attempts so the exam can be retaken}
+        {--duration=60 : Exam duration in minutes (short runs reach the deadline within one test step)}';
 
     protected $description = 'STAGING ONLY: create/refresh the deterministic load-test teacher, course, exam and students';
 
@@ -22,7 +23,12 @@ class LoadTestSeedCommand extends Command
             : (int) $this->option('students');
 
         try {
-            $result = $seeder->seed($students, max(1, (int) $this->option('window-days')), (bool) $this->option('reset-attempts'));
+            $result = $seeder->seed(
+                $students,
+                max(1, (int) $this->option('window-days')),
+                (bool) $this->option('reset-attempts'),
+                (int) $this->option('duration'),
+            );
         } catch (LoadTestSafetyException $e) {
             $this->error($e->getMessage());
 
@@ -41,6 +47,7 @@ class LoadTestSeedCommand extends Command
             ['Course', config('loadtest.course_slug').' (id '.$result['course_id'].')'],
             ['Exam', config('loadtest.exam_title').' (id '.$result['exam_id'].')'],
             ['Questions', $result['questions']],
+            ['Exam duration (minutes)', (int) $this->option('duration')],
             ['Student login', LoadTestFixtureSeeder::studentEmail(1).' .. '.LoadTestFixtureSeeder::studentEmail($students)],
         ]);
         $this->line('Password: see LOAD_TEST_FIXTURES.md (config loadtest.password / LOADTEST_PASSWORD).');

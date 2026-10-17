@@ -6,6 +6,7 @@ use App\Enums\ExamAttemptStatus;
 use App\Enums\QuestionType;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
+use App\Notifications\ResultAvailableNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,15 +28,26 @@ class GradeExamAttemptAction
     ) {
     }
 
-    public function execute(ExamAttempt $attempt): ExamAttempt
+    /**
+     * @param  bool  $relationsLoadedUnderLock  The caller locked the attempt row and
+     *                                          loaded `attemptQuestions.attemptOptions` and
+     *                                          `answers.selectedOptions` after taking the
+     *                                          lock, so they are current and need no reload.
+     */
+    public function execute(ExamAttempt $attempt, bool $relationsLoadedUnderLock = false): ExamAttempt
     {
-        $attempt->load([
-            'attemptQuestions.attemptOptions',
-            'answers.selectedOptions',
-        ]);
+        $relations = ['attemptQuestions.attemptOptions', 'answers.selectedOptions'];
+
+        if ($relationsLoadedUnderLock) {
+            $attempt->loadMissing($relations);
+        } else {
+            $attempt->load($relations);
+        }
 
         $run = function () use ($attempt) {
             $answersByQuestion = $attempt->answers->keyBy('question_id');
+            $now = now();
+            $rows = [];
 
             foreach ($attempt->attemptQuestions as $attemptQuestion) {
                 if ($attemptQuestion->question_type === QuestionType::Essay->value) {
@@ -48,28 +60,47 @@ class GradeExamAttemptAction
                 if (! $answer) {
                     // Unanswered question: record an explicit zero-grade row so
                     // the breakdown is complete (same as the previous behavior).
-                    ExamAnswer::create([
+                    $rows[] = [
                         'attempt_id' => $attempt->getKey(),
                         'question_id' => $attemptQuestion->question_id,
                         'is_correct' => false,
                         'points_earned' => 0,
-                    ]);
+                    ];
+
                     continue;
                 }
 
                 $isCorrect = $this->calculateResult->isChoiceAnswerCorrect($attemptQuestion, $answer);
+                $points = $isCorrect ? (int) $attemptQuestion->points : 0;
 
+                $rows[] = [
+                    'attempt_id' => $attempt->getKey(),
+                    'question_id' => $attemptQuestion->question_id,
+                    'is_correct' => $isCorrect,
+                    'points_earned' => $points,
+                ];
+
+                // Keep the loaded answer in step with the row written below,
+                // so the result is calculated from exactly the persisted grades.
                 $answer->is_correct = $isCorrect;
-                $answer->points_earned = $isCorrect ? $attemptQuestion->points : 0;
-                $answer->save();
+                $answer->points_earned = $points;
+                $answer->syncOriginalAttributes(['is_correct', 'points_earned']);
             }
 
-            // Fresh calculation from the newly persisted answers
-            $attempt->unsetRelation('answers');
-            $attempt->load('answers.selectedOptions');
-            $result = $this->calculateResult->execute($attempt);
+            // One statement for every choice grade: answered rows are updated
+            // and unanswered questions get their zero row, on the unique
+            // (attempt_id, question_id) key. Essay rows are never touched.
+            if ($rows !== []) {
+                ExamAnswer::query()->upsert(
+                    $rows,
+                    ['attempt_id', 'question_id'],
+                    ['is_correct', 'points_earned']
+                );
+            }
 
-            $now = now();
+            // Unanswered choice questions earn 0 whether or not their zero row
+            // is in memory, so the calculation matches the persisted rows.
+            $result = $this->calculateResult->execute($attempt);
 
             $attempt->score = $result['earned_points'];
             $attempt->percentage = $result['percentage'];
@@ -85,11 +116,11 @@ class GradeExamAttemptAction
 
             if (! $result['requires_manual_grading'] && ($attempt->exam?->show_result_immediately ?? true)) {
                 $attempt->grades_published_at = $now;
-                if ($attempt->student) {
-                    DB::afterCommit(function () use ($attempt) {
-                        $attempt->student->notify(new \App\Notifications\ResultAvailableNotification($attempt));
-                    });
-                }
+                // The student is read after commit, outside the locked
+                // transaction; the notification itself was already after commit.
+                DB::afterCommit(function () use ($attempt) {
+                    $attempt->student?->notify(new ResultAvailableNotification($attempt));
+                });
             }
 
             // Idempotency sentinel (P0.12): the FIRST grading run stamps
@@ -97,7 +128,15 @@ class GradeExamAttemptAction
             $attempt->scored_at = $attempt->scored_at ?? now();
             $attempt->save();
 
-            return $attempt->fresh();
+            // Re-read so callers see the stored values (raw_percentage is a
+            // DECIMAL(6,3) column, so the stored value is rounded). The exam
+            // is the same row, so it is handed over instead of re-queried.
+            $fresh = $attempt->fresh();
+            if ($fresh !== null && $attempt->relationLoaded('exam')) {
+                $fresh->setRelation('exam', $attempt->exam);
+            }
+
+            return $fresh;
         };
 
         return DB::transactionLevel() > 0 ? $run() : DB::transaction($run);

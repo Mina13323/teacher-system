@@ -6,6 +6,10 @@ import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { student } from '@/api';
 import { isAmbiguousStartFailure, recoverActiveAttempt } from '@/utils/examStartRecovery';
+import { clearAttemptHandoff, handOffAttempt } from '@/utils/attemptHandoff';
+import { startPacingDelayMs } from '@/utils/examRequestPacing';
+import { createServerClock } from '@/utils/serverClock';
+import { enterFullscreenForStart, leaveFullscreen } from '@/utils/examFullscreen';
 import { useToast } from '@/composables/toast';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -23,8 +27,12 @@ const resumeAttemptId = ref(null);
 const startNotice = ref('');
 const rulesOpen = ref(false);
 const rulesAccepted = ref(false);
+/** True while a paced start waits before sending (see startPacingDelayMs). */
+const preparing = ref(false);
 
 const { loading, error, data, run } = useAsync(() => student.exam(route.params.id));
+/** Homework: no rules, no fullscreen, no proctoring — the student just starts. */
+const isHomework = computed(() => data.value?.type === 'homework');
 const activeAttempt = computed(() => (
     data.value?.my_attempts?.find((attempt) => attempt.status === 'in_progress' && attempt.id)
     || (resumeAttemptId.value ? { id: resumeAttemptId.value, status: 'in_progress' } : null)
@@ -70,6 +78,11 @@ function windowState() {
 
 function start() {
     startNotice.value = '';
+    if (isHomework.value) {
+        rulesAccepted.value = true;
+        confirmStart();
+        return;
+    }
     rulesAccepted.value = false;
     rulesOpen.value = true;
 }
@@ -103,18 +116,51 @@ async function resumeAttempt() {
     }
 }
 
+/**
+ * Random wait before the start request while a scheduled exam is opening, on
+ * the server's clock (the time endpoint makes no database query). 0 outside
+ * the opening burst and whenever a wait could cost exam time.
+ */
+async function startPacingDelay() {
+    const d = data.value;
+    if (!d?.starts_at) return 0;
+    const clock = createServerClock();
+    try {
+        const sentAt = Date.now();
+        const res = await student.serverTime();
+        clock.observe(Number(res?.server_time_ms), sentAt, Date.now());
+    } catch {
+        /* the device clock is used when the server clock is unavailable */
+    }
+    return startPacingDelayMs({
+        nowMs: clock.serverNow(),
+        startsAt: d.starts_at,
+        endsAt: d.ends_at || d.effective_deadline || null,
+        durationMinutes: d.duration_minutes,
+    });
+}
+
 async function confirmStart() {
     if (!rulesAccepted.value || starting.value) return;
+
+    // Inside the click itself: the browser allows fullscreen only from the
+    // student's gesture, which would expire during the waits below.
+    if (!isHomework.value) enterFullscreenForStart(data.value?.integrity_rules);
 
     starting.value = true;
     startNotice.value = '';
     try {
-        // The app fetches the full snapshot on the attempt route. Ask the
-        // server for just the navigation metadata here to avoid transferring
-        // the same questions and answers twice.
+        const wait = isHomework.value ? 0 : await startPacingDelay();
+        if (wait > 0) {
+            preparing.value = true;
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            preparing.value = false;
+        }
+
+        // The full attempt snapshot comes back with the start response and is
+        // handed to the exam screen, so it does not read the attempt again.
         const attempt = await student.startExam(route.params.id, {
             rules_acknowledged: true,
-            compact_response: true,
         });
 
         if (!attempt?.id) {
@@ -126,11 +172,17 @@ async function confirmStart() {
 
         resumeAttemptId.value = attempt.id;
         if (attempt.already_open) {
+            // Another session has this attempt open and may be changing it:
+            // the exam screen reads it fresh from the server instead.
+            clearAttemptHandoff();
             toast.success(t('exams.alreadyOpen'));
+        } else {
+            handOffAttempt(attempt);
         }
 
         rulesOpen.value = false;
         if (!await navigateToAttempt(attempt.id)) {
+            clearAttemptHandoff();
             startNotice.value = t('exams.attemptNavigationFailed');
         }
     } catch (e) {
@@ -153,7 +205,11 @@ async function confirmStart() {
             toast.error(e?.message || '');
         }
     } finally {
+        preparing.value = false;
         starting.value = false;
+        // No exam screen to stay fullscreen for (refused, closed window,
+        // unconfirmed start): give the student their normal window back.
+        if (router.currentRoute.value.name !== 'student.attempt') leaveFullscreen();
     }
 }
 
@@ -178,14 +234,15 @@ function statusLabel(status) {
         </div>
         <template v-else>
             <div>
-                <router-link to="/student/exams" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('exams.allExams') }}</router-link>
+                <router-link v-if="isHomework" to="/student/assignments" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('homework.all') }}</router-link>
+                <router-link v-else to="/student/exams" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('exams.allExams') }}</router-link>
                 <h1 class="mt-2 text-2xl font-bold text-ink-900" dir="auto">{{ data.title }}</h1>
                 <p class="mt-1 text-ink-600" dir="auto">{{ data.description }}</p>
             </div>
 
             <AppCard :title="$t('exams.about')">
                 <dl class="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-                    <div><dt class="text-ink-400">{{ $t('exams.duration') }}</dt><dd class="font-semibold text-ink-800">{{ data.duration_minutes }} {{ $t('common.minutesShort') }}</dd></div>
+                    <div v-if="!isHomework"><dt class="text-ink-400">{{ $t('exams.duration') }}</dt><dd class="font-semibold text-ink-800">{{ data.duration_minutes }} {{ $t('common.minutesShort') }}</dd></div>
                     <div><dt class="text-ink-400">{{ $t('exams.questions') }}</dt><dd class="font-semibold text-ink-800">{{ data.questions_count }}</dd></div>
                     <div><dt class="text-ink-400">{{ $t('exams.passMark') }}</dt><dd class="font-semibold text-ink-800">{{ data.pass_percentage }}%</dd></div>
                     <div><dt class="text-ink-400">{{ $t('exams.attempts') }}</dt><dd class="font-semibold text-ink-800">{{ data.max_attempts }}</dd></div>
@@ -200,7 +257,7 @@ function statusLabel(status) {
                         <span v-if="data.starts_at" class="text-ink-500">{{ $t('exams.opensAt') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.starts_at) }}</span></span>
                         <span v-if="data.ends_at || data.effective_deadline" class="text-ink-500">{{ $t('exams.deadline') }}: <span class="font-semibold text-ink-800">{{ fmtWhen(data.ends_at || data.effective_deadline) }}</span></span>
                     </div>
-                    <p class="mt-1 text-xs text-ink-500">{{ $t('exams.windowStudentHint') }}</p>
+                    <p class="mt-1 text-xs text-ink-500">{{ isHomework ? $t('homework.studentHint') : $t('exams.windowStudentHint') }}</p>
                 </div>
 
                 <div v-if="startNotice && !rulesOpen" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900" role="alert">
@@ -212,8 +269,8 @@ function statusLabel(status) {
                 </div>
 
                 <div class="mt-6">
-                    <AppButton v-if="activeAttempt" :loading="resuming" size="lg" @click="resumeAttempt">{{ $t('exams.resumeAttempt') }}</AppButton>
-                    <AppButton v-else :loading="starting" size="lg" @click="start">{{ $t('exams.startExam') }}</AppButton>
+                    <AppButton v-if="activeAttempt" :loading="resuming" size="lg" @click="resumeAttempt">{{ isHomework ? $t('homework.continue') : $t('exams.resumeAttempt') }}</AppButton>
+                    <AppButton v-else :loading="starting" size="lg" @click="start">{{ isHomework ? $t('homework.start') : $t('exams.startExam') }}</AppButton>
                 </div>
             </AppCard>
 
@@ -245,6 +302,9 @@ function statusLabel(status) {
                     <li v-else>{{ $t('examTake.rulesNoExtraControls') }}</li>
                     <li class="font-medium text-amber-800">{{ $t('examTake.screenshotLimit') }}</li>
                 </ul>
+                <p v-if="preparing" class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-sm font-medium text-sky-900" role="status">
+                    {{ $t('exams.preparingExam') }}
+                </p>
                 <p v-if="startNotice && rulesOpen" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-medium text-amber-900" role="alert">
                     {{ startNotice }}
                 </p>

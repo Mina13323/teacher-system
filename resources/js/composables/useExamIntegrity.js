@@ -76,6 +76,8 @@ export function useExamIntegrity(options = {}) {
 
     /** Latest report time per event type — burst collapse only (never once-per-session). */
     const lastReportedAt = new Map();
+    /** Latest report time per return event (WINDOW_FOCUS, FULLSCREEN_ENTER). */
+    const lastReturnAt = new Map();
     let lastDepartureAt = 0;
     let blurTimer = null;
     let pendingWarning = null;
@@ -186,6 +188,21 @@ export function useExamIntegrity(options = {}) {
         onEvent(type, metadata);
     }
 
+    /**
+     * Report a RETURN event: focus coming back or fullscreen being entered.
+     * These are review context, never violations (the server gives them zero
+     * risk points). One return fires both visibilitychange and window focus,
+     * so repeats of the same type within the burst window collapse into one
+     * report. Departures and violations never go through here.
+     */
+    function reportReturn(type, metadata = {}) {
+        const nowMs = Date.now();
+        const last = lastReturnAt.get(type);
+        if (last !== undefined && nowMs - last < BURST_MS) return;
+        lastReturnAt.set(type, nowMs);
+        report(type, metadata);
+    }
+
     // -----------------------------------------------------------------
     // Listeners — every handler reports only what it actually observed.
     // -----------------------------------------------------------------
@@ -204,7 +221,7 @@ export function useExamIntegrity(options = {}) {
             flushPendingWarning();
             if (rules().detect_tab_switch) {
                 // Returning is informative for review but is not a violation.
-                report('WINDOW_FOCUS', { source: 'visibilitychange' });
+                reportReturn('WINDOW_FOCUS', { source: 'visibilitychange' });
             }
         }
     }
@@ -238,7 +255,7 @@ export function useExamIntegrity(options = {}) {
         clearTimeout(blurTimer);
         flushPendingWarning();
         if (!document.hidden) {
-            report('WINDOW_FOCUS', { source: 'window.focus' });
+            reportReturn('WINDOW_FOCUS', { source: 'window.focus' });
         }
     }
 
@@ -314,7 +331,7 @@ export function useExamIntegrity(options = {}) {
         if (!rules().fullscreen_required) return;
 
         if (document.fullscreenElement) {
-            report('FULLSCREEN_ENTER');
+            reportReturn('FULLSCREEN_ENTER');
         } else {
             record('FULLSCREEN_EXIT');
         }
@@ -337,6 +354,10 @@ export function useExamIntegrity(options = {}) {
     function start() {
         if (started.value) return;
         started.value = true;
+        // The page may already be fullscreen (entered from the start click
+        // on the exam page, or kept across a reload): no change event will
+        // say so, so read the current state.
+        fullscreenActive.value = typeof document !== 'undefined' && Boolean(document.fullscreenElement);
 
         document.addEventListener('visibilitychange', onVisibilityChange);
         document.addEventListener('copy', onCopy);

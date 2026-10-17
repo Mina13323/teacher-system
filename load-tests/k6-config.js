@@ -3,6 +3,8 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
+import exec from 'k6/execution';
+import { ABORT_ON_ANY, busyRetryWaitSeconds, criticalSignal, isBusyRetryable, isTransportRetryable } from './lib/guards.js';
 
 // ---------------------------------------------------------------------------
 // HARD STAGING GUARD. Runs in the k6 init context, i.e. before any VU or HTTP
@@ -34,7 +36,12 @@ const API = `${BASE_URL}/api/v1`;
 // ---------------------------------------------------------------------------
 // Fixture identity (config/loadtest.php): loadtest.student.NNNN@staging...
 // ---------------------------------------------------------------------------
-export const FIXTURE_PASSWORD = __ENV.LOADTEST_PASSWORD || 'LoadTest#Staging-2026';
+// No default password: the staging fixture password must be supplied (the same
+// value as LOADTEST_PASSWORD in the staging .env). Never printed or logged.
+export const FIXTURE_PASSWORD = __ENV.LOADTEST_PASSWORD || '';
+if (FIXTURE_PASSWORD.length < 16) {
+  throw new Error('LOADTEST_PASSWORD is required (the staging fixture password, at least 16 characters). It is never printed.');
+}
 export const FIXTURE_DOMAIN = 'staging.maherelmasry.com';
 export const EXAM_TITLE_PATTERN = /load-test-exam/;
 const MAX_FIXTURE_STUDENT = 5000;
@@ -46,10 +53,10 @@ export function studentEmail(n) {
 // ---------------------------------------------------------------------------
 // Run sizing. STAGE (50|100|250|500|750|1000) or VUS; default is a tiny safe run.
 // ---------------------------------------------------------------------------
-const ALLOWED_STAGES = [50, 100, 250, 500, 750, 1000];
+const ALLOWED_STAGES = [50, 100, 250, 374, 500, 750, 1000];
 const DEFAULT_VUS = 5;
 // Seconds over which VU start times are spread (the controlled ramp).
-const DEFAULT_RAMP = { 5: 10, 50: 60, 100: 120, 250: 300, 500: 600, 750: 900, 1000: 1200 };
+const DEFAULT_RAMP = { 5: 10, 50: 60, 100: 120, 250: 300, 374: 450, 500: 600, 750: 900, 1000: 1200 };
 
 function intEnv(name, dflt) {
   const raw = __ENV[name];
@@ -60,7 +67,18 @@ function intEnv(name, dflt) {
 }
 
 function resolveVus() {
-  if (__ENV.STAGE !== undefined && __ENV.STAGE !== '') {
+  // STAGE wins over VUS, and k6 also passes the shell's environment variables
+  // to the script, so a STAGE left in the shell from an earlier run silently
+  // overrides --env VUS (and the ramp spacing with it). Refuse to guess.
+  const hasStage = __ENV.STAGE !== undefined && __ENV.STAGE !== '';
+  const hasVus = __ENV.VUS !== undefined && __ENV.VUS !== '';
+  if (hasStage && hasVus && parseInt(__ENV.STAGE, 10) !== parseInt(__ENV.VUS, 10)) {
+    throw new Error(
+      `Both STAGE=${__ENV.STAGE} and VUS=${__ENV.VUS} are set. Use one: clear the other ` +
+        '(PowerShell: Remove-Item Env:\\STAGE, Env:\\VUS -ErrorAction SilentlyContinue).'
+    );
+  }
+  if (hasStage) {
     const stage = parseInt(__ENV.STAGE, 10);
     if (ALLOWED_STAGES.indexOf(stage) === -1) {
       throw new Error(`STAGE must be one of ${ALLOWED_STAGES.join(', ')} (got "${__ENV.STAGE}")`);
@@ -80,6 +98,10 @@ if (START_INDEX < 1 || START_INDEX + VUS - 1 > MAX_FIXTURE_STUDENT) {
 }
 export const RAMP_SECONDS = intEnv('RAMP_SECONDS', DEFAULT_RAMP[VUS] || Math.max(10, VUS));
 // 0 disables think time (pure stress); 1 = realistic; 2 = twice as slow.
+// 1 (default): resend a 503 service_busy once, as the app does; 0: abort on the first one.
+export const BUSY_RETRY = intEnv('BUSY_RETRY', 1) !== 0;
+// 1 (default): resend a request with no HTTP response once where harmless; 0: abort on the first one.
+export const TRANSPORT_RETRY = intEnv('TRANSPORT_RETRY', 1) !== 0;
 export const THINK_SCALE = parseFloat(__ENV.THINK_SCALE === undefined ? '1' : __ENV.THINK_SCALE);
 // Login is throttled to 10/min/IP by the app. Retry on 429 honouring Retry-After.
 export const LOGIN_MAX_RETRIES = intEnv('LOGIN_MAX_RETRIES', 0);
@@ -128,14 +150,38 @@ export const m = {
   answer: new Trend('step_answer_save_ms', true),
   heartbeat: new Trend('step_heartbeat_ms', true),
   submit: new Trend('step_submit_ms', true),
+  dashboard: new Trend('step_dashboard_ms', true),
   flow: new Trend('flow_complete_ms', true),
   http5xx: new Rate('http_5xx'),
   flowFailed: new Rate('flow_failed'),
   flowCompleted: new Counter('flow_completed'),
   loginThrottled: new Counter('login_throttled_429'),
+  // Fixture student still signed in from an earlier run (one device per student): confirmed like the login page does.
+  sessionTransfers: new Counter('login_session_transfers'),
   answersSaved: new Counter('answers_saved'),
   fixtureNotClean: new Counter('fixture_not_clean'),
+  criticalFailures: new Counter('critical_failures'),
+  // 503 service_busy (refused new DB connection) resent once, and how many of those resends succeeded.
+  busyRetried: new Counter('db_busy_retried'),
+  busyRecovered: new Counter('db_busy_recovered'),
+  // Requests with no HTTP response resent once, and how many of those resends succeeded.
+  transportRetried: new Counter('transport_retried'),
+  transportRecovered: new Counter('transport_recovered'),
 };
+
+/**
+ * Stop the WHOLE run now. exec.test.abort() is k6's supported global abort: it
+ * interrupts every VU (in-flight requests included) and ends the run with exit
+ * code 108, so no further requests, retries or iterations are started. The
+ * reason is logged once per VU that reaches it; it never contains a token,
+ * password or response body. A failed check() does NOT stop a run - only this
+ * and abortOnFail thresholds do.
+ */
+export function abortRun(reason) {
+  m.criticalFailures.add(1);
+  console.error(`[ABORT] ${reason}`);
+  exec.test.abort(`ABORT: ${reason}`);
+}
 
 // ---------------------------------------------------------------------------
 // Thresholds (rationale for each value: load-tests/README.md "Thresholds").
@@ -150,6 +196,8 @@ const LATENCY = {
   answer: { p95: 1000, p99: 2500 },
   heartbeat: { p95: 800, p99: 2000 },
   submit: { p95: 3000, p99: 6000 },
+  student_dashboard: { p95: 1500, p99: 3000 },
+  teacher_dashboard: { p95: 1500, p99: 3000 },
 };
 
 export function buildThresholds(endpointsInUse) {
@@ -158,7 +206,9 @@ export function buildThresholds(endpointsInUse) {
     http_5xx: [{ threshold: 'rate<0.005', abortOnFail: true, delayAbortEval: '30s' }],
     flow_failed: ['rate<0.05'],
     checks: ['rate>0.97'],
-    fixture_not_clean: ['count==0'],
+    fixture_not_clean: [ABORT_ON_ANY],
+    // Backstop for abortRun(): any critical signal also trips this count threshold.
+    critical_failures: [ABORT_ON_ANY],
   };
   endpointsInUse.forEach((ep) => {
     const l = LATENCY[ep];
@@ -170,19 +220,47 @@ export function buildThresholds(endpointsInUse) {
 // ---------------------------------------------------------------------------
 // HTTP helpers (same headers/auth/payloads as scripts/loadtest-smoke.mjs)
 // ---------------------------------------------------------------------------
-function request(method, path, body, token, endpoint, trend) {
+export function request(method, path, body, token, endpoint, trend) {
   // Defence in depth: re-check the target before every request.
   assertStagingUrl(BASE_URL);
   const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = http.request(method, `${API}${path}`, body ? JSON.stringify(body) : null, {
-    headers,
-    timeout: '30s',
-    // `name` collapses /attempts/123/... into one series; `endpoint` is the filter tag.
-    tags: { endpoint, name: `${method} ${path.replace(/\/\d+/g, '/:id')}` },
-  });
-  m.http5xx.add(res.status >= 500);
-  if (trend) trend.add(res.timings.duration);
+  const send = () => {
+    const r = http.request(method, `${API}${path}`, body ? JSON.stringify(body) : null, {
+      headers,
+      timeout: '30s',
+      // `name` collapses /attempts/123/... into one series; `endpoint` is the filter tag.
+      tags: { endpoint, name: `${method} ${path.replace(/\/\d+/g, '/:id')}` },
+    });
+    m.http5xx.add(r.status >= 500);
+    if (trend) trend.add(r.timings.duration);
+    return r;
+  };
+  let res = send();
+  // A refused NEW database connection (503 service_busy) ran nothing, so it is
+  // resent once after Retry-After, as the exam screen does. Every 503 still
+  // counts in http_5xx; only one that also fails the resend is critical.
+  // BUSY_RETRY=0 restores the strict behaviour (abort on the first one).
+  if (BUSY_RETRY && isBusyRetryable({ status: res.status, body: res.body })) {
+    m.busyRetried.add(1);
+    sleep(busyRetryWaitSeconds(res.headers['Retry-After']) + Math.random());
+    res = send();
+    if (res.status < 400) m.busyRecovered.add(1);
+  }
+  // No HTTP response at all (a timeout or a dropped connection between this
+  // machine and the host): resent once where that is harmless (see
+  // isTransportRetryable), counted in transport_retried / _recovered. A
+  // second failure is critical. TRANSPORT_RETRY=0 aborts on the first one.
+  if (TRANSPORT_RETRY && isTransportRetryable({ status: res.status, endpoint, path, errorCode: res.error_code })) {
+    m.transportRetried.add(1);
+    sleep(1 + Math.random());
+    res = send();
+    if (res.status !== 0 && res.status < 400) m.transportRecovered.add(1);
+  }
+  // Critical signals end the run immediately (5xx, transport failure, SQLSTATE
+  // 2002 / connection refused, unexpected 401). See lib/guards.js.
+  const critical = criticalSignal({ status: res.status, body: res.body, endpoint });
+  if (critical) abortRun(critical);
   return res;
 }
 
@@ -197,7 +275,7 @@ export function json(res) {
 /** POST /auth/login -> token, or null. Retries 429 up to LOGIN_MAX_RETRIES. */
 export function login(email) {
   for (let attempt = 0; ; attempt++) {
-    const res = request('POST', '/auth/login', { email, password: FIXTURE_PASSWORD }, null, 'login', m.login);
+    let res = request('POST', '/auth/login', { email, password: FIXTURE_PASSWORD }, null, 'login', m.login);
     if (res.status === 429) {
       m.loginThrottled.add(1);
       if (attempt < LOGIN_MAX_RETRIES) {
@@ -206,7 +284,12 @@ export function login(email) {
         continue;
       }
     }
-    const body = json(res);
+    let body = json(res);
+    if (res.status === 409 && body && body.code === 'session_transfer_required' && body.data && body.data.transfer_token) {
+      m.sessionTransfers.add(1);
+      res = request('POST', '/auth/session/transfer', { transfer_token: body.data.transfer_token }, null, 'login', m.login);
+      body = json(res);
+    }
     const ok = check(res, {
       'login: status 200': (r) => r.status === 200,
       'login: token present': () => !!(body && body.data && typeof body.data.token === 'string'),
@@ -214,6 +297,16 @@ export function login(email) {
     });
     return ok ? body.data.token : null;
   }
+}
+
+/** GET /{role}/dashboard. Returns true when it answered 200 with the standard envelope. */
+export function getDashboard(token, role) {
+  const res = request('GET', `/${role}/dashboard`, null, token, `${role}_dashboard`, m.dashboard);
+  const body = json(res);
+  return check(res, {
+    [`${role} dashboard: status 200`]: (r) => r.status === 200,
+    [`${role} dashboard: success envelope`]: () => !!body && body.success === true && !!body.data,
+  });
 }
 
 /** GET /student/exams -> the load-test exam summary, or null. */
@@ -349,4 +442,7 @@ export function warnFixture(email, prior) {
     `[fixture] ${email} already has ${prior} attempt(s); the exam allows 1. ` +
       'Reset on staging: php artisan loadtest:seed --students=<N> --reset-attempts (see load-tests/README.md).'
   );
+  // A prior attempt means a dirty fixture or a duplicate attempt: continuing would
+  // test the wrong thing, so stop the whole run.
+  abortRun('fixture student already has an attempt (reset required); refusing to continue');
 }

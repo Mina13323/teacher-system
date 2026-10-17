@@ -20,6 +20,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import Pagination from '@/components/ui/Pagination.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { toIso } from '@/utils/datetimeLocal';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -42,9 +43,17 @@ const students = ref([]);
 const studentsMeta = ref(null);
 
 async function loadExams(p = 1) {
-    const res = toList(await teacher.exams(courseId, { per_page: 15, page: p }));
+    const res = toList(await teacher.exams(courseId, { per_page: 15, page: p, type: 'exam' }));
     exams.value = res.items;
     examsMeta.value = res.meta;
+}
+// Homework: exams of type "homework" (questions like an exam, no proctoring).
+const homework = ref([]);
+const homeworkMeta = ref(null);
+async function loadHomework(p = 1) {
+    const res = toList(await teacher.exams(courseId, { per_page: 15, page: p, type: 'homework' }));
+    homework.value = res.items;
+    homeworkMeta.value = res.meta;
 }
 async function loadStudents(p = 1) {
     const res = toList(await teacher.courseStudents(courseId, { per_page: 15, page: p }));
@@ -226,6 +235,7 @@ async function refresh() {
     loadExams(1);
     loadStudents(1);
     loadAssignments();
+    loadHomework(1);
 }
 
 // ---- Unit modal ----
@@ -444,7 +454,8 @@ async function moveLesson(unit, lesson, dir) {
 
 // ---- Exam create ----
 const examModal = ref(false);
-const examForm = reactive({ title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope: 'course', lesson_id: null, unit_ids: [] });
+const examForm = reactive({ type: 'exam', title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope: 'course', lesson_id: null, unit_ids: [], starts_at: '', ends_at: '' });
+const examFormIsHomework = computed(() => examForm.type === 'homework');
 const examErrors = ref({});
 const examBusy = ref(false);
 const examScopeOptions = computed(() => [
@@ -453,8 +464,8 @@ const examScopeOptions = computed(() => [
     { value: 'units', label: t('courses.examScopeUnits') },
 ]);
 const lessonOptions = computed(() => units.value.flatMap((u) => u.lessons.map((l) => ({ value: l.id, label: `${u.title} — ${l.title}` }))));
-function openExam(scope = 'course', lesson = null) {
-    Object.assign(examForm, { title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope, lesson_id: lesson?.id || null, unit_ids: [] });
+function openExam(scope = 'course', lesson = null, type = 'exam') {
+    Object.assign(examForm, { type, title: '', description: '', duration_minutes: 30, pass_percentage: 50, max_attempts: 1, shuffle_questions: false, shuffle_options: false, show_result_immediately: true, scope, lesson_id: lesson?.id || null, unit_ids: [], starts_at: '', ends_at: '' });
     examErrors.value = {};
     examModal.value = true;
 }
@@ -477,10 +488,20 @@ async function saveExam() {
         if (examForm.scope === 'lesson') payload.lesson_id = examForm.lesson_id;
         if (examForm.scope === 'units') payload.unit_ids = examForm.unit_ids;
         delete payload.scope;
+        if (examFormIsHomework.value) {
+            // A homework lasts from its open time to its close time.
+            delete payload.duration_minutes;
+            payload.starts_at = toIso(examForm.starts_at);
+            payload.ends_at = toIso(examForm.ends_at);
+        } else {
+            delete payload.starts_at;
+            delete payload.ends_at;
+        }
         await teacher.createExam(courseId, payload);
-        toast.success(t('courses.examCreated'));
+        toast.success(examFormIsHomework.value ? t('homework.created') : t('courses.examCreated'));
         examModal.value = false;
-        loadExams(1);
+        if (examFormIsHomework.value) loadHomework(1);
+        else loadExams(1);
     } catch (e) {
         examErrors.value = fieldErrors(e);
         toast.error(e.isValidation ? '' : e.message);
@@ -537,7 +558,7 @@ async function doEnroll() {
     }
 }
 
-onMounted(async () => { await run(); await loadAssignments(); });
+onMounted(async () => { await run(); await Promise.all([loadAssignments(), loadHomework(1)]); });
 </script>
 
 <template>
@@ -660,13 +681,39 @@ onMounted(async () => { await run(); await loadAssignments(); });
             </div>
 
             <!-- Assignments tab: the full staff loop — create, publish, review, grade -->
-            <div v-else-if="tab === 'assignments'" class="space-y-4">
-                <div class="flex justify-end"><AppButton @click="openAssignment()">{{ $t('assignments.create') }}</AppButton></div>
+            <div v-else-if="tab === 'assignments'" class="space-y-6">
+                <section class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm text-ink-500">{{ $t('homework.teacherIntro') }}</p>
+                        <AppButton @click="openExam('course', null, 'homework')">{{ $t('homework.create') }}</AppButton>
+                    </div>
+                    <EmptyState v-if="!homework.length" icon="clipboard" :title="$t('homework.emptyTeacherTitle')" :message="$t('homework.emptyTeacherMessage')">
+                        <AppButton @click="openExam('course', null, 'homework')">{{ $t('homework.create') }}</AppButton>
+                    </EmptyState>
+                    <div v-else class="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
+                        <div class="divide-y divide-ink-100">
+                            <div v-for="h in homework" :key="h.id" class="flex flex-wrap items-center gap-3 px-5 py-3.5">
+                                <Icon name="clipboard" :size="20" class="text-terracotta-500" />
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-medium text-ink-800" dir="auto">{{ h.title }}</p>
+                                    <p class="text-xs text-ink-400">
+                                        {{ $t('homework.window', { from: h.starts_at ? formatDate(h.starts_at) : '—', to: h.ends_at ? formatDate(h.ends_at) : '—' }) }}
+                                        · {{ $t('courses.examSummary', { questions: h.questions_count, attempts: h.attempts_count }) }}
+                                    </p>
+                                </div>
+                                <AppBadge :tone="h.status === 'published' ? 'success' : 'neutral'">{{ $t(`status.${h.status}`, h.status) }}</AppBadge>
+                                <router-link :to="`/teacher/exams/${h.id}`"><AppButton variant="outline" size="sm">{{ $t('common.manage') }}</AppButton></router-link>
+                            </div>
+                        </div>
+                        <div class="border-t border-ink-100 px-4 py-3"><Pagination v-if="homeworkMeta" :meta="homeworkMeta" @change="loadHomework" /></div>
+                    </div>
+                </section>
+
+                <!-- Earlier file-upload assignments stay reachable; new ones are homework above. -->
                 <LoadingSpinner v-if="assignmentsBusy" />
-                <EmptyState v-else-if="!assignments.length" icon="clipboard" :title="$t('assignments.emptyTeacherTitle')" :message="$t('assignments.emptyTeacherMessage')">
-                    <AppButton @click="openAssignment()">{{ $t('assignments.create') }}</AppButton>
-                </EmptyState>
-                <div v-else class="space-y-3">
+                <section v-else-if="assignments.length" class="space-y-3">
+                <p class="text-sm font-semibold text-ink-700">{{ $t('homework.legacyTitle') }}</p>
+                <div class="space-y-3">
                     <div v-for="a in assignments" :key="a.id" class="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
                         <div class="flex flex-wrap items-start gap-3">
                             <div class="min-w-0 flex-1">
@@ -693,6 +740,7 @@ onMounted(async () => { await run(); await loadAssignments(); });
                         </div>
                     </div>
                 </div>
+                </section>
             </div>
 
             <div v-else-if="tab === 'exams'" class="space-y-4">
@@ -788,15 +836,19 @@ onMounted(async () => { await run(); await loadAssignments(); });
         </AppModal>
 
         <!-- Exam modal -->
-        <AppModal :open="examModal" :title="$t('courses.createExam')" size="lg" @close="examModal = false">
+        <AppModal :open="examModal" :title="examFormIsHomework ? $t('homework.create') : $t('courses.createExam')" size="lg" @close="examModal = false">
             <form class="space-y-4" @submit.prevent="saveExam">
                 <AppInput v-model="examForm.title" :label="$t('exams.titleField')" required id="exam-title" :error="examErrors.title" />
                 <AppSelect v-model="examForm.scope" :label="$t('courses.examScope')" :options="examScopeOptions" id="exam-scope" />
                 <AppSelect v-if="examForm.scope === 'lesson'" v-model="examForm.lesson_id" :label="$t('courses.lessonTitle')" :options="lessonOptions" id="exam-lesson" :placeholder="$t('common.select')" :error="examErrors.lesson_id" />
                 <div v-if="examForm.scope === 'units'" class="space-y-2"><p class="text-sm font-medium text-ink-800">{{ $t('courses.selectUnits') }}</p><label v-for="unit in units" :key="unit.id" class="flex items-center gap-2 rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-700"><input type="checkbox" :checked="examForm.unit_ids.includes(unit.id)" @change="toggleExamUnit(unit.id)" />{{ unit.title }}</label><p v-if="examErrors.unit_ids" class="text-xs font-medium text-rose-600">{{ examErrors.unit_ids }}</p></div>
                 <AppTextarea v-model="examForm.description" :label="$t('exams.description')" id="exam-desc" :error="examErrors.description" :rows="2" />
-                <div class="grid gap-4 sm:grid-cols-3">
-                    <AppInput v-model="examForm.duration_minutes" :label="$t('exams.durationMin')" type="number" id="exam-duration" :error="examErrors.duration_minutes" />
+                <div v-if="examFormIsHomework" class="grid gap-4 sm:grid-cols-2">
+                    <AppInput v-model="examForm.starts_at" type="datetime-local" :label="$t('homework.opensAt')" required id="exam-starts" :error="examErrors.starts_at" />
+                    <AppInput v-model="examForm.ends_at" type="datetime-local" :label="$t('homework.closesAt')" required id="exam-ends" :error="examErrors.ends_at" />
+                </div>
+                <div class="grid gap-4" :class="examFormIsHomework ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+                    <AppInput v-if="!examFormIsHomework" v-model="examForm.duration_minutes" :label="$t('exams.durationMin')" type="number" id="exam-duration" :error="examErrors.duration_minutes" />
                     <AppInput v-model="examForm.pass_percentage" :label="$t('exams.passPercent')" type="number" id="exam-pass" :error="examErrors.pass_percentage" />
                     <AppInput v-model="examForm.max_attempts" :label="$t('exams.maxAttempts')" type="number" id="exam-max" :error="examErrors.max_attempts" />
                 </div>

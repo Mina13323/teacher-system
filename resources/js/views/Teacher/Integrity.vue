@@ -9,26 +9,25 @@ import AppButton from '@/components/ui/AppButton.vue';
 import StatCard from '@/components/ui/StatCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 
-const { loading, error, data, run } = useAsync(() => teacher.analyticsOverview());
 const flagged = ref([]);
+const needsAttentionCount = ref(0);
 const collecting = ref(false);
+
+// One request for the page: the list and its headline count (the page used
+// to also load the whole analytics overview for that one number).
+const { loading, error, run } = useAsync(async () => {
+    const res = await teacher.integrityAttempts();
+    flagged.value = Array.isArray(res?.attempts) ? res.attempts : toList(res?.attempts).items;
+    needsAttentionCount.value = Number(res?.needs_attention_count) || 0;
+    return res;
+});
 
 async function collect() {
     collecting.value = true;
     try {
-        const courses = toList(await teacher.courses({ per_page: 50 })).items;
-        const rows = [];
-        for (const c of courses.slice(0, 12)) {
-            const exams = toList(await teacher.exams(c.id, { per_page: 50 })).items;
-            for (const e of exams.slice(0, 12)) {
-                const attempts = toList(await teacher.examAttempts(e.id, { per_page: 20 })).items;
-                const flaggedHere = attempts.filter((a) => a.integrity_status && ['flagged', 'monitoring', 'reviewed', 'cleared'].includes(a.integrity_status));
-                flaggedHere.forEach((a) => rows.push({ ...a, exam_title: e.title, course_title: c.title }));
-            }
-        }
-        flagged.value = rows;
+        await run();
     } catch {
-        flagged.value = [];
+        // `useAsync` exposes the failure in `error`.
     } finally {
         collecting.value = false;
     }
@@ -38,10 +37,7 @@ function tone(status) {
     return { flagged: 'danger', monitoring: 'warning', reviewed: 'info', cleared: 'success' }[status] || 'neutral';
 }
 
-onMounted(async () => {
-    await run();
-    await collect();
-});
+onMounted(() => run().catch(() => {}));
 </script>
 
 <template>
@@ -52,7 +48,7 @@ onMounted(async () => {
         <div v-else-if="error" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error.message }}</div>
 
         <template v-else>
-            <StatCard :label="$t('integrity.flaggedStat')" :value="data.flagged_integrity_count" icon="shield" tone="danger" />
+            <StatCard :label="$t('integrity.flaggedStat')" :value="needsAttentionCount" icon="shield" tone="danger" />
 
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-ink-900">{{ $t('integrity.needsAttention') }}</h2>

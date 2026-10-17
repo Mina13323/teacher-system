@@ -36,23 +36,44 @@ class ProcessExpiredAttemptsCommand extends Command
         $processed = 0;
         $failed = 0;
 
+        // Three narrow reads instead of one OR across them: each uses the
+        // (status, expires_at) index on in-progress rows, so the per-minute
+        // sweep no longer scans every historical attempt during an exam. The
+        // union is the same set the single query selected.
+        $inProgress = fn () => ExamAttempt::query()->where('exam_attempts.status', ExamAttemptStatus::InProgress->value);
+
+        $ids = $inProgress()
+            ->where('exam_attempts.expires_at', '<=', now())
+            ->orderBy('exam_attempts.id')
+            ->limit($limit)
+            ->pluck('exam_attempts.id')
+            // Legacy rows without a stored deadline (the column is NOT NULL
+            // today, so this is normally empty).
+            ->merge($inProgress()
+                ->whereNull('exam_attempts.expires_at')
+                ->whereNotNull('exam_attempts.started_at')
+                ->orderBy('exam_attempts.id')
+                ->limit($limit)
+                ->pluck('exam_attempts.id'))
+            // The exam window closed before the attempt's own deadline
+            // (soft-deleted exams included, as in the attempt's exam relation).
+            ->merge($inProgress()
+                ->join('exams', 'exams.id', '=', 'exam_attempts.exam_id')
+                ->whereNotNull('exams.ends_at')
+                ->where('exams.ends_at', '<=', now())
+                ->orderBy('exam_attempts.id')
+                ->limit($limit)
+                ->pluck('exam_attempts.id'))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->sort()
+            ->take($limit)
+            ->values();
+
         ExamAttempt::query()
             ->with('exam')
-            ->where('status', ExamAttemptStatus::InProgress->value)
-            ->where(function ($query) {
-                $query->where(function ($q) {
-                    $q->whereNotNull('expires_at')
-                        ->where('expires_at', '<=', now());
-                })->orWhere(function ($q) {
-                    $q->whereNull('expires_at')
-                        ->whereNotNull('started_at');
-                })->orWhereHas('exam', function ($examQ) {
-                    $examQ->whereNotNull('ends_at')
-                        ->where('ends_at', '<=', now());
-                });
-            })
+            ->whereIn('id', $ids)
             ->orderBy('id')
-            ->limit($limit)
             ->get()
             ->each(function (ExamAttempt $attempt) use ($finalizeExpired, &$processed, &$failed) {
                 try {

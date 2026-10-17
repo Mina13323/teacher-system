@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\ScheduledReminderNotification;
 use App\Services\NotificationPreferences;
 use App\Jobs\SendWebPushJob;
+use App\Services\Push\WebPushSender;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -45,8 +46,12 @@ class DispatchRemindersCommand extends Command
 
     private int $skipped = 0;
 
-    public function handle(NotificationPreferences $preferences): int
+    /** Whether Web Push is configured (VAPID keys); read once per run. */
+    private bool $pushEnabled = false;
+
+    public function handle(NotificationPreferences $preferences, WebPushSender $push): int
     {
+        $this->pushEnabled = $push->isEnabled();
 
         $this->dispatchExamOpenings($preferences);
         $this->dispatchExamClosings($preferences);
@@ -246,6 +251,15 @@ class DispatchRemindersCommand extends Command
         // reminder (§25): identical preference gating already applied above,
         // the database notification remains the durable record, and the job
         // is unique per (user, dedupe key) so retries can never double-push.
+        // It is queued only when it can deliver something: without VAPID keys
+        // or a subscription the job would do nothing, yet still cost a queue
+        // row (never run where no worker is configured) and a unique lock.
+        if (! $this->pushEnabled || ! $user->pushSubscriptions()->exists()) {
+            $this->sent++;
+
+            return;
+        }
+
         SendWebPushJob::dispatch(
             $user->getKey(),
             $title,

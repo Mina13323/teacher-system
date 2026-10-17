@@ -1,8 +1,10 @@
 <script setup>
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { profilePathFor } from '@/utils/authRoutes';
+import { formatDateTime } from '@/utils/format';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import AppInput from '@/components/ui/AppInput.vue';
 import AppButton from '@/components/ui/AppButton.vue';
@@ -12,11 +14,19 @@ import LanguageSwitcher from '@/components/ui/LanguageSwitcher.vue';
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
+const { t } = useI18n();
 const { fieldErrors } = useFieldErrors();
 
 const form = reactive({ email: '', password: '' });
 const errors = reactive({});
 const errorMsg = ref('');
+/** Set when the password was right but the account is signed in on another device. */
+const transfer = ref(null);
+
+const endedNotice = computed(() => ({
+    session_transferred: t('auth.sessionTransferredNotice'),
+    session_ended: t('auth.sessionEndedNotice'),
+}[auth.endedReason] || ''));
 
 function homeFor(roles) {
     if (roles.includes('admin')) return '/admin';
@@ -25,19 +35,56 @@ function homeFor(roles) {
     return '/student';
 }
 
+function goHome() {
+    const target = auth.user?.must_change_password
+        ? profilePathFor(auth.roles)
+        : (route.query.redirect || homeFor(auth.roles));
+    router.push(target);
+}
+
 async function submit() {
     Object.keys(errors).forEach((k) => delete errors[k]);
     errorMsg.value = '';
+    transfer.value = null;
     try {
         await auth.login(form);
-        const target = auth.user?.must_change_password
-            ? profilePathFor(auth.roles)
-            : (route.query.redirect || homeFor(auth.roles));
-        router.push(target);
+        goHome();
     } catch (e) {
+        if (e?.status === 409 && e?.data?.code === 'session_transfer_required') {
+            const other = e.data.data?.other_session || {};
+            transfer.value = {
+                token: e.data.data?.transfer_token,
+                device: other.device || '',
+                lastActive: other.last_active_at ? formatDateTime(other.last_active_at) : '',
+            };
+            return;
+        }
         Object.assign(errors, fieldErrors(e));
         errorMsg.value = e.isValidation ? '' : e.message;
     }
+}
+
+/** The student chose to move the account here; the other device is signed out. */
+async function confirmTransfer() {
+    const token = transfer.value?.token;
+    if (!token) return;
+    errorMsg.value = '';
+    try {
+        await auth.transferSession(token);
+        transfer.value = null;
+        form.password = '';
+        goHome();
+    } catch (e) {
+        // Expired or already used: sign in again from the start.
+        transfer.value = null;
+        errorMsg.value = e.message;
+    }
+}
+
+function cancelTransfer() {
+    // Nothing was changed on the server; the other device stays signed in.
+    transfer.value = null;
+    form.password = '';
 }
 </script>
 
@@ -76,9 +123,20 @@ async function submit() {
                 <h2 class="text-2xl font-bold text-ink-900">{{ $t('auth.loginTitle') }}</h2>
                 <p class="mt-1 text-sm text-ink-500">{{ $t('auth.loginSubtitle') }}</p>
 
+                <Alert v-if="endedNotice && !errorMsg && !transfer" tone="warning" class="mt-4" role="status">{{ endedNotice }}</Alert>
                 <Alert v-if="errorMsg" tone="danger" class="mt-4">{{ errorMsg }}</Alert>
 
-                <form class="mt-6 space-y-4" @submit.prevent="submit">
+                <section v-if="transfer" class="mt-6 space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950" role="alertdialog" aria-labelledby="transfer-title" aria-describedby="transfer-body">
+                    <h3 id="transfer-title" class="font-semibold">{{ $t('auth.transferTitle') }}</h3>
+                    <p id="transfer-body" class="text-sm" dir="auto">{{ $t('auth.transferBody', { device: transfer.device, time: transfer.lastActive }) }}</p>
+                    <p class="text-sm" dir="auto">{{ $t('auth.transferExam') }}</p>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <AppButton :loading="auth.loading" class="w-full sm:w-auto" @click="confirmTransfer">{{ $t('auth.transferConfirm') }}</AppButton>
+                        <AppButton variant="outline" class="w-full sm:w-auto" :disabled="auth.loading" @click="cancelTransfer">{{ $t('auth.transferCancel') }}</AppButton>
+                    </div>
+                </section>
+
+                <form v-else class="mt-6 space-y-4" @submit.prevent="submit">
                     <AppInput v-model="form.email" :label="$t('auth.email')" type="email" id="login-email" required autocomplete="email" :error="errors.email" placeholder="you@example.com" />
                     <AppInput v-model="form.password" :label="$t('auth.password')" type="password" id="login-password" required autocomplete="current-password" :error="errors.password" placeholder="••••••••" />
                     <AppButton type="submit" :loading="auth.loading" class="w-full" size="lg">{{ $t('auth.signIn') }}</AppButton>

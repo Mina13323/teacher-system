@@ -68,7 +68,11 @@ return [
      */
 
     'cache' => [
-        'store' => 'default',
+        // The permission/role blob is read on every authorization check. The
+        // file store keeps that read off MySQL; Spatie still clears it on any
+        // role or permission change. PERMISSION_CACHE_STORE=default restores
+        // the default cache store.
+        'store' => env('PERMISSION_CACHE_STORE', 'file'),
 
         'key' => 'spatie.permission.cache',
 

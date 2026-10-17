@@ -27,8 +27,10 @@ return [
     'course_title' => 'Load Test Course',
     'exam_title' => 'Load Test Exam (load-test-exam)',
 
-    // Dedicated, documented, staging-only password for every fixture account.
-    'password' => env('LOADTEST_PASSWORD') ?: 'LoadTest#Staging-2026',
+    // Shared password for every fixture account. NO DEFAULT: it must be set
+    // explicitly in the STAGING environment (see LoadTestPassword for the
+    // strength rules). loadtest:seed refuses to run without a valid value.
+    'password' => env('LOADTEST_PASSWORD'),
 
     // Per-IP login budget for fixture students ONLY (normal limit: api.rate_limit.auth).
     // Applies only when LoadTestLoginAllowance passes; the per-account limit is unchanged.

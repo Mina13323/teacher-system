@@ -1,5 +1,6 @@
 import { ref, onMounted } from 'vue';
 import { useRegisterSW } from 'virtual:pwa-register/vue';
+import { createUpdateCheckGate } from '@/utils/pwaUpdateGate';
 
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true);
 const isInstallable = ref(false);
@@ -15,13 +16,25 @@ let serviceWorkerRegistration;
 let updateCheckTimer;
 let browserListenersAttached = false;
 
-function checkForUpdates() {
+const updateCheckGate = createUpdateCheckGate();
+
+/**
+ * Asks the browser to re-check /sw.js. `forced` checks (registration, back
+ * online, the periodic timer) always run; focus/visibility/pageshow checks
+ * are spaced out (see pwaUpdateGate).
+ */
+function checkForUpdates({ forced = false } = {}) {
     if (!serviceWorkerRegistration || typeof navigator === 'undefined' || !navigator.onLine) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (!updateCheckGate.allow({ forced })) return;
 
     serviceWorkerRegistration.update().catch(() => {
         // Network failures are normal while offline; the current worker stays active.
     });
+}
+
+function checkForUpdatesOnReturn() {
+    checkForUpdates();
 }
 
 function handleVisibilityChange() {
@@ -30,7 +43,7 @@ function handleVisibilityChange() {
 
 function updateOnlineStatus() {
     if (typeof navigator !== 'undefined') isOnline.value = navigator.onLine;
-    if (isOnline.value) checkForUpdates();
+    if (isOnline.value) checkForUpdates({ forced: true });
 }
 
 function checkInstalled() {
@@ -67,8 +80,8 @@ function attachBrowserListeners() {
     updateOnlineStatus();
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
-    window.addEventListener('focus', checkForUpdates);
-    window.addEventListener('pageshow', checkForUpdates);
+    window.addEventListener('focus', checkForUpdatesOnReturn);
+    window.addEventListener('pageshow', checkForUpdatesOnReturn);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled, { once: true });
@@ -86,9 +99,9 @@ function getRegistration() {
                 // Check immediately after registration, whenever the app returns
                 // to the foreground/online, and periodically while it stays open.
                 // The waiting worker is still user-confirmed to protect active exams.
-                checkForUpdates();
+                checkForUpdates({ forced: true });
                 if (!updateCheckTimer && typeof window !== 'undefined') {
-                    updateCheckTimer = window.setInterval(checkForUpdates, 30 * 60 * 1000);
+                    updateCheckTimer = window.setInterval(() => checkForUpdates({ forced: true }), 30 * 60 * 1000);
                 }
             },
         });

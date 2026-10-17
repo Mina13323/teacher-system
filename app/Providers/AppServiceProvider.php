@@ -39,7 +39,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Retry a refused MySQL connect (never a query); see the class docblock.
+        $this->app->bind('db.connector.mysql', \App\Database\RetryingMySqlConnector::class);
     }
 
     /**
@@ -47,6 +48,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Same Sanctum tokens; `last_used_at` is written at most every 5 min.
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+
+        // Optional idle expiry (auth_sessions.idle_timeout_days, off by
+        // default): checked on every request with the token row Sanctum has
+        // already loaded, so it adds no query and nothing is cached.
+        \Laravel\Sanctum\Sanctum::authenticateAccessTokensUsing(
+            fn ($token, bool $isValid) => $isValid
+                && (! $token instanceof \App\Models\PersonalAccessToken
+                    || \App\Services\Auth\DeviceSessionService::withinIdleWindow($token))
+        );
+
         // API rate limiter used by the "throttle:api" middleware, which is
         // attached to the api group in bootstrap/app.php via throttleApi().
         RateLimiter::for('api', function (Request $request) {
@@ -105,6 +118,13 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return $limits;
+        });
+
+        // Confirming a move to another device needs a one-time token from a
+        // successful password check, so it only needs a modest per-IP cap.
+        RateLimiter::for('session-transfer', function (Request $request) {
+            return Limit::perMinute((int) config('api.rate_limit.auth', 10))
+                ->by('session-transfer|'.($request->ip() ?: 'unknown'));
         });
 
         // A public registration link intentionally has a small budget per

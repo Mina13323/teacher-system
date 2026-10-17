@@ -33,36 +33,17 @@ class SubmitExamAttemptAction
 
     public function execute(ExamAttempt $attempt): ExamAttempt
     {
-        $fresh = $attempt->fresh();
-
-        // Idempotent for ANY handed-in state (submitted, grading, published):
-        // a duplicate submit must never re-grade or demote a published result.
-        if ($this->isHandedIn($fresh)) {
-            return $fresh;
-        }
-
-        if ($fresh->status->isExpired()) {
-            throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
-        }
-
-        if ($fresh->isExpired()) {
-            // Deadline passed while the attempt was still in progress:
-            // finalize per the exam's documented expiry policy.
-            $finalized = $this->finalizeExpired->execute($fresh);
-
-            if ($finalized->status === ExamAttemptStatus::Expired) {
-                throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
-            }
-
-            return $finalized;
-        }
-
-        return DB::transaction(function () use ($fresh) {
+        // Every state check runs once, on the locked row. A duplicate submit
+        // therefore sees the committed result of the first one, and a submit
+        // racing an answer save or the expiry sweep is serialized by the lock.
+        $result = DB::transaction(function () use ($attempt) {
             // Re-check under lock to avoid concurrent double submission.
             $locked = ExamAttempt::query()
                 ->lockForUpdate()
-                ->find($fresh->getKey());
+                ->findOrFail($attempt->getKey());
 
+            // Idempotent for ANY handed-in state (submitted, grading, published):
+            // a duplicate submit must never re-grade or demote a published result.
             if ($this->isHandedIn($locked)) {
                 return $locked;
             }
@@ -72,23 +53,36 @@ class SubmitExamAttemptAction
             }
 
             if ($locked->isExpired()) {
-                $finalized = $this->finalizeExpired->execute($locked);
-
-                if ($finalized->status === ExamAttemptStatus::Expired) {
-                    throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
-                }
-
-                return $finalized;
+                // Deadline passed while the attempt was still in progress:
+                // finalize per the exam's expiry policy on this same lock. The
+                // strict-policy refusal is thrown only after commit (below), so
+                // it cannot roll the finalization back.
+                return ['finalized' => $this->finalizeExpired->finalizeLocked($locked)];
             }
 
-            $locked->load(['attemptQuestions.attemptOptions', 'answers.selectedOptions', 'exam']);
+            if ($attempt->relationLoaded('student')) {
+                $locked->setRelation('student', $attempt->student);
+            }
+
+            // The exam was loaded by isExpired() above.
+            $locked->load(['attemptQuestions.attemptOptions', 'answers.selectedOptions']);
             $this->assertRequiredExplanations($locked);
             $locked->end_reason = 'submitted_by_student';
 
-            $graded = $this->gradeAttempt->execute($locked);
-
-            return $graded;
+            return $this->gradeAttempt->execute($locked, relationsLoadedUnderLock: true);
         });
+
+        if ($result instanceof ExamAttempt) {
+            return $result;
+        }
+
+        $finalized = $result['finalized'];
+
+        if ($finalized->status === ExamAttemptStatus::Expired) {
+            throw new InvalidAttemptStateException('This attempt has expired and cannot be submitted.');
+        }
+
+        return $finalized;
     }
 
     private function assertRequiredExplanations(ExamAttempt $attempt): void

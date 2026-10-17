@@ -53,11 +53,21 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// ---- Server clock -----------------------------------------------------------
+// Database-free: no auth, no session, and no throttle (were the limiter set back
+// to the database store, it would open a MySQL connection). It returns
+// only the current server time; see ServerTimeController.
+Route::get('time', \App\Http\Controllers\ServerTimeController::class)
+    ->withoutMiddleware('throttle:api');
+
 // ---- Authentication -------------------------------------------------------
 // Self-registration is intentionally not exposed. Accounts are created only by
 // teachers/assistants (student ops) or admins through the management portals.
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+    // Confirms a sign-in on this device for a one-device account (the login
+    // response's transfer token) and signs the other device out.
+    Route::post('session/transfer', [AuthController::class, 'transfer'])->middleware('throttle:session-transfer');
 
     Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
@@ -151,6 +161,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    // Essay-grading workspace: the essay answers of handed-in attempts only.
+    Route::get('exams/{exam}/essay-answers', [\App\Http\Controllers\Teacher\EssayGradingController::class, 'essayAnswers']);
+    // Publish every fully graded, unpublished attempt of the exam (bounded batches).
+    Route::post('exams/{exam}/publish-grades', [\App\Http\Controllers\Teacher\EssayGradingController::class, 'publishAll']);
     Route::post('exams/{exam}/attempts/bulk-delete', [TeacherExamController::class, 'deleteSelectedAttempts']);
     Route::get('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'makeUpAssignments']);
     Route::post('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'assignMakeUps']);
@@ -161,6 +175,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
 
     // Exam integrity configuration + attempt integrity review
+    Route::get('integrity/attempts', [TeacherIntegrityController::class, 'attentionAttempts']);
     Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
     Route::put('exams/{exam}/integrity', [TeacherIntegrityController::class, 'updateSettings']);
     Route::get('attempts/{attempt}/integrity', [TeacherIntegrityController::class, 'showAttemptIntegrity']);
@@ -220,6 +235,8 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
     Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
     Route::get('students/{student}', [TeacherStudentController::class, 'show']);
+    // A student's exam attempts, grouped by exam on the student page (paginated, staff-scoped).
+    Route::get('students/{student}/attempts', [\App\Http\Controllers\Teacher\StudentAttemptController::class, 'index']);
     Route::put('students/{student}', [TeacherStudentController::class, 'update']);
     Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [TeacherStudentController::class, 'deactivate']);

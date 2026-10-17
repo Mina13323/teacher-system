@@ -288,6 +288,13 @@ class User extends Authenticatable
             return true;
         }
 
+        // An assistant employed by a teacher stays within that teacher's
+        // resources unless co-teaching is on (the same scope staffOwnerIds()
+        // gives their listings).
+        if ($this->created_by !== null && ! config('app.co_teaching', false)) {
+            return false;
+        }
+
         // Under co-teaching or no teacher link — fall back to the single-LMS rule. Memoized per
         // owner id, since policies evaluate many resources per request.
         $cacheKey = (string) $ownerId;
@@ -374,6 +381,15 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return (bool) $this->is_active;
+    }
+
+    /**
+     * Unread in-app notifications. The one place the badge count is computed
+     * (GET /notifications/unread-count and GET /auth/me).
+     */
+    public function unreadNotificationCount(): int
+    {
+        return $this->unreadNotifications()->count();
     }
 
     public function canAccessLessons(): bool

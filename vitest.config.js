@@ -17,7 +17,9 @@ export default defineConfig({
 
     test: {
         environment: 'node',
-        include: ['resources/js/**/*.spec.js'],
+        // Load-test tooling (smoke script lib, k6 pure helpers) is unit-tested here
+        // with mocked fetch/inputs; nothing in these specs touches a network.
+        include: ['resources/js/**/*.spec.js', 'scripts/**/*.spec.js', 'load-tests/**/*.spec.js'],
         globals: false,
     },
 });

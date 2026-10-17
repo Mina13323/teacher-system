@@ -28,8 +28,11 @@ class LoadTestCleaner
     {
         return DB::table('users')
             ->select('id')
-            ->where('email', 'like', config('loadtest.student_email_prefix').'%@'.config('loadtest.email_domain'))
-            ->where('student_code', 'like', config('loadtest.student_code_prefix').'%');
+            // `_` matches exactly one character, so only NNNN-shaped fixture
+            // identities match (the seeder creates nothing else); a longer
+            // look-alike such as loadtest.student.alice@... is never selected.
+            ->where('email', 'like', config('loadtest.student_email_prefix').'____@'.config('loadtest.email_domain'))
+            ->where('student_code', 'like', config('loadtest.student_code_prefix').'____');
     }
 
     private function teacherIds(): Builder

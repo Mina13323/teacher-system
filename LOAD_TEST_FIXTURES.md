@@ -26,10 +26,14 @@ smaller `--students` never deletes users; it only ensures students `0001..N` exi
 Optional smoke check of the real API flow with ONE student (not a load test):
 
 ```bash
-BASE_URL=https://staging.maherelmasry.com node scripts/loadtest-smoke.mjs 1
+LOADTEST_PASSWORD='<staging fixture secret>' BASE_URL=https://staging.maherelmasry.com node scripts/loadtest-smoke.mjs 1
 ```
 
-It runs login → GET exams → GET exam → POST start → GET attempt → POST answer → POST heartbeat → POST submit.
+`BASE_URL` must be exactly the staging URL (a trailing slash is fine); anything else is refused before any request.
+It runs login → GET exams → GET exam → POST start → GET attempt → POST answer → POST heartbeat → POST submit →
+GET attempt, then logs out. It requires the exact fixture exam (no fallback to another exam), refuses to start when
+the student already has an attempt, and reports success only when the submit status is final and the submitted
+answer is read back as persisted.
 Because the exam allows a single attempt, a student can smoke-test once; use another student number,
 or `loadtest:seed --reset-attempts`, to repeat.
 
@@ -67,14 +71,16 @@ The exam is validated with the application's own `PublishExamAction::assertValid
 
 ## Password policy
 
-Every fixture account (students and teacher) uses one dedicated staging-only password:
+Every fixture account (students and teacher) uses one dedicated staging-only password that **you** choose.
+There is **no default** (the former published default was retired): set `LOADTEST_PASSWORD` in the **staging**
+`.env` to a strong secret (16+ characters with lower-case, upper-case, digit and symbol). `loadtest:seed`
+refuses to run, before writing anything, when it is missing or weak, and never prints it. Keep it out of git.
+The password is bcrypt-hashed once per run (`BCRYPT_ROUNDS`) and the same hash is stored for all fixture users.
+Never reuse it anywhere else, and run `loadtest:clean` when a test campaign is over.
 
-```
-LoadTest#Staging-2026
-```
-
-Override with `LOADTEST_PASSWORD` in the **staging** `.env`. The password is bcrypt-hashed once per run
-(`BCRYPT_ROUNDS`) and the same hash is stored for all fixture users. Never reuse it anywhere else.
+`loadtest:seed` also refuses (changing nothing) when a non-fixture record already uses a fixture identity: an
+account with a fixture student email but a different student code, a fixture teacher email that has other roles,
+or a course with the fixture slug that the fixture teacher does not own.
 
 ## Identifying fixture data
 

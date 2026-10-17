@@ -26,6 +26,7 @@ class UpdateExamRequest extends FormRequest
     {
         return [
             'title' => ['sometimes', 'string', 'max:255'],
+            'type' => ['sometimes', 'in:exam,homework'],
             'lesson_id' => ['sometimes', 'nullable', 'integer', 'exists:lessons,id'],
             'unit_ids' => ['sometimes', 'nullable', 'array', 'min:1'],
             'unit_ids.*' => ['integer', 'distinct', 'exists:units,id'],
@@ -58,6 +59,20 @@ class UpdateExamRequest extends FormRequest
                 'starts_at' => $exam->starts_at?->toIso8601String(),
                 'ends_at' => $exam->ends_at?->toIso8601String(),
             ]);
+
+            // A homework needs both times; the type is fixed once students
+            // have attempts (their rules and deadlines were set by it).
+            $type = $this->input('type', $exam->type ?? Exam::TYPE_EXAM);
+            if ($type === Exam::TYPE_HOMEWORK) {
+                $starts = $this->has('starts_at') ? $this->input('starts_at') : $exam->starts_at;
+                $ends = $this->has('ends_at') ? $this->input('ends_at') : $exam->ends_at;
+                if (blank($starts) || blank($ends)) {
+                    $validator->errors()->add('ends_at', 'A homework needs an open time and a close time.');
+                }
+            }
+            if ($this->has('type') && $type !== ($exam->type ?? Exam::TYPE_EXAM) && $exam->attempts()->withTrashed()->exists()) {
+                $validator->errors()->add('type', 'The type cannot change after students have started it.');
+            }
 
             $lessonId = $this->has('lesson_id') ? $this->input('lesson_id') : $exam->lesson_id;
             $unitIds = $this->has('unit_ids') ? $this->input('unit_ids') : $exam->unit_ids;

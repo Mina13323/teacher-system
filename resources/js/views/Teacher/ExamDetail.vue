@@ -1,10 +1,12 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAsync } from '@/composables/useAsync';
 import { teacher, toList } from '@/api';
 import { toggleBoundedSelection } from '@/utils/boundedSelection';
+import { pollExport } from '@/utils/exportFlow';
+import { canOpenGrading, gradeFieldValue, isGradable, parseAwardedPoints, ungradedEssayCount, ungradedEssaysFromError } from '@/utils/gradingRules';
 import { useToast } from '@/composables/toast';
 import { useFieldErrors } from '@/composables/fieldErrors';
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue';
@@ -28,10 +30,9 @@ const toast = useToast();
 const { fieldErrors, extractFieldError } = useFieldErrors();
 
 const tab = ref('questions');
+// The exam, its first attempts page and its integrity settings, in parallel.
 const { loading, error, data, run } = useAsync(async () => {
-    const e = await teacher.exam(examId);
-    await loadAttempts();
-    await loadIntegrity();
+    const [e] = await Promise.all([teacher.exam(examId), loadAttempts(), loadIntegrity()]);
     return e;
 });
 
@@ -47,6 +48,9 @@ const gradeForm = reactive({});
 const gradeFeedback = reactive({});
 const gradingBusy = ref(false);
 const publishBusy = ref(false);
+const publishConfirmOpen = ref(false);
+/** Essays of the open attempt still without a grade: publication waits for them. */
+const ungradedEssays = computed(() => ungradedEssayCount(gradingData.value?.questions));
 
 // ---- Attempt management: grouped by student (P1) and search ----
 const attemptsView = ref('flat'); // 'flat' | 'student'
@@ -266,17 +270,47 @@ function toggleStudent(studentId) {
 }
 
 const exportBusy = ref(false);
+/** A large export the server queued: { status, rows, error } while it is followed. */
+const exportJob = ref(null);
+let exportLeft = false;
+
 async function exportResults(format) {
     exportBusy.value = true;
     try {
-        await teacher.exportResults(examId, format);
-        toast.success(t('exams.exportStarted'));
+        const res = await teacher.exportResults(examId, format);
+        if (res.type === 'file') {
+            toast.success(t('exams.exportStarted'));
+        } else if (res.type === 'queued') {
+            exportJob.value = { status: 'queued', rows: res.rows };
+            await followExport(res.exportId, format);
+        } else {
+            toast.error(res.message || t('exams.exportFailed'));
+        }
     } catch (e) {
         toast.error(e.message);
     } finally {
         exportBusy.value = false;
     }
 }
+
+async function followExport(exportId, format) {
+    const outcome = await pollExport({
+        exportId,
+        fetchStatus: (id) => teacher.exportStatus(id),
+        isCancelled: () => exportLeft,
+        onUpdate: (status) => { exportJob.value = { ...exportJob.value, status }; },
+    });
+    if (outcome.state === 'cancelled') return;
+    if (outcome.state === 'done') {
+        await teacher.downloadExport(exportId, `exam-${examId}-results.${format}`);
+        exportJob.value = { ...exportJob.value, status: 'done' };
+        toast.success(t('exams.exportReady'));
+        return;
+    }
+    exportJob.value = { ...exportJob.value, status: outcome.state, error: outcome.error || '' };
+}
+
+onBeforeUnmount(() => { exportLeft = true; });
 
 async function loadAttempts(p = 1) {
     attemptsBusy.value = true;
@@ -570,6 +604,8 @@ async function deleteOption(q, option) {
 
 // ---- ESSAY GRADING MODAL ----
 async function openGrading(attempt) {
+    // A running attempt is never graded (the server refuses it too).
+    if (!canOpenGrading(attempt)) return;
     gradingAttempt.value = attempt;
     gradingLoading.value = true;
     try {
@@ -578,12 +614,12 @@ async function openGrading(attempt) {
         // Populate form
         if (gradingData.value?.questions?.length) {
             gradingData.value.questions.forEach((q) => {
-                gradeForm[q.id] = q.points_earned !== null ? q.points_earned : 0;
+                gradeForm[q.id] = gradeFieldValue(q.points_earned);
                 gradeFeedback[q.id] = q.feedback || '';
             });
         } else if (gradingData.value?.answers) {
             gradingData.value.answers.forEach((ans) => {
-                gradeForm[ans.question_id] = ans.points_earned !== null ? ans.points_earned : 0;
+                gradeForm[ans.question_id] = gradeFieldValue(ans.points_earned);
                 gradeFeedback[ans.question_id] = ans.feedback || '';
             });
         }
@@ -595,19 +631,32 @@ async function openGrading(attempt) {
     }
 }
 
-async function submitEssayGrade(questionId) {
+/** Why the typed points cannot be saved yet ('' when they can). */
+function gradeError(q) {
+    const parsed = parseAwardedPoints(gradeForm[q.id], q.points);
+    if (parsed.ok) return '';
+    return parsed.reason === 'empty' ? t('exams.awardedPointsRequired') : t('exams.awardedPointsRange', { max: q.points });
+}
+
+async function submitEssayGrade(q) {
     if (!gradingAttempt.value) return;
+    // An empty field is "not graded": never send it as 0.
+    const parsed = parseAwardedPoints(gradeForm[q.id], q.points);
+    if (!parsed.ok) {
+        toast.error(gradeError(q));
+        return;
+    }
     gradingBusy.value = true;
     try {
-        const pts = Number(gradeForm[questionId] || 0);
-        const fb = gradeFeedback[questionId] || null;
+        const fb = gradeFeedback[q.id] || null;
         const res = await teacher.gradeEssay(gradingAttempt.value.id, {
-            question_id: questionId,
-            awarded_points: pts,
+            question_id: q.id,
+            awarded_points: parsed.value,
             feedback: fb,
         });
         const updated = res.data || res;
         gradingData.value = updated;
+        gradeForm[q.id] = String(parsed.value);
         toast.success(t('exams.essayGradeSaved'));
         loadAttempts(attemptsMeta.value?.current_page || 1);
         if (attemptsView.value === 'student') loadGrouped();
@@ -619,17 +668,20 @@ async function submitEssayGrade(questionId) {
 }
 
 async function submitPublishGrades() {
-    if (!gradingAttempt.value) return;
+    if (!gradingAttempt.value || !isGradable(gradingData.value) || ungradedEssays.value > 0) return;
     publishBusy.value = true;
     try {
         const res = await teacher.publishGrades(gradingAttempt.value.id);
         const updated = res.data || res;
         gradingData.value = updated;
+        publishConfirmOpen.value = false;
         toast.success(t('exams.gradesPublishedToast'));
         loadAttempts(attemptsMeta.value?.current_page || 1);
         if (attemptsView.value === 'student') loadGrouped();
     } catch (e) {
-        toast.error(e.message);
+        const outstanding = ungradedEssaysFromError(e);
+        toast.error(outstanding !== null ? t('exams.publishBlockedUngraded', { n: outstanding }) : e.message);
+        publishConfirmOpen.value = false;
     } finally {
         publishBusy.value = false;
     }
@@ -690,7 +742,8 @@ async function saveIntegrity() {
     }
 }
 
-async function refresh() { await run(); loadAttempts(1); loadIntegrity(); }
+// run() already reloads the first attempts page and the integrity settings.
+async function refresh() { await run(); }
 onMounted(() => run());
 
 function attemptTone(statusOrAttempt) {
@@ -719,6 +772,7 @@ function attemptStatusLabel(statusOrAttempt) {
             <div class="mt-2 flex flex-wrap items-center gap-3">
                 <h1 class="text-2xl font-bold text-ink-900" dir="auto">{{ data?.title || $t('common.exam') }}</h1>
                 <AppBadge :tone="data?.status === 'published' ? 'success' : 'neutral'">{{ data?.status ? $t(`status.${data.status}`, data.status) : '' }}</AppBadge>
+                <AppBadge v-if="data?.type === 'homework'" tone="info">{{ $t('homework.label') }}</AppBadge>
                 <router-link :to="`/teacher/exams/${examId}/edit`"><AppButton variant="outline" size="sm">{{ $t('exams.editExam') }}</AppButton></router-link>
             </div>
             <p class="mt-1 text-ink-500" dir="auto">{{ data?.description }}</p>
@@ -728,8 +782,9 @@ function attemptStatusLabel(statusOrAttempt) {
             <AppButton v-if="data?.status !== 'published'" variant="success" size="sm" :loading="statusBusy" @click="setStatus('publish')">{{ $t('exams.publish') }}</AppButton>
             <AppButton v-else variant="outline" size="sm" :loading="statusBusy" @click="setStatus('archive')">{{ $t('exams.archive') }}</AppButton>
             <AppButton variant="danger" size="sm" @click="deleteOpen = true">{{ $t('common.delete') }}</AppButton>
-            <AppButton variant="outline" size="sm" @click="openIntegrity">{{ $t('exams.integritySettings') }}</AppButton>
-            <AppButton v-if="data?.status === 'published'" variant="outline" size="sm" @click="openMakeUpModal">{{ $t('exams.assignMakeUp') }}</AppButton>
+            <!-- A homework is never proctored: no integrity settings, no make-up. -->
+            <AppButton v-if="data?.type !== 'homework'" variant="outline" size="sm" @click="openIntegrity">{{ $t('exams.integritySettings') }}</AppButton>
+            <AppButton v-if="data?.status === 'published' && data?.type !== 'homework'" variant="outline" size="sm" @click="openMakeUpModal">{{ $t('exams.assignMakeUp') }}</AppButton>
         </div>
 
         <LoadingSpinner v-if="loading" />
@@ -867,19 +922,22 @@ function attemptStatusLabel(statusOrAttempt) {
 
             <!-- Attempts & Grading Tab -->
             <div v-else class="space-y-4">
-                <!-- Task toolbar: group, search, export -->
-                <div class="flex flex-col lg:flex-row lg:items-center gap-3 rounded-xl border border-ink-100 bg-white p-3.5 shadow-sm">
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 min-w-0">
+                <!-- Task toolbar: view + search on the first row, filters + actions on the
+                     second. One row could not hold all of them: the search group shrank
+                     to nothing and the view toggle spilled over the filters. -->
+                <div class="flex flex-col gap-3 rounded-xl border border-ink-100 bg-white p-3.5 shadow-sm">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
                         <div class="flex overflow-hidden rounded-lg border border-ink-200 text-sm shrink-0 w-full sm:w-auto">
                             <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'flat' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('flat')">{{ $t('exams.viewAllAttempts') }}</button>
                             <button type="button" class="flex-1 sm:flex-initial px-3 py-1.5 transition font-medium text-center" :class="attemptsView === 'student' ? 'bg-terracotta-600 text-white' : 'bg-white text-ink-600 hover:bg-ink-50'" @click="switchAttemptsView('student')">{{ $t('exams.viewByStudent') }}</button>
                         </div>
 
                         <!-- Search Input for Student Name, Code, Email, Phone -->
-                        <div class="relative flex-1 min-w-0">
+                        <div class="relative flex-1 min-w-0 sm:min-w-[14rem]">
                             <input
                                 v-model="studentSearch"
                                 type="search"
+                                :aria-label="$t('exams.searchStudentsPlaceholder')"
                                 class="w-full rounded-lg border border-ink-200 ps-9 pe-8 py-2 text-sm focus:border-terracotta-500 focus:outline-none focus:ring-1 focus:ring-terracotta-500"
                                 :placeholder="$t('exams.searchStudentsPlaceholder')"
                                 @input="onStudentSearch"
@@ -898,21 +956,40 @@ function attemptStatusLabel(statusOrAttempt) {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2.5 w-full sm:w-auto">
-                        <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
-                        <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="col-span-2 sm:col-span-1 w-full sm:w-28" @update:model-value="onAttemptFilterChange" />
-                    </div>
+                    <div class="flex flex-col lg:flex-row lg:flex-wrap lg:items-end lg:justify-between gap-3">
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2.5 w-full sm:w-auto">
+                            <AppSelect v-model="statusFilter" :label="$t('exams.filterStatus')" :options="attemptStatusOptions" id="attempt-status-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                            <AppSelect v-model="integrityFilter" :label="$t('exams.filterIntegrity')" :options="integrityStatusOptions" id="attempt-integrity-filter" class="col-span-1 w-full sm:w-36" @update:model-value="onAttemptFilterChange" />
+                            <AppInput v-model="exactScoreFilter" :label="$t('exams.exactScoreFilter')" type="number" min="0" id="attempt-score-filter" class="col-span-2 sm:col-span-1 w-full sm:w-28" @update:model-value="onAttemptFilterChange" />
+                        </div>
 
-                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-2 w-full lg:w-auto pt-2 border-t border-ink-100 lg:border-t-0 lg:pt-0">
-                        <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
-                            {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
-                        </AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
-                        <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center sm:justify-end gap-2 w-full lg:w-auto pt-2 border-t border-ink-100 lg:border-t-0 lg:pt-0">
+                            <AppButton v-if="selectedAttemptIds.length" variant="danger" size="sm" class="col-span-2 sm:col-span-1 justify-center text-center" @click="deleteSelectedOpen = true">
+                                {{ $t('exams.deleteSelectedAttempts', { n: selectedAttemptIds.length }) }}
+                            </AppButton>
+                            <router-link v-if="essayCount > 0" :to="`/teacher/exams/${examId}/grading`" class="col-span-2 sm:col-span-1">
+                                <AppButton variant="primary" size="sm" class="w-full justify-center text-center">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                            </router-link>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('csv')">⬇ {{ $t('exams.exportCsv') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('xlsx')">📊 {{ $t('exams.exportXlsx') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('pdf')">📄 {{ $t('exams.exportPdf') }}</AppButton>
+                            <AppButton variant="outline" size="sm" :loading="exportBusy" class="justify-center text-center" @click="exportResults('print')">🖨 {{ $t('exams.exportPrint') }}</AppButton>
+                        </div>
                     </div>
+                    <p
+                        v-if="exportJob"
+                        class="w-full rounded-lg border px-3 py-2 text-sm"
+                        :class="['failed', 'timeout', 'error'].includes(exportJob.status) ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-sky-200 bg-sky-50 text-sky-900'"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <template v-if="exportJob.status === 'queued'">{{ $t('exams.exportQueued', { rows: exportJob.rows ?? '—' }) }}</template>
+                        <template v-else-if="exportJob.status === 'running'">{{ $t('exams.exportRunning') }}</template>
+                        <template v-else-if="exportJob.status === 'done'">{{ $t('exams.exportReady') }}</template>
+                        <template v-else-if="exportJob.status === 'failed'">{{ $t('exams.exportFailed') }} {{ exportJob.error }}</template>
+                        <template v-else-if="exportJob.status === 'timeout'">{{ $t('exams.exportTimeout') }}</template>
+                        <template v-else>{{ $t('exams.exportFailed') }} {{ exportJob.error }}</template>
+                    </p>
                 </div>
 
                 <!-- Grouped by student: best/latest, integrity, grading state, expandable attempts -->
@@ -960,7 +1037,10 @@ function attemptStatusLabel(statusOrAttempt) {
                                     <div class="flex items-center justify-between sm:justify-end gap-2 border-t border-ink-100/60 pt-2 sm:border-0 sm:pt-0">
                                         <AppBadge :tone="attemptTone(a)">{{ attemptStatusLabel(a) }}</AppBadge>
                                         <div class="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
-                                            <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">📝 {{ $t('exams.gradeAction') }}</AppButton>
+                                            <router-link v-if="essayCount > 0 && isGradable(a)" :to="`/teacher/exams/${examId}/grading?attempt_id=${a.id}`" class="flex-1 sm:flex-initial">
+                                                <AppButton variant="primary" size="sm" class="w-full text-center justify-center font-medium">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                                            </router-link>
+                                            <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">{{ $t('grading.viewAttempt') }}</AppButton>
                                             <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
                                                 <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">🔍 {{ $t('exams.integrityAction') }}</AppButton>
                                             </router-link>
@@ -1026,8 +1106,11 @@ function attemptStatusLabel(statusOrAttempt) {
                                     </AppBadge>
                                 </div>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
-                                    <AppButton variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
-                                        📝 {{ $t('exams.gradeAction') }}
+                                    <router-link v-if="essayCount > 0 && isGradable(a)" :to="`/teacher/exams/${examId}/grading?attempt_id=${a.id}`" class="flex-1 sm:flex-initial">
+                                        <AppButton variant="primary" size="sm" class="w-full text-center justify-center font-medium">📝 {{ $t('grading.openWorkspace') }}</AppButton>
+                                    </router-link>
+                                    <AppButton v-if="canOpenGrading(a)" variant="outline" size="sm" class="flex-1 sm:flex-initial text-center justify-center font-medium" @click="openGrading(a)">
+                                        {{ $t('grading.viewAttempt') }}
                                     </AppButton>
                                     <router-link :to="`/teacher/integrity/attempts/${a.id}`" class="flex-1 sm:flex-initial">
                                         <AppButton variant="outline" size="sm" class="w-full text-center justify-center font-medium text-ink-700 hover:text-terracotta-700">
@@ -1149,7 +1232,7 @@ function attemptStatusLabel(statusOrAttempt) {
                                         {{ (q.is_correct ?? (gradingData.answers?.find(a => a.question_id === q.id))?.is_correct) ? '✓ ' + $t('exams.answerCorrect') : '✗ ' + $t('exams.answerIncorrect') }}
                                     </span>
                                     <span class="text-xs text-ink-500 font-medium">
-                                        ({{ $t('exams.pointsEarnedOf', { earned: q.points_earned ?? (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? 0, total: q.points }) }})
+                                        ({{ $t('exams.pointsEarnedOf', { earned: q.points_earned ?? (gradingData.answers?.find(a => a.question_id === q.id))?.points_earned ?? '—', total: q.points }) }})
                                     </span>
                                 </div>
                                 <!-- Option breakdown if available from snapshot -->
@@ -1181,21 +1264,34 @@ function attemptStatusLabel(statusOrAttempt) {
                         </div>
 
                         <!-- Grading Controls for Essay -->
-                        <div v-if="(q.question_type || q.type) === 'essay'" class="border-t pt-3 space-y-3">
+                        <div v-if="(q.question_type || q.type) === 'essay' && isGradable(gradingData)" class="border-t pt-3 space-y-3">
+                            <p v-if="q.points_earned === null || q.points_earned === undefined" class="text-xs font-semibold text-amber-700">⏳ {{ $t('exams.essayNotGraded') }}</p>
                             <div class="grid gap-3 sm:grid-cols-2">
-                                <AppInput v-model="gradeForm[q.id]" type="number" min="0" :max="q.points" :label="$t('exams.awardedPoints')" id="essay-pts" />
-                                <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" id="essay-fb" />
+                                <AppInput
+                                    v-model="gradeForm[q.id]"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    :max="q.points"
+                                    :label="$t('exams.awardedPoints')"
+                                    :id="`essay-pts-${q.id}`"
+                                    :error="gradeForm[q.id] !== '' ? gradeError(q) : ''"
+                                />
+                                <AppInput v-model="gradeFeedback[q.id]" :label="$t('exams.teacherFeedbackLabel')" :id="`essay-fb-${q.id}`" />
                             </div>
                             <div class="flex justify-end">
-                                <AppButton size="sm" variant="outline" :loading="gradingBusy" @click="submitEssayGrade(q.id)">{{ $t('exams.saveQuestionGrade') }}</AppButton>
+                                <AppButton size="sm" variant="outline" :loading="gradingBusy" :disabled="Boolean(gradeError(q))" @click="submitEssayGrade(q)">{{ $t('exams.saveQuestionGrade') }}</AppButton>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <p v-if="isGradable(gradingData) && ungradedEssays > 0" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+                    {{ $t('exams.publishBlockedUngraded', { n: ungradedEssays }) }}
+                </p>
                 <div class="flex justify-between items-center border-t pt-4">
                     <AppButton variant="outline" @click="gradingAttempt = null">{{ $t('common.close') }}</AppButton>
-                    <AppButton variant="success" :loading="publishBusy" @click="submitPublishGrades">
+                    <AppButton v-if="isGradable(gradingData)" variant="success" :loading="publishBusy" :disabled="ungradedEssays > 0" @click="publishConfirmOpen = true">
                         🚀 {{ $t('exams.publishGradesAction') }}
                     </AppButton>
                 </div>
@@ -1287,6 +1383,16 @@ function attemptStatusLabel(statusOrAttempt) {
             :loading="revokeMakeUpBusy"
             @close="revokeMakeUpTarget = null"
             @confirm="revokeMakeUp"
+        />
+        <ConfirmDialog
+            :open="publishConfirmOpen"
+            :title="$t('exams.publishConfirmTitle')"
+            :message="$t('exams.publishConfirmMessage', { name: gradingData?.student?.name || '' })"
+            :confirm-text="$t('exams.publishGradesAction')"
+            tone="success"
+            :loading="publishBusy"
+            @close="publishConfirmOpen = false"
+            @confirm="submitPublishGrades"
         />
         <ConfirmDialog
             :open="Boolean(regradeTarget)"

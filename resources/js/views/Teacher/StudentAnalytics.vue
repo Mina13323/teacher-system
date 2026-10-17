@@ -40,8 +40,11 @@ onMounted(() => run());
                         <thead><tr class="border-b border-ink-100 text-start text-xs uppercase tracking-wide text-ink-400"><th class="px-3 py-2">{{ $t('analytics.exam') }}</th><th class="px-3 py-2">{{ $t('analytics.score') }}</th><th class="px-3 py-2">{{ $t('analytics.result') }}</th><th class="px-3 py-2">{{ $t('analytics.date') }}</th></tr></thead>
                         <tbody>
                             <tr v-for="h in data.history" :key="h.attempt_id" class="border-b border-ink-50">
-                                <td class="px-3 py-2.5 font-medium text-ink-800" dir="auto">{{ h.exam_title }}</td>
-                                <td class="px-3 py-2.5 text-ink-600">{{ h.percentage }}%</td>
+                                <td class="px-3 py-2.5 font-medium" dir="auto">
+                                    <router-link :to="`/teacher/integrity/attempts/${h.attempt_id}`" class="text-terracotta-700 hover:underline">{{ h.exam_title }}</router-link>
+                                    <span class="block text-xs font-normal text-ink-400">{{ $t('grading.attemptN', { n: h.attempt_number }) }}</span>
+                                </td>
+                                <td class="px-3 py-2.5 text-ink-600">{{ h.percentage === null || h.percentage === undefined ? '—' : `${h.percentage}%` }}</td>
                                 <td class="px-3 py-2.5"><AppBadge :tone="h.passed === true ? 'success' : h.passed === false ? 'danger' : 'neutral'">{{ h.passed === true ? $t('status.passed') : h.passed === false ? $t('status.failed') : '—' }}</AppBadge></td>
                                 <td class="px-3 py-2.5 text-ink-500">{{ formatDate(h.submitted_at) }}</td>
                             </tr>

@@ -54,7 +54,6 @@ class RecordIntegrityEventAction
 {
     public function __construct(
         private readonly IntegrityRiskConfig $riskConfig,
-        private readonly EvaluateAttemptRiskAction $evaluateRisk,
         private readonly UpdateAttemptIntegrityStatusAction $updateStatus,
         private readonly TerminateExamAttemptAction $terminateAttempt,
     ) {
@@ -81,61 +80,29 @@ class RecordIntegrityEventAction
         $settingKey = $this->riskConfig->gateSetting($type);
         $enabled = $settingKey === null || $this->settingEnabled($attempt, $settingKey);
 
-        $state = DB::transaction(function () use ($attempt, $type, $occurredAt, $metadata, $enabled) {
-            // Lock the attempt so a concurrent submit cannot race a recording.
-            $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
+        // A repeat inside the deduplication window is answered without taking
+        // the attempt lock (the common case for bursts of the same event). The
+        // check is repeated under the lock below, so two concurrent identical
+        // events still record at most one.
+        //
+        // An event worth no risk points (a return to the page, re-entering
+        // fullscreen, or any event whose protection is off) cannot change the
+        // warning count, the risk score, the integrity status or trigger a
+        // termination, so it is written without the attempt lock and the
+        // risk re-sum: the record is the same, it just no longer waits
+        // behind answer saves on the attempt row.
+        $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
 
-            if (! $locked->status->isInProgress() || $locked->isExpired()) {
-                throw new InvalidAttemptStateException('Integrity events can only be recorded for an active attempt.');
-            }
-
-            // Deduplicate repeated identical events within the window.
-            if ($this->isDuplicate($locked, $type)) {
-                return [
-                    'event' => null,
-                    'deduplicated' => true,
-                    'counted' => false,
-                    'attempt' => $locked,
-                ];
-            }
-
-            $severity = $this->riskConfig->severity($type);
-            $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
-
-            if (! $enabled) {
-                // Evidence preserved but does not inflate the score because the
-                // corresponding protection is disabled for this attempt.
-                $metadata = array_merge($metadata, ['ignored' => true, 'reason' => 'protection_disabled']);
-                $severity = IntegritySeverity::Low;
-            }
-
-            $event = ExamIntegrityEvent::create([
-                'attempt_id' => $locked->getKey(),
-                'event_type' => $type->value,
-                'occurred_at' => $occurredAt,
-                'metadata' => $metadata ?: null,
-                'severity' => $severity->value,
-                'risk_points' => $riskPoints,
-            ]);
-
-            // Only enabled, risk-bearing events count toward the warning
-            // threshold — an ignored/zero-risk event is not a violation.
-            $counted = $enabled && $riskPoints > 0;
-
-            if ($counted) {
-                $locked->violation_warnings = (int) $locked->violation_warnings + 1;
-                $locked->save();
-            }
-
-            $this->refreshAttemptRisk($locked);
-
-            return [
-                'event' => $event,
+        $state = match (true) {
+            $this->isDuplicate($attempt, $type) => ['event' => null, 'deduplicated' => true, 'counted' => false, 'attempt' => $attempt],
+            $riskPoints === 0 => [
+                'event' => ExamIntegrityEvent::create($this->eventAttributes($attempt, $type, $occurredAt, $metadata, $enabled)),
                 'deduplicated' => false,
-                'counted' => $counted,
-                'attempt' => $locked->fresh(),
-            ];
-        });
+                'counted' => false,
+                'attempt' => $attempt,
+            ],
+            default => $this->recordLocked($attempt, $type, $occurredAt, $metadata, $enabled),
+        };
 
         $locked = $state['attempt'];
         $threshold = $this->warningThresholdFor($locked);
@@ -169,6 +136,92 @@ class RecordIntegrityEventAction
     }
 
     /**
+     * @param  array<string, mixed>  $metadata
+     * @return array{event: ?ExamIntegrityEvent, deduplicated: bool, counted: bool, attempt: ExamAttempt}
+     */
+    private function recordLocked(ExamAttempt $attempt, IntegrityEventType $type, Carbon $occurredAt, array $metadata, bool $enabled): array
+    {
+        return DB::transaction(function () use ($attempt, $type, $occurredAt, $metadata, $enabled) {
+            // Lock the attempt so a concurrent submit cannot race a recording.
+            $locked = ExamAttempt::query()->lockForUpdate()->find($attempt->getKey());
+
+            // The exam and the frozen settings were read for this attempt in
+            // this request; only the attempt row needs the locked re-read.
+            foreach (['exam', 'integritySetting'] as $relation) {
+                if ($attempt->relationLoaded($relation)) {
+                    $locked->setRelation($relation, $attempt->getRelation($relation));
+                }
+            }
+
+            if (! $locked->status->isInProgress() || $locked->isExpired()) {
+                throw new InvalidAttemptStateException('Integrity events can only be recorded for an active attempt.');
+            }
+
+            // Deduplicate repeated identical events within the window.
+            if ($this->isDuplicate($locked, $type)) {
+                return [
+                    'event' => null,
+                    'deduplicated' => true,
+                    'counted' => false,
+                    'attempt' => $locked,
+                ];
+            }
+
+            $attributes = $this->eventAttributes($locked, $type, $occurredAt, $metadata, $enabled);
+            $riskPoints = $attributes['risk_points'];
+            $event = ExamIntegrityEvent::create($attributes);
+
+            // Only enabled, risk-bearing events count toward the warning
+            // threshold — an ignored/zero-risk event is not a violation.
+            $counted = $enabled && $riskPoints > 0;
+
+            if ($counted) {
+                $locked->violation_warnings = (int) $locked->violation_warnings + 1;
+            }
+
+            // The warning count and the re-evaluated risk are written in one
+            // UPDATE (none when nothing changed); the locked model already
+            // holds the stored values, so it is not re-read.
+            $this->refreshAttemptRisk($locked);
+
+            return [
+                'event' => $event,
+                'deduplicated' => false,
+                'counted' => $counted,
+                'attempt' => $locked,
+            ];
+        });
+    }
+
+    /**
+     * The stored event: server-assigned severity and risk points. When the
+     * matching protection is off for this attempt, the evidence is kept but
+     * marked ignored and worth no points.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    private function eventAttributes(ExamAttempt $attempt, IntegrityEventType $type, Carbon $occurredAt, array $metadata, bool $enabled): array
+    {
+        $severity = $this->riskConfig->severity($type);
+        $riskPoints = $enabled ? $this->riskConfig->riskPoints($type) : 0;
+
+        if (! $enabled) {
+            $metadata = array_merge($metadata, ['ignored' => true, 'reason' => 'protection_disabled']);
+            $severity = IntegritySeverity::Low;
+        }
+
+        return [
+            'attempt_id' => $attempt->getKey(),
+            'event_type' => $type->value,
+            'occurred_at' => $occurredAt,
+            'metadata' => $metadata ?: null,
+            'severity' => $severity->value,
+            'risk_points' => $riskPoints,
+        ];
+    }
+
+    /**
      * Effective warning threshold: frozen per-attempt value or config default.
      */
     private function warningThresholdFor(ExamAttempt $attempt): int
@@ -180,13 +233,19 @@ class RecordIntegrityEventAction
         );
     }
 
+    /**
+     * Same score and status as EvaluateAttemptRiskAction (the sum of every
+     * recorded event's risk points, mapped through the configured thresholds),
+     * computed by the database instead of loading every event.
+     */
     private function refreshAttemptRisk(ExamAttempt $attempt): void
     {
-        $result = $this->evaluateRisk->execute($attempt);
-        $this->updateStatus->execute(
+        $riskScore = (int) $attempt->integrityEvents()->sum('risk_points');
+
+        $this->updateStatus->apply(
             $attempt,
-            $result['risk_score'],
-            $result['integrity_status']
+            $riskScore,
+            $this->riskConfig->statusFor($riskScore)
         );
     }
 

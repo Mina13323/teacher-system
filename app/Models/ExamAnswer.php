@@ -42,6 +42,25 @@ class ExamAnswer extends Model
         ];
     }
 
+    /**
+     * Concurrency token for an essay grade: changes whenever the points,
+     * feedback, grader or grading time change, and is the same for "no answer
+     * row" and "ungraded row without feedback". A grader sends back the token
+     * they loaded; a save against a different current token is a conflict.
+     * Derived from existing columns, so no schema change is needed.
+     */
+    public static function gradeVersion(?self $answer): string
+    {
+        // Normalized types, so a token computed from a raw query row matches
+        // one computed from a model whatever the database driver returns.
+        return substr(sha1(json_encode([
+            $answer?->points_earned !== null ? (int) $answer->points_earned : null,
+            $answer?->feedback === '' ? null : $answer?->feedback,
+            $answer?->graded_by !== null ? (int) $answer->graded_by : null,
+            $answer?->graded_at?->toISOString(),
+        ])), 0, 16);
+    }
+
     public function attempt(): BelongsTo
     {
         return $this->belongsTo(ExamAttempt::class, 'attempt_id');

@@ -26,7 +26,6 @@ const error = ref('');
 const course = ref(null);
 const enrollments = ref([]);
 const meta = ref(null);
-const students = ref([]);
 const selectedStudent = ref('');
 const enrolling = ref(false);
 const enrollError = ref({});
@@ -44,14 +43,11 @@ async function load() {
     loading.value = true;
     error.value = '';
     try {
-        const [c, s] = await Promise.all([
-            teacher.course(courseId),
-            teacher.students({ per_page: 100 }),
-        ]);
+        // The student picker loads its own list when opened.
+        const c = await teacher.course(courseId);
         course.value = c;
         const rawUnits = Array.isArray(c.units) ? c.units : (c.units?.data || []);
         contentUnits.value = rawUnits.map((unit) => ({ ...unit, lessons: Array.isArray(unit.lessons) ? unit.lessons : (unit.lessons?.data || []) }));
-        students.value = toList(s).items.filter((x) => x.is_active);
         await loadEnrollments();
     } catch (e) {
         error.value = e.message;

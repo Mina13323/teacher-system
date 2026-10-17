@@ -1,4 +1,6 @@
-import api, { sendKeepalive, downloadFile } from './client';
+import api, { sendKeepalive, downloadFile, requestFile, saveBlob } from './client';
+import { readExportResponse } from '@/utils/exportFlow';
+import { LESSON_PAGE_INCLUDE } from '@/utils/lessonPage';
 
 /**
  * Normalize a "list" payload returned by cross the API's `data` slot.
@@ -19,9 +21,11 @@ export function toList(res, extraMeta = {}) {
 
 // ---- Auth -----------------------------------------------------------------
 export const auth = {
-    me: () => api.get('/auth/me'),
-    login: (payload) => api.post('/auth/login', payload),
-    logout: () => api.post('/auth/logout'),
+    // The boot check and sign-in handle their own 401s (see setUnauthorizedHandler).
+    me: () => api.get('/auth/me', undefined, { skipAuthHandler: true }),
+    login: (payload) => api.post('/auth/login', payload, { skipAuthHandler: true }),
+    transferSession: (payload) => api.post('/auth/session/transfer', payload, { skipAuthHandler: true }),
+    logout: () => api.post('/auth/logout', undefined, { skipAuthHandler: true }),
     profile: () => api.get('/auth/profile'),
     updateProfile: (payload) => api.put('/auth/profile', payload),
     changePassword: (payload) => api.put('/auth/password', payload),
@@ -102,6 +106,8 @@ export const student = {
     saveLessonProgress: (lessonId, payload) => api.put(`/student/lessons/${lessonId}/progress`, payload),
     lessonVideos: (lessonId) => api.get(`/student/lessons/${lessonId}/videos`),
     lesson: (lessonId) => api.get(`/student/lessons/${lessonId}`),
+    // Lesson + progress + video list + own bookmark in one request (lesson page).
+    lessonPage: (lessonId) => api.get(`/student/lessons/${lessonId}`, { include: LESSON_PAGE_INCLUDE }),
     playback: (videoId) => api.get(`/student/videos/${videoId}/playback`),
     playbackEvent: (videoId, payload) => api.post(`/student/videos/${videoId}/playback/events`, payload),
     exams: (params) => api.get('/student/exams', params),
@@ -109,10 +115,14 @@ export const student = {
     examAttempts: (examId, requestOptions = {}) => api.get(`/student/exams/${examId}/attempts`, undefined, requestOptions),
     startExam: (examId, payload) => api.post(`/student/exams/${examId}/start`, payload),
     attempt: (attemptId) => api.get(`/student/attempts/${attemptId}`),
-    answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, payload),
-    answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, payload),
+    // Answer saves ask for a short acknowledgement of the saved question
+    // instead of the whole attempt (see utils/answerAck.js).
+    answer: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/answers`, { ...payload, compact_response: true }),
+    answerKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/answers`, { ...payload, compact_response: true }),
     submit: (attemptId) => api.post(`/student/attempts/${attemptId}/submit`),
     heartbeat: (attemptId) => api.post(`/student/attempts/${attemptId}/heartbeat`),
+    // Database-free server clock (no auth needed); see ServerTimeController.
+    serverTime: () => api.get('/time', undefined, { timeout: 10_000 }),
     terminate: (attemptId, payload = {}) => api.post(`/student/attempts/${attemptId}/terminate`, payload),
     terminateKeepalive: (attemptId, payload = {}) => sendKeepalive(`/student/attempts/${attemptId}/terminate`, payload),
     recordIntegrity: (attemptId, payload) => api.post(`/student/attempts/${attemptId}/integrity-events`, payload),
@@ -131,6 +141,8 @@ export const teacher = {
 
     students: (params) => api.get('/teacher/students', params),
     student: (id) => api.get(`/teacher/students/${id}`),
+    // The student's exam attempts (paginated, scoped to the viewer's exams).
+    studentAttempts: (id, params) => api.get(`/teacher/students/${id}/attempts`, params),
     createStudent: (payload) => api.post('/teacher/students', payload),
     updateStudent: (id, payload) => api.put(`/teacher/students/${id}`, payload),
     deactivateStudent: (id) => api.patch(`/teacher/students/${id}/deactivate`),
@@ -195,6 +207,8 @@ export const teacher = {
     archiveExam: (id) => api.post(`/teacher/exams/${id}/archive`),
     deleteExam: (id) => api.delete(`/teacher/exams/${id}`),
     examAttempts: (examId, params) => api.get(`/teacher/exams/${examId}/attempts`, params),
+    // Attempts needing integrity attention across the teacher's courses, in one request.
+    integrityAttempts: () => api.get('/teacher/integrity/attempts'),
     bulkDeleteExamAttempts: (examId, attemptIds, reason = null) => api.post(`/teacher/exams/${examId}/attempts/bulk-delete`, { attempt_ids: attemptIds, confirmed: true, reason }),
     makeUpAssignments: (examId, params) => api.get(`/teacher/exams/${examId}/make-up-assignments`, params),
     assignExamMakeUps: (examId, studentIds, reason = null) => api.post(`/teacher/exams/${examId}/make-up-assignments`, { student_ids: studentIds, reason }),
@@ -202,6 +216,11 @@ export const teacher = {
     attempt: (id) => api.get(`/teacher/attempts/${id}`),
     gradeEssay: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, payload),
     publishGrades: (attemptId) => api.post(`/teacher/attempts/${attemptId}/publish-grades`),
+    // Essay-grading workspace: the queue (handed-in attempts only), a compact
+    // conflict-aware grade save, and exam-level publication in bounded batches.
+    essayAnswers: (examId, params) => api.get(`/teacher/exams/${examId}/essay-answers`, params),
+    saveEssayGrade: (attemptId, payload) => api.post(`/teacher/attempts/${attemptId}/grade-essay`, { ...payload, compact_response: true }),
+    publishAllGrades: (examId, payload = {}) => api.post(`/teacher/exams/${examId}/publish-grades`, { ...payload, confirmed: true }),
 
     questions: (examId) => api.get(`/teacher/exams/${examId}/questions`),
     question: (id) => api.get(`/teacher/questions/${id}`),
@@ -252,10 +271,20 @@ export const teacher = {
 
     // Attempts grouped by student (P1 attempt-management UX)
     attemptsGrouped: (examId, params) => api.get(`/teacher/exams/${examId}/attempts/grouped`, params),
-    exportResults: (examId, format = 'csv') => {
+    /**
+     * Resolves to { type: 'file' } once the file was saved, { type: 'queued',
+     * exportId, rows } for a large export the server queued (202), or
+     * { type: 'error', message }. A JSON answer is never saved as the file.
+     */
+    exportResults: async (examId, format = 'csv') => {
         const ext = { csv: 'csv', xlsx: 'xlsx', pdf: 'pdf', print: 'html' }[format] || 'csv';
-        return downloadFile(`/teacher/exams/${examId}/results/export?format=${format}`, `exam-${examId}-results.${ext}`);
+        const res = await requestFile(`/teacher/exams/${examId}/results/export?format=${format}`);
+        const kind = await readExportResponse(res);
+        if (kind.type === 'file') saveBlob(res.blob, `exam-${examId}-results.${ext}`);
+        return kind;
     },
+    exportStatus: (exportId) => api.get(`/teacher/exports/${exportId}`),
+    downloadExport: (exportId, filename) => downloadFile(`/teacher/exports/${exportId}/download`, filename),
 
     // Bulk student import (CSV or XLSX -> validate -> preview -> confirm -> report)
     importStudentsPreview: (input) => api.post('/teacher/students/import/preview', typeof input === 'string' ? { csv: input } : input),

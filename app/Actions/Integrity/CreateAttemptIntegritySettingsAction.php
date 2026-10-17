@@ -21,6 +21,22 @@ class CreateAttemptIntegritySettingsAction
 
     public function execute(ExamAttempt $attempt, Exam $exam): ExamAttemptIntegritySetting
     {
+        // A homework is never proctored, whatever integrity row the exam has.
+        if ($exam->isHomework()) {
+            return ExamAttemptIntegritySetting::create([
+                'attempt_id' => $attempt->getKey(),
+                'fullscreen_required' => false,
+                'prevent_copy' => false,
+                'prevent_paste' => false,
+                'prevent_context_menu' => false,
+                'detect_tab_switch' => false,
+                'detect_window_blur' => false,
+                'detect_keyboard_shortcuts' => false,
+                'terminate_on_violation' => false,
+                'violation_warning_threshold' => null,
+            ]);
+        }
+
         $exam->load('integritySetting');
 
         $settings = $exam->integritySetting;
