@@ -24,10 +24,16 @@ class CalculateCourseProgressAction
             return ['total' => 0, 'completed' => 0, 'percentage' => 0];
         }
 
+        // One join instead of plucking every published lesson id into a whereIn.
         $completed = LessonProgress::query()
-            ->where('student_id', $student->getKey())
-            ->where('completed', true)
-            ->whereHas('lesson', fn ($q) => $q->whereIn('id', $this->publishedLessonIds($course)))
+            ->join('lessons', 'lessons.id', '=', 'lesson_progress.lesson_id')
+            ->join('units', 'units.id', '=', 'lessons.unit_id')
+            ->whereNull('lessons.deleted_at')
+            ->whereNull('units.deleted_at')
+            ->where('lessons.is_published', true)
+            ->where('units.course_id', $course->getKey())
+            ->where('lesson_progress.student_id', $student->getKey())
+            ->where('lesson_progress.completed', true)
             ->count();
 
         return $this->result($completed, $total);
@@ -70,14 +76,6 @@ class CalculateCourseProgressAction
     private function publishedLessonCount(Course $course): int
     {
         return $this->publishedLessonQuery($course)->count();
-    }
-
-    /**
-     * @return array<int>
-     */
-    private function publishedLessonIds(Course $course): array
-    {
-        return $this->publishedLessonQuery($course)->pluck('id')->all();
     }
 
     private function publishedLessonQuery(Course $course)

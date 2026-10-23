@@ -2,6 +2,7 @@
 import { reactive, ref, computed, onMounted } from 'vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import { formatDateTime } from '@/utils/format';
+import { toIso, toLocalInput } from '@/utils/datetimeLocal';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher } from '@/api';
@@ -21,6 +22,9 @@ const examId = route.params.id;
 
 const form = reactive({
     title: '',
+    // 'exam' or 'homework'. A homework has no proctoring, needs both window
+    // times, and lasts until the window closes (the server sets its duration).
+    type: 'exam',
     description: '',
     duration_minutes: 30,
     pass_percentage: 50,
@@ -39,25 +43,10 @@ const form = reactive({
     starts_at: '',
     ends_at: '',
 });
+const isHomework = computed(() => form.type === 'homework');
 const errors = ref({});
 const loading = ref(true);
 const saving = ref(false);
-
-/** ISO-8601 (UTC) -> `YYYY-MM-DDTHH:mm` in the browser's local timezone. */
-function toLocalInput(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/** `datetime-local` (local) -> ISO-8601 UTC, or null when cleared. */
-function toIso(local) {
-    if (!local) return null;
-    const d = new Date(local);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
 
 /** The deadline the server will actually enforce, mirrored for preview only. */
 const expiryModeOptions = computed(() => [
@@ -75,6 +64,7 @@ onMounted(async () => {
     try {
         const e = await teacher.exam(examId);
         form.title = e.title;
+        form.type = e.type === 'homework' ? 'homework' : 'exam';
         form.description = e.description || '';
         form.duration_minutes = e.duration_minutes || 30;
         form.pass_percentage = e.pass_percentage ?? 50;
@@ -97,12 +87,16 @@ async function submit() {
     saving.value = true;
     errors.value = {};
     try {
-        await teacher.updateExam(examId, {
+        const payload = {
             ...form,
             allow_answer_review: Boolean(form.allow_answer_review),
             starts_at: toIso(form.starts_at),
             ends_at: toIso(form.ends_at),
-        });
+        };
+        // The type is fixed after creation; a homework's duration follows its window.
+        delete payload.type;
+        if (isHomework.value) delete payload.duration_minutes;
+        await teacher.updateExam(examId, payload);
         toast.success(t('exams.updated'));
         router.push(`/teacher/exams/${examId}`);
     } catch (e) {
@@ -117,26 +111,26 @@ async function submit() {
 <template>
     <div class="mx-auto max-w-2xl space-y-6">
         <router-link :to="`/teacher/exams/${examId}`" class="text-sm font-medium text-terracotta-600 hover:underline">← {{ $t('exams.backToExam') }}</router-link>
-        <h1 class="text-2xl font-bold text-ink-900">{{ $t('exams.editExam') }}</h1>
+        <h1 class="text-2xl font-bold text-ink-900">{{ isHomework ? $t('homework.edit') : $t('exams.editExam') }}</h1>
 
         <form class="space-y-5" @submit.prevent="submit">
             <AppCard :title="$t('exams.configuration')">
                 <div class="space-y-4">
                     <AppInput v-model="form.title" :label="$t('exams.titleField')" required id="exam-edit-title" :error="errors.title" />
                     <AppTextarea v-model="form.description" :label="$t('exams.description')" id="exam-edit-desc" :error="errors.description" :rows="2" />
-                    <div class="grid gap-4 sm:grid-cols-3">
-                        <AppInput v-model="form.duration_minutes" :label="$t('exams.durationMinutes')" type="number" id="exam-edit-dur" :error="errors.duration_minutes" />
+                    <div class="grid gap-4" :class="isHomework ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+                        <AppInput v-if="!isHomework" v-model="form.duration_minutes" :label="$t('exams.durationMinutes')" type="number" id="exam-edit-dur" :error="errors.duration_minutes" />
                         <AppInput v-model="form.pass_percentage" :label="$t('exams.passPercent')" type="number" id="exam-edit-pass" :error="errors.pass_percentage" />
                         <AppInput v-model="form.max_attempts" :label="$t('exams.maxAttempts')" type="number" id="exam-edit-max" :error="errors.max_attempts" />
                     </div>
                     <!-- Optional official exam window -->
                     <div class="rounded-lg border border-ink-200 bg-ink-50/60 p-4 space-y-3">
-                        <p class="text-sm font-semibold text-ink-800">{{ $t('exams.windowTitle') }}</p>
+                        <p class="text-sm font-semibold text-ink-800">{{ isHomework ? $t('homework.windowTitle') : $t('exams.windowTitle') }}</p>
                         <div class="grid gap-4 sm:grid-cols-2">
                             <AppInput v-model="form.starts_at" :label="$t('exams.startsAt')" type="datetime-local" id="exam-edit-starts" :error="errors.starts_at" />
                             <AppInput v-model="form.ends_at" :label="$t('exams.endsAt')" type="datetime-local" id="exam-edit-ends" :error="errors.ends_at" />
                         </div>
-                        <p class="text-xs text-ink-500">{{ $t('exams.windowHint') }}</p>
+                        <p class="text-xs text-ink-500">{{ isHomework ? $t('homework.windowHint') : $t('exams.windowHint') }}</p>
                         <p v-if="effectiveDeadline" class="text-xs font-medium text-ink-700">
                             {{ $t('exams.effectiveDeadline') }}:
                             {{ formatDateTime(effectiveDeadline) }}

@@ -55,8 +55,12 @@ class LoadTestFixtureSeeder
     /**
      * @return array{students:int, created:int, teacher_id:int, course_id:int, exam_id:int, questions:int}
      */
-    public function seed(int $students, int $windowDays = 7, bool $resetAttempts = false): array
+    public function seed(int $students, int $windowDays = 7, bool $resetAttempts = false, int $durationMinutes = 60): array
     {
+        if ($durationMinutes < 1 || $durationMinutes > 240) {
+            throw new \InvalidArgumentException('--duration must be between 1 and 240 minutes.');
+        }
+
         $this->guard->assertStaging();
 
         $max = (int) config('loadtest.max_students');
@@ -64,12 +68,18 @@ class LoadTestFixtureSeeder
             throw new \InvalidArgumentException("--students must be between 1 and {$max}.");
         }
 
+        // No default password exists: refuse before any write when it is
+        // missing or weak, and refuse when a non-fixture record already uses a
+        // fixture identity (it would otherwise be reset or taken over).
+        LoadTestPassword::assertValid(config('loadtest.password'));
+        $this->assertNoForeignIdentity($students);
+
         $this->ensureRolesAndPermissions();
         $hash = Hash::make((string) config('loadtest.password'));
 
         $teacher = $this->ensureTeacher($hash);
         $course = $this->ensureCourse($teacher);
-        $exam = $this->ensureExam($course, $teacher, $windowDays);
+        $exam = $this->ensureExam($course, $teacher, $windowDays, $durationMinutes);
         $questions = $this->ensureQuestions($exam);
 
         if ($resetAttempts) {
@@ -92,6 +102,56 @@ class LoadTestFixtureSeeder
             'exam_id' => $exam->getKey(),
             'questions' => $questions,
         ];
+    }
+
+    /**
+     * Read-only pre-flight. The seeder resets/reuses records by email or slug,
+     * so any pre-existing record that is not recognisably a fixture is refused
+     * instead of being overwritten.
+     *
+     * @throws LoadTestSafetyException
+     */
+    private function assertNoForeignIdentity(int $students): void
+    {
+        $foreign = [];
+
+        $teacher = User::where('email', config('loadtest.teacher_email'))->first();
+        if ($teacher !== null) {
+            $otherRoles = $teacher->roles->pluck('name')->diff([UserRole::Teacher->value]);
+            if ($otherRoles->isNotEmpty()) {
+                $foreign[] = 'the fixture teacher email belongs to an account with other roles ('.$otherRoles->implode(', ').')';
+            }
+        }
+
+        $course = Course::withTrashed()->where('slug', config('loadtest.course_slug'))->first();
+        if ($course !== null && ($teacher === null || (int) $course->created_by !== (int) $teacher->getKey())) {
+            $foreign[] = 'the course slug "'.config('loadtest.course_slug').'" is used by a course the fixture teacher does not own';
+        }
+
+        $mismatched = 0;
+        foreach (array_chunk(range(1, $students), 500) as $numbers) {
+            $expected = [];
+            foreach ($numbers as $n) {
+                $expected[self::studentEmail($n)] = self::studentCode($n);
+            }
+            foreach (User::whereIn('email', array_keys($expected))->get(['id', 'email', 'student_code']) as $user) {
+                if (($user->student_code ?? null) !== $expected[$user->email]) {
+                    $mismatched++;
+                }
+            }
+        }
+        if ($mismatched > 0) {
+            $foreign[] = $mismatched.' account(s) use a fixture student email without the matching fixture student code';
+        }
+
+        if ($foreign !== []) {
+            throw new LoadTestSafetyException(
+                "Refusing to run: non-fixture records use fixture identities and would be overwritten.
+ - "
+                .implode("
+ - ", $foreign)
+            );
+        }
     }
 
     private function ensureRolesAndPermissions(): void
@@ -143,7 +203,7 @@ class LoadTestFixtureSeeder
         return $course;
     }
 
-    private function ensureExam(Course $course, User $teacher, int $windowDays): Exam
+    private function ensureExam(Course $course, User $teacher, int $windowDays, int $durationMinutes = 60): Exam
     {
         $exam = Exam::withTrashed()->firstOrNew([
             'course_id' => $course->getKey(),
@@ -151,7 +211,9 @@ class LoadTestFixtureSeeder
         ]);
         $exam->fill([
             'description' => 'Staging-only load-test exam: 20 questions (16 single choice, 4 multiple choice).',
-            'duration_minutes' => 60,
+            // Shorter runs (--duration) let one load-test step include the
+            // deadline: every attempt reaches it and is finalized.
+            'duration_minutes' => $durationMinutes,
             // Window opens an hour ago so "now" is always inside it, and runs
             // for $windowDays; each re-seed re-centres it on the current time.
             'starts_at' => now()->subHour(),

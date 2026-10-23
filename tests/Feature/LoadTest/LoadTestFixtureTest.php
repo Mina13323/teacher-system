@@ -24,6 +24,8 @@ class LoadTestFixtureTest extends ApiTestCase
             'app.env' => 'staging',
             'app.url' => 'https://staging.maherelmasry.com',
             'loadtest.required_database' => (string) config('database.connections.'.config('database.default').'.database'),
+            // Test-only secret: production/staging have no default password.
+            'loadtest.password' => 'Test-Only#Fixture-Secret-91x',
         ]);
     }
 

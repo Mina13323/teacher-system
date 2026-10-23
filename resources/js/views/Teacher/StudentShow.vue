@@ -4,6 +4,7 @@ import { formatDate } from '@/utils/format';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { teacher, toList } from '@/api';
+import StudentAttemptHistory from '@/components/students/StudentAttemptHistory.vue';
 import { useToast } from '@/composables/toast';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
@@ -322,6 +323,9 @@ onMounted(async () => {
                 </div>
                 <p v-if="!courses.length" class="mt-3 text-sm text-ink-400">{{ $t('students.noCoursesToEnroll') }}</p>
             </AppCard>
+
+            <!-- Exams and attempts (student -> exam -> attempts) -->
+            <StudentAttemptHistory :student-id="student.id" />
         </template>
 
         <!-- Renew Access Modal -->

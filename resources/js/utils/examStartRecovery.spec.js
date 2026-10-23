@@ -11,10 +11,10 @@ describe('exam start recovery', () => {
     it('bounds interactive API waits and classifies timeout errors for recovery', () => {
         expect(DEFAULT_API_TIMEOUT_MS).toBe(30_000);
 
-        const timeout = new ApiError(ApiError.friendly(0), { status: 0, code: 'ECONNABORTED' });
+        const timeout = new ApiError(ApiError.friendly(0, { timedOut: true }), { status: 0, code: 'ECONNABORTED' });
         expect(timeout.isNetwork).toBe(true);
         expect(timeout.isTimeout).toBe(true);
-        expect(timeout.message).toContain('server did not respond');
+        expect(timeout.message).toContain('took too long to respond');
     });
 
     it('recognizes timeouts and server failures as ambiguous outcomes', () => {

@@ -19,9 +19,29 @@ Errors:
 | Method | URL                        | Auth            | Role/Permission | Request body | Response          |
 |--------|----------------------------|-----------------|-----------------|--------------|-------------------|
 | POST   | `/auth/register`           | —               | —               | `name, email, password, password_confirmation` | `{ user, token }` |
-| POST   | `/auth/login`              | —               | —               | `email, password` | `{ user, token }` |
+| POST   | `/auth/login`              | —               | —               | `email, password` | `{ user, token, unread_count }`, or 409 (below) |
+| POST   | `/auth/session/transfer`   | transfer token  | —               | `transfer_token` | `{ user, token, unread_count }` |
 | GET    | `/auth/me`                 | Bearer token    | authenticated   | —            | `{ user }`        |
 | POST   | `/auth/logout`             | Bearer token    | authenticated   | —            | —                 |
+
+A token stays valid until logout, staff revocation (password reset,
+suspension, deactivation) or a confirmed move to another device. An optional
+idle timeout (`AUTH_IDLE_TIMEOUT_DAYS`) is off by default.
+
+**One device per student** (`AUTH_SINGLE_DEVICE_ROLES`, default `student`;
+empty turns it off). A correct password while the account is signed in
+elsewhere issues no token and revokes nothing:
+
+```json
+409 { "success": false, "code": "session_transfer_required",
+      "data": { "transfer_token": "…", "expires_in": 300,
+                "other_session": { "device": "Chrome on Android", "last_active_at": "…" } } }
+```
+
+`POST /auth/session/transfer` with that `transfer_token` (one use, 5 minutes)
+signs the other device out and returns a new token. An unknown, used or
+expired transfer token answers 422 `session_transfer_expired`. Requests from
+the signed-out device answer 401 with `code: "session_transferred"`.
 
 ---
 

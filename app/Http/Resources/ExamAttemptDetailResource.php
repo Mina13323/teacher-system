@@ -24,6 +24,7 @@ class ExamAttemptDetailResource extends JsonResource
             'id' => $this->id,
             'exam_id' => $this->exam_id,
             'exam_title' => $this->whenLoaded('exam', fn () => $this->exam->title),
+            'exam_type' => $this->whenLoaded('exam', fn () => $this->exam->type ?? \App\Models\Exam::TYPE_EXAM),
             'student' => $this->whenLoaded('student', fn () => new UserResource($this->student)),
             'attempt_number' => $this->attempt_number,
             'status' => $this->resource->displayStatus(),
@@ -71,10 +72,14 @@ class ExamAttemptDetailResource extends JsonResource
                         'selected_option_ids' => $selectedIds,
                         'answer_text' => $ans?->answer_text,
                         'is_correct' => $ans?->is_correct,
-                        'points_earned' => $ans !== null ? (int) $ans->points_earned : 0,
+                        // NULL while ungraded (essay not yet graded, or no answer
+                        // row): an ungraded essay is not a zero.
+                        'points_earned' => $ans?->points_earned !== null ? (int) $ans->points_earned : null,
                         'feedback' => $ans?->feedback,
                         'graded_by' => $ans?->graded_by,
                         'graded_at' => $ans?->graded_at?->toISOString(),
+                        // Optimistic-concurrency token for the essay grade.
+                        'grade_version' => \App\Models\ExamAnswer::gradeVersion($ans),
                         'options' => $aq->relationLoaded('attemptOptions') ? $aq->attemptOptions->map(fn ($opt) => [
                             'id' => $opt->option_id,
                             'attempt_option_id' => $opt->id,

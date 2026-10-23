@@ -151,6 +151,32 @@ class ExamOperationalHardeningTest extends ApiTestCase
         $this->assertSame(1, ExamAttempt::query()->where('exam_id', $exam->id)->where('student_id', $student->id)->count());
     }
 
+    public function test_full_start_response_matches_the_attempt_snapshot_the_exam_screen_would_read(): void
+    {
+        [, $course, $exam] = $this->setupExam();
+        $student = $this->createUserWithRole(UserRole::Student);
+        $this->enroll($student, $course);
+
+        // The exam screen uses this response instead of reading the attempt
+        // again, so it must carry the same snapshot as GET /attempts/{id}.
+        $started = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/v1/student/exams/{$exam->id}/start", ['rules_acknowledged' => true])
+            ->assertStatus(201)
+            ->assertJsonPath('data.status', ExamAttemptStatus::InProgress->value)
+            ->assertJsonPath('data.already_open', false);
+
+        $read = $this->actingAs($student, 'sanctum')
+            ->getJson('/api/v1/student/attempts/'.$started->json('data.id'))
+            ->assertOk();
+
+        $snapshot = $started->json('data');
+        unset($snapshot['already_open']);
+
+        $this->assertNotEmpty($snapshot['questions']);
+        $this->assertArrayHasKey('integrity_rules', $snapshot);
+        $this->assertEquals($read->json('data'), $snapshot);
+    }
+
     public function test_exam_detail_returns_only_the_students_own_attempt_id_for_resume(): void
     {
         [, $course, $exam] = $this->setupExam();

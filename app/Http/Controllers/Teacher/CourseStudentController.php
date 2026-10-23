@@ -34,7 +34,7 @@ class CourseStudentController extends Controller
         $query = Enrollment::query()
             ->where('course_id', $course->getKey())
             ->where('status', EnrollmentStatus::Active->value)
-            ->with('student');
+            ->with(['student.roles', 'student.latestAccessPeriod']);
 
         if ($request->filled('search')) {
             $search = $request->string('search')->trim()->toString();

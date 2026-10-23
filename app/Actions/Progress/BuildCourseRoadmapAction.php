@@ -12,10 +12,11 @@ use App\Models\User;
 /**
  * Builds the interactive roadmap representation for a student's enrolled course.
  *
- * Lesson locking is intentionally simple: lessons are considered in position
- * order; a lesson is "completed" if its progress is finished, "in_progress" if
- * progress exists but is unfinished, "available" if it is the first unfinished
- * lesson, and "locked" for anything after the first unfinished lesson.
+ * A lesson is "completed" if its progress is finished, "in_progress" if
+ * progress exists but is unfinished, and otherwise "available". It is shown
+ * "locked" only when the course enforces its roadmap and the previous lesson
+ * is not completed — the same rule RoadmapGate applies when the lesson opens,
+ * so the roadmap never locks a lesson the server would let the student open.
  */
 class BuildCourseRoadmapAction
 {
@@ -49,28 +50,25 @@ class BuildCourseRoadmapAction
     private function computeLessonStatuses(Course $course, array $progressByLesson): array
     {
         $statuses = [];
-        $hasUnfinishedBefore = false;
+        $enforced = (bool) $course->roadmap_enforced;
+        $previousCompleted = true; // the first lesson is always open
 
         foreach ($course->units as $unit) {
             foreach ($unit->lessons as $lesson) {
                 $progress = $progressByLesson[$lesson->getKey()] ?? null;
+                $completed = $progress !== null && $progress->completed;
 
-                if ($progress !== null && $progress->completed) {
+                if ($completed) {
                     $statuses[$lesson->getKey()] = RoadmapLessonStatus::Completed->value;
-                    continue;
-                }
-
-                if ($progress !== null && $progress->progress_percentage > 0) {
+                } elseif ($enforced && ! $previousCompleted) {
+                    $statuses[$lesson->getKey()] = RoadmapLessonStatus::Locked->value;
+                } elseif ($progress !== null && $progress->progress_percentage > 0) {
                     $statuses[$lesson->getKey()] = RoadmapLessonStatus::InProgress->value;
-                    $hasUnfinishedBefore = true;
-                    continue;
+                } else {
+                    $statuses[$lesson->getKey()] = RoadmapLessonStatus::Available->value;
                 }
 
-                $statuses[$lesson->getKey()] = $hasUnfinishedBefore
-                    ? RoadmapLessonStatus::Locked->value
-                    : RoadmapLessonStatus::Available->value;
-
-                $hasUnfinishedBefore = true;
+                $previousCompleted = $completed;
             }
         }
 

@@ -28,11 +28,17 @@ class Exam extends Model
      * actions, resources, teacher UI, filtering, tests) rather than adding them
      * here alone.
      */
+    /** A proctored exam (default) or a homework: windowed, unproctored, open until the window closes. */
+    public const TYPE_EXAM = 'exam';
+    public const TYPE_HOMEWORK = 'homework';
+    public const TYPES = [self::TYPE_EXAM, self::TYPE_HOMEWORK];
+
     protected $fillable = [
         'course_id',
         'lesson_id',
         'unit_ids',
         'title',
+        'type',
         'description',
         'duration_minutes',
         // Optional official window. Both null => legacy duration-per-attempt.
@@ -68,6 +74,23 @@ class Exam extends Model
             'allow_answer_review' => 'boolean',
             'unit_ids' => 'array',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // A homework attempt stays open until the window closes: its duration
+        // always spans the window, so every attempt's deadline is ends_at
+        // (attempt deadline = min(start + duration, ends_at)).
+        static::saving(function (Exam $exam) {
+            if ($exam->isHomework() && $exam->starts_at !== null && $exam->ends_at !== null) {
+                $exam->duration_minutes = max(1, (int) ceil($exam->starts_at->diffInSeconds($exam->ends_at, true) / 60));
+            }
+        });
+    }
+
+    public function isHomework(): bool
+    {
+        return ($this->type ?? self::TYPE_EXAM) === self::TYPE_HOMEWORK;
     }
 
     public function course(): BelongsTo

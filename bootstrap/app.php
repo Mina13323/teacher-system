@@ -15,6 +15,8 @@ use App\Exceptions\ExamNotReadyToPublishException;
 use App\Exceptions\ExamStructureLockedException;
 use App\Exceptions\ExamWindowClosedException;
 use App\Exceptions\ExamWindowNotOpenException;
+use App\Exceptions\EssayGradingIncompleteException;
+use App\Exceptions\GradeConflictException;
 use App\Exceptions\InvalidAttemptStateException;
 use App\Exceptions\InvalidCredentialsException;
 use App\Exceptions\InvalidVideoPlaybackSessionException;
@@ -45,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             \App\Http\Middleware\LogContextMiddleware::class,
             ForceJsonResponse::class,
+            \App\Http\Middleware\LocalizeApiResponse::class,
         ]);
 
         // Attach the "api" rate limiter to the whole api group. Laravel 11 only
@@ -59,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'force.password.change' => \App\Http\Middleware\ForcePasswordChange::class,
+            'self.registration' => \App\Http\Middleware\EnsureSelfRegistrationEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
@@ -88,10 +92,42 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                // A sign-in revoked by a confirmed move to another device says
+                // so, so that device can explain why it was signed out.
+                $ended = app(\App\Services\Auth\DeviceSessionService::class)->endedReason($request->bearerToken());
+
+                return response()->json(array_filter([
+                    'success' => false,
+                    'message' => $ended !== null
+                        ? 'This account was signed in on another device.'
+                        : 'Unauthenticated.',
+                    'code' => $ended,
+                ], fn ($value) => $value !== null), 401);
+            }
+        });
+
+        $exceptions->render(function (\App\Exceptions\SessionTransferRequiredException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated.',
-                ], 401);
+                    'message' => $e->getMessage(),
+                    'code' => 'session_transfer_required',
+                    'data' => [
+                        'transfer_token' => $e->transferToken,
+                        'expires_in' => $e->expiresIn,
+                        'other_session' => $e->otherSession,
+                    ],
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (\App\Exceptions\SessionTransferExpiredException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'session_transfer_expired',
+                ], 422);
             }
         });
 
@@ -204,6 +240,28 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'success' => false,
                     'message' => $e->getMessage(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (GradeConflictException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'grade_conflict',
+                    'data' => ['current' => $e->current],
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (EssayGradingIncompleteException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'essays_ungraded',
+                    'data' => ['ungraded_essays' => $e->ungradedEssays],
                 ], 422);
             }
         });
@@ -325,6 +383,23 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], $e->getStatusCode(), $e->getHeaders());
             }
         });
+
+        // MySQL refused a NEW connection (after the connector's short retries).
+        // Nothing ran, so the client may safely try again: answer with 503 and
+        // Retry-After rather than a generic 500. QueryException wraps most of
+        // these; a refusal while opening a transaction can surface as a bare
+        // PDOException.
+        $databaseBusy = function (\Throwable $e, Request $request) {
+            if (($request->is('api/*') || $request->expectsJson()) && \App\Database\ConnectionRefusal::matches($e)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The service is temporarily busy. Please try again shortly.',
+                    'code' => 'service_busy',
+                ], 503, ['Retry-After' => '5']);
+            }
+        };
+        $exceptions->render(fn (\Illuminate\Database\QueryException $e, Request $request) => $databaseBusy($e, $request));
+        $exceptions->render(fn (\PDOException $e, Request $request) => $databaseBusy($e, $request));
 
         $exceptions->render(function (\Illuminate\Database\QueryException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {

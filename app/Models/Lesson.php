@@ -52,6 +52,15 @@ class Lesson extends Model
             ->orderBy('videos.position');
     }
 
+    /** The videos a student may see listed in this lesson, in order. */
+    public function publishedVideos(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->videos()
+            ->where('is_published', true)
+            ->orderBy('position')
+            ->get();
+    }
+
     public function progressRecords(): HasMany
     {
         return $this->hasMany(LessonProgress::class, 'lesson_id');

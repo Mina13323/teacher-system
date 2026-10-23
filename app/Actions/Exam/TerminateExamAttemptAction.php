@@ -78,7 +78,7 @@ class TerminateExamAttemptAction
             $locked->load(['attemptQuestions.attemptOptions', 'answers.selectedOptions', 'exam']);
 
             // Grade the saved answers; never discard them.
-            $graded = $this->gradeAttempt->execute($locked);
+            $graded = $this->gradeAttempt->execute($locked, relationsLoadedUnderLock: true);
             $graded->integrity_status = IntegrityStatus::Flagged;
             $graded->end_reason = 'integrity_threshold';
             $graded->save();

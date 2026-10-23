@@ -54,6 +54,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'recovery_code_hash',
     ];
 
     /**
@@ -77,6 +78,8 @@ class User extends Authenticatable
             'profile_completed_at' => 'datetime',
             // DATA-002: permanent anonymization marker.
             'anonymized_at' => 'datetime',
+            'recovery_code_confirmed_at' => 'datetime',
+            'recovery_verified_at' => 'datetime',
         ];
     }
 
@@ -91,6 +94,43 @@ class User extends Authenticatable
     public function isAnonymized(): bool
     {
         return $this->anonymized_at !== null;
+    }
+
+    /** How long a verified recovery may be used to choose a new password. */
+    public const RECOVERY_WINDOW_MINUTES = 30;
+
+    /**
+     * Whether this sign-in came from a verified password recovery that has not
+     * finished yet. The new password is then chosen without a "current password"
+     * (the placeholder one is unknown to everybody).
+     */
+    public function isRecoveringPassword(): bool
+    {
+        return (bool) $this->must_change_password
+            && $this->recovery_verified_at !== null
+            && $this->recovery_verified_at->gt(now()->subMinutes(self::RECOVERY_WINDOW_MINUTES));
+    }
+
+    /** Whether this student still has to be shown (and confirm) a recovery code. */
+    public function needsRecoveryCode(): bool
+    {
+        return $this->isStudent()
+            && ! $this->isAnonymized()
+            && ! $this->must_change_password
+            && $this->recovery_code_confirmed_at === null;
+    }
+
+    /**
+     * Drops the recovery code (and any half-finished recovery) in memory; the
+     * caller saves. The student is shown a fresh code on their next visit.
+     */
+    public function retireRecoveryCode(): void
+    {
+        $this->forceFill([
+            'recovery_code_hash' => null,
+            'recovery_code_confirmed_at' => null,
+            'recovery_verified_at' => null,
+        ]);
     }
 
     /**
@@ -288,6 +328,13 @@ class User extends Authenticatable
             return true;
         }
 
+        // An assistant employed by a teacher stays within that teacher's
+        // resources unless co-teaching is on (the same scope staffOwnerIds()
+        // gives their listings).
+        if ($this->created_by !== null && ! config('app.co_teaching', false)) {
+            return false;
+        }
+
         // Under co-teaching or no teacher link — fall back to the single-LMS rule. Memoized per
         // owner id, since policies evaluate many resources per request.
         $cacheKey = (string) $ownerId;
@@ -374,6 +421,15 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return (bool) $this->is_active;
+    }
+
+    /**
+     * Unread in-app notifications. The one place the badge count is computed
+     * (GET /notifications/unread-count and GET /auth/me).
+     */
+    public function unreadNotificationCount(): int
+    {
+        return $this->unreadNotifications()->count();
     }
 
     public function canAccessLessons(): bool

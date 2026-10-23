@@ -1,11 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import { profilePathFor } from '@/utils/authRoutes';
+import { authGuard } from './authGuard';
 
 const routes = [
     { path: '/', name: 'home', component: () => import('@/views/Public/Home.vue'), meta: { public: true } },
     { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
     { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
+    { path: '/reconnect', name: 'reconnect', component: () => import('@/views/Auth/Reconnect.vue'), meta: { public: true } },
+    { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/Auth/ForgotPassword.vue'), meta: { guest: true } },
     { path: '/login', name: 'login', component: () => import('@/views/Auth/Login.vue'), meta: { guest: true } },
     { path: '/join/:token', name: 'student-registration', component: () => import('@/views/Public/StudentRegistration.vue'), meta: { public: true } },
 
@@ -51,7 +53,6 @@ const routes = [
             { path: '', name: 'teacher.dashboard', component: () => import('@/views/Teacher/Dashboard.vue') },
             { path: 'students', name: 'teacher.students', component: () => import('@/views/Teacher/Students.vue') },
             { path: 'students/new', name: 'teacher.students.new', component: () => import('@/views/Teacher/StudentForm.vue') },
-            { path: 'students/registration-link', name: 'teacher.students.registration-link', component: () => import('@/views/Teacher/StudentRegistrationLink.vue') },
             { path: 'students/:id', name: 'teacher.student', component: () => import('@/views/Teacher/StudentShow.vue') },
             { path: 'students/:id/edit', name: 'teacher.students.edit', component: () => import('@/views/Teacher/StudentForm.vue') },
             { path: 'assistants', name: 'teacher.assistants', component: () => import('@/views/Teacher/Assistants.vue') },
@@ -64,6 +65,8 @@ const routes = [
             { path: 'exams/:id', name: 'teacher.exam', component: () => import('@/views/Teacher/ExamDetail.vue') },
             { path: 'exams/:id/edit', name: 'teacher.exams.edit', component: () => import('@/views/Teacher/ExamForm.vue') },
             { path: 'exams/:id/questions', name: 'teacher.exam.questions', component: () => import('@/views/Teacher/ExamQuestions.vue') },
+            // Essay-grading workspace (teacher, assistant, admin via this shell).
+            { path: 'exams/:id/grading', name: 'teacher.exam.grading', component: () => import('@/views/Teacher/ExamGrading.vue') },
             { path: 'competitions', name: 'teacher.competitions', component: () => import('@/views/Teacher/Competitions.vue') },
             { path: 'competitions/new', name: 'teacher.competitions.new', component: () => import('@/views/Teacher/CompetitionForm.vue') },
             { path: 'competitions/:id', name: 'teacher.competition', component: () => import('@/views/Teacher/CompetitionDetail.vue') },
@@ -133,51 +136,7 @@ const router = createRouter({
     },
 });
 
-function homeFor(roles = []) {
-    if (roles.includes('admin')) return '/admin';
-    if (roles.includes('teacher')) return '/teacher';
-    if (roles.includes('assistant')) return '/assistant';
-    if (roles.includes('student')) return '/student';
-    return '/';
-}
-
-router.beforeEach(async (to) => {
-    const auth = useAuthStore();
-
-    if (!auth.booted) {
-        try {
-            await auth.fetchMe();
-        } catch {
-            /* handled below */
-        }
-    }
-
-    if (auth.user?.must_change_password && !to.meta.public) {
-        const profilePath = profilePathFor(auth.roles);
-        if (to.path !== profilePath) return profilePath;
-    }
-
-    if (to.meta.public) {
-        return true;
-    }
-
-    if (to.meta.guest) {
-        if (auth.isAuthenticated) return homeFor(auth.roles);
-        return true;
-    }
-
-    if (!auth.isAuthenticated) {
-        return { name: 'login', query: { redirect: to.fullPath } };
-    }
-
-    const allowed = to.meta.roles || [];
-    if (allowed.length === 0) return true;
-
-    const ok = allowed.some((r) => auth.roles.includes(r));
-    if (!ok) return homeFor(auth.roles);
-
-    return true;
-});
+router.beforeEach((to) => authGuard(to, useAuthStore()));
 
 router.onError((error, to) => {
     const isChunkLoadFailed =

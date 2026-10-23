@@ -40,27 +40,35 @@ class DashboardController extends Controller
             $course->progress = $courseProgress[$course->getKey()]['percentage'] ?? 0;
         });
 
-        // Scoped once, reused for every figure below.
+        // Scoped once, reused for every figure below. Joins (not whereHas) so
+        // the lesson and unit are not re-checked through nested subqueries, and
+        // both counts come from a single aggregate pass.
         $courseIds = $enrollments->pluck('course_id');
         $progress = fn () => LessonProgress::query()
-            ->where('student_id', $userId)
-            ->whereHas('lesson.unit', fn ($q) => $q->whereIn('course_id', $courseIds));
+            ->join('lessons', 'lessons.id', '=', 'lesson_progress.lesson_id')
+            ->join('units', 'units.id', '=', 'lessons.unit_id')
+            ->whereNull('lessons.deleted_at')
+            ->whereNull('units.deleted_at')
+            ->where('lesson_progress.student_id', $userId)
+            ->whereIn('units.course_id', $courseIds);
 
-        // The counts are aggregates and the recent list is capped at five, so
-        // only those five rows ever hydrate their lesson and videos. This used
-        // to load every progress row the student had ever touched, each with its
-        // full video list, purely to count them.
+        $counts = $progress()
+            ->toBase()
+            ->selectRaw('COALESCE(SUM(lesson_progress.completed = 1), 0) as completed_count')
+            ->selectRaw('COALESCE(SUM(lesson_progress.completed = 0 AND lesson_progress.progress_percentage > 0), 0) as in_progress_count')
+            ->first();
+
+        // The recent list is capped at five, so only those five rows ever
+        // hydrate their lesson and videos.
         return $this->success([
             'enrolled_courses_count' => $courses->count(),
-            'completed_lessons_count' => $progress()->where('completed', true)->count(),
-            'in_progress_lessons_count' => $progress()
-                ->where('completed', false)
-                ->where('progress_percentage', '>', 0)
-                ->count(),
+            'completed_lessons_count' => (int) ($counts->completed_count ?? 0),
+            'in_progress_lessons_count' => (int) ($counts->in_progress_count ?? 0),
             'recently_accessed_lessons' => LessonProgressResource::collection(
                 $progress()
+                    ->select('lesson_progress.*')
                     ->with(['lesson' => fn ($q) => $q->with('videos')])
-                    ->orderByDesc('updated_at')
+                    ->orderByDesc('lesson_progress.updated_at')
                     ->limit(5)
                     ->get()
             ),

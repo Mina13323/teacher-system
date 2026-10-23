@@ -43,7 +43,7 @@ class StudentController extends Controller
 
         $query = User::query()
             ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
-            ->with('roles');
+            ->with(['roles', 'latestAccessPeriod']);
 
         if ($request->filled('search')) {
             $search = $request->string('search')->trim()->toString();

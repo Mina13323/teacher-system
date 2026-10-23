@@ -40,6 +40,7 @@ class RegenerateStudentCredentialsAction
         $temporaryPassword = $this->credentialsService->generateTemporaryPassword();
         $student->password = Hash::make($temporaryPassword);
         $student->must_change_password = true;
+        $student->retireRecoveryCode();
         $student->save();
 
         // Invalidate all existing tokens on credential regeneration

@@ -51,10 +51,7 @@ class VideoController extends Controller
     {
         $this->authorize('access', $lesson);
 
-        $videos = $lesson->videos()
-            ->where('is_published', true)
-            ->orderBy('position')
-            ->get();
+        $videos = $lesson->publishedVideos();
 
         return $this->success(StudentVideoResource::collection($videos), 'Videos retrieved.');
     }

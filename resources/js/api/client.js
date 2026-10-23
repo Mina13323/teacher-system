@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '@/i18n';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -29,29 +30,23 @@ export class ApiError extends Error {
     }
 
     /**
-     * Human-readable message appropriate to the status code.
+     * Human-readable, localized message appropriate to the status code. A
+     * status of 0 means no response arrived: `timedOut` separates our own
+     * request deadline from a connection that failed outright.
      */
-    static friendly(status) {
-        switch (status) {
-            case 401:
-                return 'Your session has expired. Please sign in again.';
-            case 403:
-                return 'You do not have permission to perform this action.';
-            case 404:
-                return 'The requested resource could not be found.';
-            case 409:
-                return 'That request conflicts with the current state.';
-            case 422:
-                return 'Please review the highlighted fields.';
-            case 429:
-                return 'You are making requests too quickly. Please wait a moment.';
-            case 0:
-                return 'The server did not respond in time. Check your connection and try again.';
-            case 500:
-                return 'An unexpected error occurred on the server.';
-            default:
-                return 'Something went wrong. Please try again.';
-        }
+    static friendly(status, { timedOut = false } = {}) {
+        const key = {
+            401: 'unauthenticated',
+            403: 'forbidden',
+            404: 'notFound',
+            409: 'conflict',
+            422: 'validation',
+            429: 'rateLimited',
+            500: 'server',
+            503: 'unavailable',
+        }[status] ?? (status === 0 ? (timedOut ? 'timeout' : 'network') : 'generic');
+
+        return i18n.global.t(`apiErrors.${key}`);
     }
 }
 
@@ -59,6 +54,12 @@ const client = axios.create({
     baseURL: BASE_URL,
     timeout: DEFAULT_API_TIMEOUT_MS,
     headers: { Accept: 'application/json' },
+});
+
+// The server answers errors in the language the app is showing.
+client.interceptors.request.use((config) => {
+    config.headers['Accept-Language'] = i18n.global.locale.value;
+    return config;
 });
 
 /**
@@ -71,6 +72,19 @@ export function setAuthToken(token) {
     } else {
         delete client.defaults.headers.common.Authorization;
     }
+}
+
+let unauthorizedHandler = null;
+
+/**
+ * Registers what happens when a request that carried the sign-in token is
+ * answered 401: the sign-in was revoked (logout elsewhere, a move to another
+ * device, staff action) or has expired. Requests marked `skipAuthHandler`
+ * (sign-in itself, and the boot check, which handles its own result) are
+ * left alone.
+ */
+export function setUnauthorizedHandler(fn) {
+    unauthorizedHandler = typeof fn === 'function' ? fn : null;
 }
 
 /**
@@ -107,7 +121,7 @@ export function sendKeepalive(endpoint, data = {}) {
  * Normalize any axios/server response into the app's success/data shape and
  * convert failures into ApiError. Always returns the API `data` payload.
  */
-async function request(config) {
+async function request({ skipAuthHandler = false, ...config }) {
     try {
         const response = await client.request(config);
         // Backend envelope: { success, message, data }. Paginated/collection
@@ -135,18 +149,20 @@ async function request(config) {
             errors = payload.errors || null;
         }
 
-        if (
+        const timedOut =
             error.code === 'ECONNABORTED'
             || error.code === 'ETIMEDOUT'
-            || /timeout/i.test(error.message || '')
-        ) {
+            || /timeout/i.test(error.message || '');
+        if (timedOut) {
             status = 0;
         }
 
+        // A 503 is the server saying it is briefly overloaded (for example the
+        // database refused a new connection); show the localized message.
         let message =
             errors && status === 422
                 ? ApiError.friendly(422)
-                : serverMessage || ApiError.friendly(status);
+                : (status === 503 ? null : serverMessage) || ApiError.friendly(status, { timedOut });
 
         // Clean any leaking raw SQL/database error strings defensively
         if (typeof message === 'string' && (message.includes('SQLSTATE') || message.includes('Integrity constraint violation') || message.includes('PDOException'))) {
@@ -163,7 +179,16 @@ async function request(config) {
             }
         }
 
-        throw new ApiError(message, { status, errors, data: error.response?.data, code: error.code });
+        const apiError = new ApiError(message, { status, errors, data: error.response?.data, code: error.code });
+        const sentToken = Boolean(error.config?.headers?.Authorization);
+        if (status === 401 && sentToken && !skipAuthHandler && unauthorizedHandler) {
+            try {
+                unauthorizedHandler(apiError);
+            } catch {
+                /* the caller still receives the error */
+            }
+        }
+        throw apiError;
     }
 }
 
@@ -172,6 +197,30 @@ async function request(config) {
  * triggers a browser save. Used for exports and private attachment files,
  * which are never linked directly (no token on <a href> navigations).
  */
+/**
+ * Fetches a file endpoint without assuming the body is the file: returns the
+ * HTTP status, content type and body blob, so a JSON status answer (for
+ * example a queued export, 202) is never saved as if it were the file.
+ */
+export async function requestFile(url) {
+    const response = await client.request({ method: 'get', url, responseType: 'blob', timeout: 0 });
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+    const contentType = String(response.headers?.['content-type'] || blob.type || '');
+    return { status: response.status, contentType, blob };
+}
+
+export function saveBlob(blob, filename) {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    return filename;
+}
+
 export async function downloadFile(url, filename) {
     // File exports/attachments retain their existing unbounded download time;
     // the 30-second JSON API deadline below is for interactive requests.

@@ -40,7 +40,7 @@ class ProfileController extends Controller
     {
         $this->changePassword->execute(
             $request->user(),
-            $request->string('current_password')->toString(),
+            $request->input('current_password'),
             $request->string('password')->toString(),
         );
 

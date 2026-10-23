@@ -13,6 +13,10 @@ class RenewStudentAccessAction
      * Executes a staff renewal decision on a student's access period.
      *
      * @param  string  $decision  'keep_active' or 'suspend'
+     * @param  bool  $bulk  Caller renews many students: skip the per-student
+     *                      notification clean-up and reload (the caller does
+     *                      one batched clean-up), keeping the database work to
+     *                      the access-period row itself.
      */
     public function execute(
         User $staffUser,
@@ -21,6 +25,7 @@ class RenewStudentAccessAction
         int $months = 1,
         ?float $amount = null,
         ?string $notes = null,
+        bool $bulk = false,
     ): User {
         $months = max(1, min(12, $months));
 
@@ -66,6 +71,10 @@ class RenewStudentAccessAction
 
             // Immediately invalidate all active student tokens/sessions
             $student->tokens()->delete();
+        }
+
+        if ($bulk) {
+            return $student;
         }
 
         // Clean up / mark read any outstanding renewal notifications for this student

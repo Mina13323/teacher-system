@@ -53,11 +53,23 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// ---- Server clock -----------------------------------------------------------
+// Database-free: no auth, no session, and no throttle (were the limiter set back
+// to the database store, it would open a MySQL connection). It returns
+// only the current server time; see ServerTimeController.
+Route::get('time', \App\Http\Controllers\ServerTimeController::class)
+    ->withoutMiddleware('throttle:api');
+
 // ---- Authentication -------------------------------------------------------
 // Self-registration is intentionally not exposed. Accounts are created only by
 // teachers/assistants (student ops) or admins through the management portals.
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+    // Confirms a sign-in on this device for a one-device account (the login
+    // response's transfer token) and signs the other device out.
+    Route::post('session/transfer', [AuthController::class, 'transfer'])->middleware('throttle:session-transfer');
+    // Forgotten password: student code + phone number + recovery code.
+    Route::post('recover', [AuthController::class, 'recover'])->middleware('throttle:recovery');
 
     Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
@@ -76,7 +88,7 @@ Route::prefix('public/certificates')->middleware('throttle:30,1')->group(functio
 });
 
 Route::prefix('public/student-registration/{token}')
-    ->middleware('throttle:student-registration')
+    ->middleware(['self.registration', 'throttle:student-registration'])
     ->group(function () {
         Route::get('/', [StudentRegistrationController::class, 'show']);
         Route::post('/', [StudentRegistrationController::class, 'store']);
@@ -151,6 +163,10 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
 
     Route::get('exams/{exam}/attempts', [TeacherExamController::class, 'attempts']);
     Route::get('exams/{exam}/attempts/grouped', [TeacherExamController::class, 'attemptsGrouped']);
+    // Essay-grading workspace: the essay answers of handed-in attempts only.
+    Route::get('exams/{exam}/essay-answers', [\App\Http\Controllers\Teacher\EssayGradingController::class, 'essayAnswers']);
+    // Publish every fully graded, unpublished attempt of the exam (bounded batches).
+    Route::post('exams/{exam}/publish-grades', [\App\Http\Controllers\Teacher\EssayGradingController::class, 'publishAll']);
     Route::post('exams/{exam}/attempts/bulk-delete', [TeacherExamController::class, 'deleteSelectedAttempts']);
     Route::get('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'makeUpAssignments']);
     Route::post('exams/{exam}/make-up-assignments', [TeacherExamController::class, 'assignMakeUps']);
@@ -161,6 +177,7 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     Route::post('attempts/{attempt}/publish-grades', [TeacherAttemptController::class, 'publishGrades']);
 
     // Exam integrity configuration + attempt integrity review
+    Route::get('integrity/attempts', [TeacherIntegrityController::class, 'attentionAttempts']);
     Route::get('exams/{exam}/integrity', [TeacherIntegrityController::class, 'showSettings']);
     Route::put('exams/{exam}/integrity', [TeacherIntegrityController::class, 'updateSettings']);
     Route::get('attempts/{attempt}/integrity', [TeacherIntegrityController::class, 'showAttemptIntegrity']);
@@ -216,10 +233,18 @@ Route::prefix('teacher')->middleware(['auth:sanctum', 'force.password.change', '
     // Bulk student import
     Route::post('students/import/preview', [TeacherBulkImportController::class, 'preview']);
     Route::post('students/import/confirm', [TeacherBulkImportController::class, 'confirm']);
-    Route::get('student-registration-link', [StudentRegistrationLinkController::class, 'show']);
-    Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
-    Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
+    // Switched off unless STUDENT_SELF_REGISTRATION=true.
+    Route::middleware('self.registration')->group(function () {
+        Route::get('student-registration-link', [StudentRegistrationLinkController::class, 'show']);
+        Route::post('student-registration-link/rotate', [StudentRegistrationLinkController::class, 'rotate']);
+        Route::patch('student-registration-link', [StudentRegistrationLinkController::class, 'toggle']);
+    });
     Route::get('students/{student}', [TeacherStudentController::class, 'show']);
+    // A student's exam attempts, grouped by exam on the student page (paginated, staff-scoped).
+    Route::get('students/{student}/attempts', [\App\Http\Controllers\Teacher\StudentAttemptController::class, 'index']);
+    // "Renew all due" in one click (declared before the {student} routes).
+    Route::get('students/renew-due/count', [\App\Http\Controllers\Teacher\BulkStudentRenewalController::class, 'count']);
+    Route::post('students/renew-due', [\App\Http\Controllers\Teacher\BulkStudentRenewalController::class, 'store']);
     Route::put('students/{student}', [TeacherStudentController::class, 'update']);
     Route::patch('students/{student}/activate', [TeacherStudentController::class, 'activate']);
     Route::patch('students/{student}/deactivate', [TeacherStudentController::class, 'deactivate']);
@@ -318,6 +343,9 @@ Route::middleware(['auth:sanctum', 'force.password.change'])->group(function () 
 // ---- Student: enrollment, access, progress, roadmap, dashboard --------------
 Route::prefix('student')->middleware(['auth:sanctum', 'force.password.change'])->group(function () {
     Route::get('dashboard', [StudentDashboardController::class, 'index']);
+
+    Route::post('recovery-code', [\App\Http\Controllers\Student\RecoveryCodeController::class, 'store']);
+    Route::post('recovery-code/confirm', [\App\Http\Controllers\Student\RecoveryCodeController::class, 'confirm']);
 
     Route::get('courses', [EnrollmentController::class, 'index']);
     Route::post('courses/{course}/enroll', [EnrollmentController::class, 'store']);

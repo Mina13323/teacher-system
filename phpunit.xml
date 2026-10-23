@@ -19,11 +19,14 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="STUDENT_SELF_REGISTRATION" value="true"/>
         <env name="APP_DEBUG" value="true"/>
         <env name="APP_KEY" value="base64:sgWzqQr/h7ccZifdPjW/LBo/uw7TK/4uoXN7UU8A74E="/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
+        <env name="CACHE_LIMITER" value="array"/>
+        <env name="PERMISSION_CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>

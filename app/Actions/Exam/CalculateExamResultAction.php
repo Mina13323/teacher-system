@@ -34,7 +34,8 @@ use App\Models\ExamAttemptQuestion;
  *     raw_percentage: float,
  *     percentage: int,
  *     passed: bool,
- *     requires_manual_grading: bool
+ *     requires_manual_grading: bool,
+ *     ungraded_essays: int
  * }
  */
 class CalculateExamResultAction
@@ -49,6 +50,9 @@ class CalculateExamResultAction
         $totalPoints = 0;
         $earnedPoints = 0;
         $hasUngradedEssay = false;
+        // Essay questions with no grade yet: no answer row (left blank) or a
+        // NULL points_earned. A blank essay is not a graded zero.
+        $ungradedEssays = 0;
 
         $answersByQuestion = $attempt->answers
             ->keyBy('question_id');
@@ -62,6 +66,7 @@ class CalculateExamResultAction
             if (! $answer) {
                 if ($attemptQuestion->question_type === QuestionType::Essay->value) {
                     $hasUngradedEssay = true;
+                    $ungradedEssays++;
                 }
                 continue;
             }
@@ -71,6 +76,7 @@ class CalculateExamResultAction
                     $earnedPoints += (int) $answer->points_earned;
                 } else {
                     $hasUngradedEssay = true;
+                    $ungradedEssays++;
                 }
             } else {
                 if ($answer->points_earned !== null) {
@@ -98,6 +104,7 @@ class CalculateExamResultAction
             // just because the display value rounds up.
             'passed' => $rawPercentage >= $attempt->pass_percentage,
             'requires_manual_grading' => $hasUngradedEssay,
+            'ungraded_essays' => $ungradedEssays,
         ];
     }
 

@@ -1,11 +1,17 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import PortalShell from './PortalShell.vue';
+import RecoveryCodeDialog from '@/components/RecoveryCodeDialog.vue';
 
 const { t } = useI18n();
 const auth = useAuthStore();
+const route = useRoute();
+
+// Never cover an exam or homework in progress; the dialog waits until the student leaves it.
+const showRecoveryDialog = computed(() => Boolean(auth.user?.recovery_code_pending) && route.name !== 'student.attempt');
 
 const nav = computed(() => {
     const items = [
@@ -52,5 +58,6 @@ const nav = computed(() => {
             </div>
         </div>
         <router-view />
+        <RecoveryCodeDialog v-if="showRecoveryDialog" />
     </PortalShell>
 </template>

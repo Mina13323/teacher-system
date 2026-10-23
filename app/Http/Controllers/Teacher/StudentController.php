@@ -51,45 +51,8 @@ class StudentController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $query = User::query()
-            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
+        $query = app(\App\Services\Student\ManagedStudentScope::class)->query($request->user())
             ->with(['roles', 'latestAccessPeriod']);
-
-        if (! $request->user()->isAdmin()) {
-            $user = $request->user();
-
-            if (config('app.co_teaching', false) && ($user->isTeacher() || $user->isAssistant())) {
-                $staffIds = User::query()
-                    ->whereHas('roles', fn ($q) => $q->whereIn('name', [
-                        UserRole::Teacher->value,
-                        UserRole::Assistant->value,
-                        UserRole::Admin->value,
-                    ]))
-                    ->pluck('id');
-
-                $query->where(fn ($q) => $q->whereIn('created_by', $staffIds)
-                    ->orWhereNull('created_by')
-                    ->orWhereHas('enrollments'));
-            } else {
-                $teacherId = $user->isTeacher()
-                    ? $user->getKey()
-                    : ($user->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $user->getKey()));
-
-                $assistantIds = User::query()
-                    ->where('created_by', $teacherId)
-                    ->orWhereHas('roles', fn ($q) => $q->where('name', UserRole::Assistant->value))
-                    ->pluck('id');
-
-                $enrolledInOwnCourses = Enrollment::query()
-                    ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))
-                    ->where('status', \App\Enums\EnrollmentStatus::Active->value)
-                    ->pluck('student_id');
-
-                $query->where(fn ($q) => $q->where('created_by', $teacherId)
-                    ->orWhereIn('created_by', $assistantIds)
-                    ->orWhereIn('id', $enrolledInOwnCourses));
-            }
-        }
 
         if ($request->filled('academic_year')) {
             $query->where('academic_year', $request->string('academic_year')->toString());
@@ -195,26 +158,11 @@ class StudentController extends Controller
 
         $students = $query->paginate($this->perPage($request));
 
-        $studentNames = $students->getCollection()->pluck('name')->filter()->map(fn ($n) => trim($n))->unique();
-        $studentPhones = $students->getCollection()->pluck('phone')->filter()->map(fn ($p) => trim($p))->unique();
-
-        $dupNames = User::query()
-            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
-            ->whereIn(DB::raw('TRIM(name)'), $studentNames)
-            ->selectRaw('TRIM(name) as d_name')
-            ->groupBy('d_name')
-            ->havingRaw('COUNT(*) > 1')
-            ->pluck('d_name')
-            ->all();
-
-        $dupPhones = User::query()
-            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
-            ->whereIn(DB::raw('TRIM(phone)'), $studentPhones)
-            ->selectRaw('TRIM(phone) as d_phone')
-            ->groupBy('d_phone')
-            ->havingRaw('COUNT(*) > 1')
-            ->pluck('d_phone')
-            ->all();
+        // TRIM() on the column cannot use an index, so the old query scanned the
+        // whole users table twice per page. Match the page's raw and trimmed
+        // values against the indexed column, then compare trimmed in PHP.
+        $dupNames = $this->duplicateValues('name', $students->getCollection()->pluck('name'));
+        $dupPhones = $this->duplicateValues('phone', $students->getCollection()->pluck('phone'));
 
         $dupNamesSet = array_flip($dupNames);
         $dupPhonesSet = array_flip($dupPhones);
@@ -224,6 +172,34 @@ class StudentController extends Controller
         });
 
         return $this->success(StudentResource::collection($students), 'Students retrieved.');
+    }
+
+    /**
+     * Trimmed values among $values that more than one student shares.
+     *
+     * @param  \Illuminate\Support\Collection<int, string|null>  $values
+     * @return list<string>
+     */
+    private function duplicateValues(string $column, \Illuminate\Support\Collection $values): array
+    {
+        $candidates = $values->filter()
+            ->flatMap(fn ($v) => [$v, trim($v)])
+            ->unique()
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return [];
+        }
+
+        return User::query()
+            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
+            ->whereIn($column, $candidates)
+            ->pluck($column)
+            ->map(fn ($v) => trim($v))
+            ->countBy()
+            ->filter(fn ($count) => $count > 1)
+            ->keys()
+            ->all();
     }
 
     public function store(CreateStudentRequest $request): JsonResponse
