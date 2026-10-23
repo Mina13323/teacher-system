@@ -152,6 +152,12 @@ class DeviceSessionService
         return $lastSeen !== null && $lastSeen->gt(now()->subDays((int) $days));
     }
 
+    /** Ends every sign-in of the account (its password was just replaced). */
+    public function revokeAllFor(User $user): int
+    {
+        return $this->revokeAll($user, self::ENDED_TRANSFERRED);
+    }
+
     private function revokeAll(User $user, string $reason): int
     {
         $tokens = $user->tokens()->get(['id', 'token']);

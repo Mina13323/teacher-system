@@ -135,4 +135,7 @@ return [
 
     'co_teaching' => (bool) env('CO_TEACHING_ENABLED', true),
 
+    // Student self-registration link (off unless explicitly enabled).
+    'student_self_registration' => (bool) env('STUDENT_SELF_REGISTRATION', false),
+
 ];

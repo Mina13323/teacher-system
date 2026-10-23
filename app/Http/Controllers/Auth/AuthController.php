@@ -8,6 +8,7 @@ use App\Http\Requests\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\Auth\DeviceSessionService;
+use App\Services\Auth\RecoveryCodeService;
 use App\Support\DeviceLabel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +25,38 @@ class AuthController extends Controller
     public function __construct(
         private readonly LoginUserAction $loginUser,
         private readonly DeviceSessionService $sessions,
+        private readonly RecoveryCodeService $recovery,
     ) {
+    }
+
+    /**
+     * Forgotten password: the student code, the phone number on file and the
+     * recovery code must all match. On success the student is signed in with
+     * a session that can only choose a new password (must_change_password).
+     * Anything else answers the same "contact the admin" failure.
+     */
+    public function recover(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:64'],
+            'phone' => ['required', 'string', 'max:32'],
+            'recovery_code' => ['required', 'string', 'max:32'],
+        ]);
+
+        $device = $this->deviceLabel($request);
+        $result = $this->recovery->recover(
+            $validated['student_code'],
+            $validated['phone'],
+            $validated['recovery_code'],
+            $device,
+        );
+        $user = $result['user'];
+
+        app(\App\Actions\Audit\RecordAuditLogAction::class)->execute('auth.password_recovery', $user, [
+            'device' => $device,
+        ], $user);
+
+        return $this->signedIn($user, $result['token'], 'Identity verified. Choose a new password.');
     }
 
     /**

@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="STUDENT_SELF_REGISTRATION" value="true"/>
         <env name="APP_DEBUG" value="true"/>
         <env name="APP_KEY" value="base64:sgWzqQr/h7ccZifdPjW/LBo/uw7TK/4uoXN7UU8A74E="/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

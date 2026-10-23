@@ -100,7 +100,8 @@ onMounted(load);
         </div>
 
         <Alert v-if="errorMsg" tone="danger" dismissible @dismiss="errorMsg = ''">{{ errorMsg }}</Alert>
-        <Alert v-if="auth.user?.must_change_password" tone="warning">{{ $t('profile.temporaryPasswordRequired') }}</Alert>
+        <Alert v-if="auth.user?.password_recovery" tone="success">{{ $t('profile.recoveryVerified') }}</Alert>
+        <Alert v-else-if="auth.user?.must_change_password" tone="warning">{{ $t('profile.temporaryPasswordRequired') }}</Alert>
 
         <LoadingSpinner v-if="loading" />
 
@@ -121,7 +122,7 @@ onMounted(load);
             <AppCard :title="$t('profile.security')">
                 <form class="space-y-4" @submit.prevent="savePassword">
                     <Alert v-if="passwordErrors" tone="danger">{{ passwordErrors.password }}</Alert>
-                    <AppInput v-model="pw.current_password" :label="$t('profile.currentPassword')" type="password" id="pw-current" required :error="passwordErrors.current_password" autocomplete="current-password" />
+                    <AppInput v-if="!auth.user?.password_recovery" v-model="pw.current_password" :label="$t('profile.currentPassword')" type="password" id="pw-current" required :error="passwordErrors.current_password" autocomplete="current-password" />
                     <AppInput v-model="pw.password" :label="$t('profile.newPassword')" type="password" id="pw-new" required :error="passwordErrors.password" autocomplete="new-password" :hint="$t('profile.passwordHint')" />
                     <AppInput v-model="pw.password_confirmation" :label="$t('profile.confirmPassword')" type="password" id="pw-confirm" required :error="passwordErrors.password_confirmation" autocomplete="new-password" />
                     <div class="flex justify-end">

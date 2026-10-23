@@ -24,6 +24,7 @@ export const auth = {
     // The boot check and sign-in handle their own 401s (see setUnauthorizedHandler).
     me: () => api.get('/auth/me', undefined, { skipAuthHandler: true }),
     login: (payload) => api.post('/auth/login', payload, { skipAuthHandler: true }),
+    recover: (payload) => api.post('/auth/recover', payload, { skipAuthHandler: true }),
     transferSession: (payload) => api.post('/auth/session/transfer', payload, { skipAuthHandler: true }),
     logout: () => api.post('/auth/logout', undefined, { skipAuthHandler: true }),
     profile: () => api.get('/auth/profile'),
@@ -68,6 +69,8 @@ export const push = {
 
 // ---- Student --------------------------------------------------------------
 export const student = {
+    issueRecoveryCode: () => api.post('/student/recovery-code'),
+    confirmRecoveryCode: () => api.post('/student/recovery-code/confirm'),
     // Assignments (P2)
     assignments: (params) => api.get('/student/assignments', params),
     assignment: (id) => api.get(`/student/assignments/${id}`),
@@ -154,6 +157,8 @@ export const teacher = {
     restoreStudent: (id, payload) => api.post(`/teacher/students/${id}/restore`, payload),
     allowStudentImmediately: (id, payload) => api.post(`/teacher/students/${id}/allow-immediately`, payload),
     renewStudent: (id, payload) => api.post(`/teacher/students/${id}/renew`, payload),
+    dueRenewalCount: () => api.get('/teacher/students/renew-due/count'),
+    renewAllDue: (payload) => api.post('/teacher/students/renew-due', payload),
     notifyStudent: (id, payload) => api.post(`/teacher/students/${id}/notify`, payload),
     studentRegistrationLink: () => api.get('/teacher/student-registration-link'),
     rotateStudentRegistrationLink: () => api.post('/teacher/student-registration-link/rotate'),

@@ -39,6 +39,10 @@ class UserResource extends JsonResource
             'academic_subject_label' => $academicSubjectEnum?->label(),
             'is_active' => $this->is_active,
             'must_change_password' => (bool) $this->must_change_password,
+            // True after a verified recovery: the new password needs no current one.
+            'password_recovery' => $this->isRecoveringPassword(),
+            // True until the student has been shown and has saved a recovery code.
+            'recovery_code_pending' => $this->needsRecoveryCode(),
             'can_access_lessons' => $this->canAccessLessons(),
             'can_take_exams' => $this->canTakeExams(),
             'can_join_competitions' => $this->canJoinCompetitions(),

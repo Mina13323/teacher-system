@@ -16,6 +16,13 @@ class ChangePasswordRequest extends FormRequest
      */
     public function rules(): array
     {
+        // A verified recovery has no current password to give (see ChangePasswordAction).
+        if ($this->user()?->isRecoveringPassword()) {
+            return [
+                'password' => ['required', 'string', 'min:8', 'confirmed'],
+            ];
+        }
+
         return [
             'current_password' => ['required', 'string'],
             'password' => ['required', 'string', 'min:8', 'confirmed', 'different:current_password'],

@@ -51,45 +51,8 @@ class StudentController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $query = User::query()
-            ->whereHas('roles', fn ($q) => $q->where('name', UserRole::Student->value))
+        $query = app(\App\Services\Student\ManagedStudentScope::class)->query($request->user())
             ->with(['roles', 'latestAccessPeriod']);
-
-        if (! $request->user()->isAdmin()) {
-            $user = $request->user();
-
-            if (config('app.co_teaching', false) && ($user->isTeacher() || $user->isAssistant())) {
-                $staffIds = User::query()
-                    ->whereHas('roles', fn ($q) => $q->whereIn('name', [
-                        UserRole::Teacher->value,
-                        UserRole::Assistant->value,
-                        UserRole::Admin->value,
-                    ]))
-                    ->pluck('id');
-
-                $query->where(fn ($q) => $q->whereIn('created_by', $staffIds)
-                    ->orWhereNull('created_by')
-                    ->orWhereHas('enrollments'));
-            } else {
-                $teacherId = $user->isTeacher()
-                    ? $user->getKey()
-                    : ($user->created_by ?: (User::role(UserRole::Teacher->value)->value('id') ?: $user->getKey()));
-
-                $assistantIds = User::query()
-                    ->where('created_by', $teacherId)
-                    ->orWhereHas('roles', fn ($q) => $q->where('name', UserRole::Assistant->value))
-                    ->pluck('id');
-
-                $enrolledInOwnCourses = Enrollment::query()
-                    ->whereIn('course_id', Course::query()->where('created_by', $teacherId)->pluck('id'))
-                    ->where('status', \App\Enums\EnrollmentStatus::Active->value)
-                    ->pluck('student_id');
-
-                $query->where(fn ($q) => $q->where('created_by', $teacherId)
-                    ->orWhereIn('created_by', $assistantIds)
-                    ->orWhereIn('id', $enrolledInOwnCourses));
-            }
-        }
 
         if ($request->filled('academic_year')) {
             $query->where('academic_year', $request->string('academic_year')->toString());

@@ -140,6 +140,9 @@ function cancelTransfer() {
                     <AppInput v-model="form.email" :label="$t('auth.email')" type="email" id="login-email" required autocomplete="email" :error="errors.email" placeholder="you@example.com" />
                     <AppInput v-model="form.password" :label="$t('auth.password')" type="password" id="login-password" required autocomplete="current-password" :error="errors.password" placeholder="••••••••" />
                     <AppButton type="submit" :loading="auth.loading" class="w-full" size="lg">{{ $t('auth.signIn') }}</AppButton>
+                    <p class="text-center text-sm">
+                        <router-link to="/forgot-password" class="font-medium text-terracotta-700 hover:underline">{{ $t('auth.forgot') }}</router-link>
+                    </p>
                 </form>
                 <p class="mt-6 text-center text-sm text-ink-500" dir="auto">
                     {{ $t('auth.noAccountNote') }}

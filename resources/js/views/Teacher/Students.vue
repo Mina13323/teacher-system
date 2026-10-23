@@ -527,6 +527,47 @@ async function submitRenew() {
     }
 }
 
+// RENEW ALL DUE (one click, for a few months)
+const renewAllOpen = ref(false);
+const renewAllCount = ref(null);
+const renewAllMonths = ref(1);
+const renewAllAmount = ref('');
+const renewAllNotes = ref('');
+const renewAllBusy = ref(false);
+
+async function openRenewAll() {
+    renewAllOpen.value = true;
+    renewAllCount.value = null;
+    renewAllMonths.value = 1;
+    renewAllAmount.value = '';
+    renewAllNotes.value = '';
+    try {
+        const res = await teacher.dueRenewalCount();
+        renewAllCount.value = res.due_count ?? 0;
+    } catch (e) {
+        renewAllOpen.value = false;
+        toast.error(e.message);
+    }
+}
+
+async function submitRenewAll() {
+    renewAllBusy.value = true;
+    try {
+        const res = await teacher.renewAllDue({
+            months: Number(renewAllMonths.value),
+            amount: renewAllAmount.value ? Number(renewAllAmount.value) : null,
+            notes: renewAllNotes.value || null,
+        });
+        toast.success(t('students.renewAllDone', { count: res.renewed_count ?? 0, months: res.months ?? renewAllMonths.value }));
+        renewAllOpen.value = false;
+        load(page.value);
+    } catch (e) {
+        toast.error(e.message);
+    } finally {
+        renewAllBusy.value = false;
+    }
+}
+
 // RESET CREDENTIALS
 function openResetCredentials(s) {
     resetTarget.value = s;
@@ -635,9 +676,9 @@ onMounted(() => load(1));
                 <AppButton v-if="selectedIds.length" variant="outline" size="sm" class="border-amber-300 text-amber-700 hover:bg-amber-50" @click="openBatchDeactivate">
                     ⏸️ {{ $t('students.deactivateSelected') }} ({{ selectedIds.length }})
                 </AppButton>
-                <router-link :to="`/${authRole}/students/registration-link`">
-                    <AppButton variant="outline" size="sm">Student registration link</AppButton>
-                </router-link>
+                <AppButton variant="outline" size="sm" class="border-emerald-300 text-emerald-700 hover:bg-emerald-50" @click="openRenewAll">
+                    🔄 {{ $t('students.renewAllDue') }}
+                </AppButton>
                 <AppButton variant="outline" @click="importOpen = true">📄 {{ $t('students.importCsv') }}</AppButton>
                 <router-link :to="`/${authRole}/students/new`">
                     <AppButton>{{ $t('students.addStudent') || 'إضافة طالب جديد' }}</AppButton>
@@ -957,6 +998,26 @@ onMounted(() => load(1));
                 <div class="flex justify-end gap-2 pt-2">
                     <AppButton variant="outline" :disabled="renewBusy" @click="renewTarget = null">{{ $t('common.cancel') }}</AppButton>
                     <AppButton :loading="renewBusy" @click="submitRenew">{{ $t('common.saveChanges') }}</AppButton>
+                </div>
+            </div>
+        </AppModal>
+
+        <!-- Renew all due students -->
+        <AppModal :open="renewAllOpen" :title="$t('students.renewAllDue')" size="sm" @close="renewAllOpen = false">
+            <div class="space-y-4">
+                <p v-if="renewAllCount === null" class="text-sm text-ink-500">…</p>
+                <p v-else-if="renewAllCount === 0" class="text-sm text-ink-700" dir="auto">{{ $t('students.renewAllNone') }}</p>
+                <template v-else>
+                    <p class="text-sm text-ink-700" dir="auto">{{ $t('students.renewAllIntro', { count: renewAllCount }) }}</p>
+                    <AppInput v-model="renewAllMonths" type="number" min="1" max="12" :label="$t('students.renewalMonths')" id="renew-all-months" />
+                    <AppInput v-model="renewAllAmount" type="number" min="0" step="0.5" :label="$t('students.renewAllAmount')" id="renew-all-amount" />
+                    <AppTextarea v-model="renewAllNotes" :label="$t('students.renewalNotes')" id="renew-all-notes" :rows="2" />
+                </template>
+                <div class="flex justify-end gap-2 pt-2">
+                    <AppButton variant="outline" :disabled="renewAllBusy" @click="renewAllOpen = false">{{ $t('common.cancel') }}</AppButton>
+                    <AppButton v-if="renewAllCount > 0" :loading="renewAllBusy" :disabled="!(Number(renewAllMonths) >= 1 && Number(renewAllMonths) <= 12)" @click="submitRenewAll">
+                        {{ $t('students.renewAllConfirm', { count: renewAllCount }) }}
+                    </AppButton>
                 </div>
             </div>
         </AppModal>

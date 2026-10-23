@@ -56,6 +56,12 @@ const client = axios.create({
     headers: { Accept: 'application/json' },
 });
 
+// The server answers errors in the language the app is showing.
+client.interceptors.request.use((config) => {
+    config.headers['Accept-Language'] = i18n.global.locale.value;
+    return config;
+});
+
 /**
  * Attach the bearer token (from memory/auth store) to every request.
  * The token is never persisted to localStorage/sessionStorage by this layer.

@@ -114,6 +114,20 @@ export const useAuthStore = defineStore('auth', {
                 this.loading = false;
             }
         },
+        /**
+         * Forgotten password: student code + phone + recovery code. When they
+         * match, the student is signed in for the forced password change.
+         */
+        async recover(payload) {
+            this.loading = true;
+            try {
+                const res = await authApi.recover(payload);
+                this.applyAuth(res);
+                return res;
+            } finally {
+                this.loading = false;
+            }
+        },
         async register(payload) {
             this.loading = true;
             try {
@@ -186,6 +200,13 @@ export const useAuthStore = defineStore('auth', {
             const result = await authApi.changePassword(payload);
             if (this.user) this.user = { ...this.user, must_change_password: false };
             if (this.profile) this.profile = { ...this.profile, must_change_password: false };
+            if (this.user) this.user = { ...this.user, password_recovery: false };
+            // A student may now owe a (new) recovery code; the server knows.
+            try {
+                await this.fetchMe();
+            } catch {
+                /* the next navigation asks again */
+            }
             return result;
         },
         /**
@@ -200,6 +221,10 @@ export const useAuthStore = defineStore('auth', {
             this.endedReason = error?.data?.code === 'session_transferred' ? 'session_transferred' : 'session_ended';
             this.booted = true;
             return true;
+        },
+        /** The student saved the code shown by the recovery-code dialog. */
+        markRecoveryCodeSaved() {
+            if (this.user) this.user = { ...this.user, recovery_code_pending: false };
         },
         async logout() {
             try {

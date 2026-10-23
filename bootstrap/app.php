@@ -47,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             \App\Http\Middleware\LogContextMiddleware::class,
             ForceJsonResponse::class,
+            \App\Http\Middleware\LocalizeApiResponse::class,
         ]);
 
         // Attach the "api" rate limiter to the whole api group. Laravel 11 only
@@ -61,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'force.password.change' => \App\Http\Middleware\ForcePasswordChange::class,
+            'self.registration' => \App\Http\Middleware\EnsureSelfRegistrationEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

@@ -19,6 +19,8 @@ class ResetUserPasswordAction
 
         $account->password = $password;
         $account->must_change_password = true;
+        // Staff stepped in (e.g. the code was lost): issue a new code after sign-in.
+        $account->retireRecoveryCode();
         $account->save();
 
         $account->tokens()->delete();

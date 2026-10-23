@@ -7,6 +7,7 @@ const routes = [
     { path: '/courses', name: 'public-courses', component: () => import('@/views/Public/CourseCatalog.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
     { path: '/courses/:id', name: 'public-course', component: () => import('@/views/Public/CourseShow.vue'), meta: { roles: ['student', 'teacher', 'assistant', 'admin'] } },
     { path: '/reconnect', name: 'reconnect', component: () => import('@/views/Auth/Reconnect.vue'), meta: { public: true } },
+    { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/Auth/ForgotPassword.vue'), meta: { guest: true } },
     { path: '/login', name: 'login', component: () => import('@/views/Auth/Login.vue'), meta: { guest: true } },
     { path: '/join/:token', name: 'student-registration', component: () => import('@/views/Public/StudentRegistration.vue'), meta: { public: true } },
 
@@ -52,7 +53,6 @@ const routes = [
             { path: '', name: 'teacher.dashboard', component: () => import('@/views/Teacher/Dashboard.vue') },
             { path: 'students', name: 'teacher.students', component: () => import('@/views/Teacher/Students.vue') },
             { path: 'students/new', name: 'teacher.students.new', component: () => import('@/views/Teacher/StudentForm.vue') },
-            { path: 'students/registration-link', name: 'teacher.students.registration-link', component: () => import('@/views/Teacher/StudentRegistrationLink.vue') },
             { path: 'students/:id', name: 'teacher.student', component: () => import('@/views/Teacher/StudentShow.vue') },
             { path: 'students/:id/edit', name: 'teacher.students.edit', component: () => import('@/views/Teacher/StudentForm.vue') },
             { path: 'assistants', name: 'teacher.assistants', component: () => import('@/views/Teacher/Assistants.vue') },

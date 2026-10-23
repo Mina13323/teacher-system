@@ -127,6 +127,17 @@ class AppServiceProvider extends ServiceProvider
                 ->by('session-transfer|'.($request->ip() ?: 'unknown'));
         });
 
+        // Password recovery is a guessing target (student code + phone + code),
+        // so it is capped hard per student code and per IP.
+        RateLimiter::for('recovery', function (Request $request) {
+            $code = mb_strtoupper(trim((string) $request->input('student_code', '')));
+
+            return [
+                Limit::perMinutes(15, 5)->by('recovery|code|'.hash('sha256', $code)),
+                Limit::perMinutes(15, 15)->by('recovery|ip|'.($request->ip() ?: 'unknown')),
+            ];
+        });
+
         // A public registration link intentionally has a small budget per
         // token and IP, limiting abuse without blocking normal class signup.
         RateLimiter::for('student-registration', function (Request $request) {
