@@ -16,6 +16,9 @@ use Illuminate\Http\Request;
 
 class ProgressController extends Controller
 {
+    /** Most recent progress rows returned by index(). */
+    private const INDEX_LIMIT = 200;
+
     public function __construct(
         private readonly UpdateLessonProgressAction $updateProgress,
     ) {
@@ -59,11 +62,19 @@ class ProgressController extends Controller
             ->where('status', EnrollmentStatus::Active->value)
             ->pluck('course_id');
 
+        // Joined (not whereHas) and capped: this used to hydrate every row the
+        // student had ever touched, each with its lesson and full video list.
         $progress = LessonProgress::query()
-            ->where('student_id', $request->user()->getKey())
-            ->whereHas('lesson.unit', fn ($q) => $q->whereIn('course_id', $enrolledCourseIds))
+            ->select('lesson_progress.*')
+            ->join('lessons', 'lessons.id', '=', 'lesson_progress.lesson_id')
+            ->join('units', 'units.id', '=', 'lessons.unit_id')
+            ->whereNull('lessons.deleted_at')
+            ->whereNull('units.deleted_at')
+            ->where('lesson_progress.student_id', $request->user()->getKey())
+            ->whereIn('units.course_id', $enrolledCourseIds)
             ->with(['lesson' => fn ($q) => $q->with('videos')])
-            ->orderByDesc('updated_at')
+            ->orderByDesc('lesson_progress.updated_at')
+            ->limit(self::INDEX_LIMIT)
             ->get();
 
         return $this->success(LessonProgressResource::collection($progress), 'Progress retrieved.');
