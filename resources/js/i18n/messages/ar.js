@@ -222,7 +222,7 @@ export default {
         flaggedAttemptsEmpty: 'لا توجد محاولات مُعلَّمة — كل شيء على ما يرام.',
         flaggedOpen: 'فتح المراجعة',
         upcomingExams: 'الاختبارات القادمة',
-        upcomingExamsEmpty: 'لا توجد اختبارات خلال الأيام السبعة القادمة.',
+        upcomingExamsEmpty: 'لا يوجد امتحانات بعد',
         upcomingExamsEmptyShort: 'لا يوجد شيء مجدول.',
         pendingResults: 'نتائج بانتظار النشر',
         pendingResultsEmpty: 'لا توجد نتائج بانتظار النشر.',
